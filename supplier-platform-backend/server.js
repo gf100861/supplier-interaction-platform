@@ -15,9 +15,19 @@ const pusher = new Pusher({
 const app = express();
 
 // --- 核心修正：配置 CORS 白名单 ---
+const whitelist = [
+    'http://localhost:3000', // 允许本地开发环境访问
+    'https://supplier-interaction-platform-8myu.vercel.app' // 允许线上前端访问
+];
+
 const corsOptions = {
-    // 将这里替换为您自己前端的线上地址！
-    origin: 'https://supplier-interaction-platform-8myu.vercel.app/', 
+    origin: function (origin, callback) {
+        if (whitelist.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
 };
