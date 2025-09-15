@@ -1,10 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config(); // 修正：正确加载 dotenv
+require('dotenv').config();
 const Pusher = require("pusher");
 const { mockUsers, mockNoticesData, suppliersList, mockEventsData, noticeCategoryDetails, noticeCategories } = require('./_mockData');
 
-// 初始化 Pusher
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID,
   key: process.env.PUSHER_KEY,
@@ -15,7 +14,16 @@ const pusher = new Pusher({
 
 const app = express();
 
-app.use(cors());
+// --- 核心修正：配置 CORS 白名单 ---
+const corsOptions = {
+    // 将这里替换为您自己前端的线上地址！
+    origin: 'https://supplier-interaction-platform-8myu.vercel.app/', 
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    credentials: true,
+};
+app.use(cors(corsOptions));
+
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
