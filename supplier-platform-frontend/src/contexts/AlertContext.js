@@ -1,19 +1,24 @@
 import React, { useState, createContext, useContext, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { useSocket } from './SocketContext';
-
+import { usePusher } from './PusherContext'; // <-- 1. 替换 useSocket
 const AlertContext = createContext();
 export const useAlerts = () => useContext(AlertContext);
 
+// --- 核心修改 1：定义动态的API基础URL ---
+// 如果环境变量存在（在Vercel部署时），则使用它；否则，回退到本地地址
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+
 export const AlertProvider = ({ children }) => {
     const [alerts, setAlerts] = useState([]);
-    const socket = useSocket();
+   const pusher = usePusher(); // <-- 2. 获取 pusher 实例
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
     // 1. 首次加载时，从后端API获取该用户的历史提醒
     useEffect(() => {
         if (currentUser?.id) {
-            fetch(`http://localhost:3001/api/alerts/${currentUser.id}`)
+            // --- 核心修改 2：使用动态URL ---
+            fetch(`${API_BASE_URL}/api/alerts/${currentUser.id}`)
                 .then(res => res.json())
                 .then(data => setAlerts(data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))))
                 .catch(err => console.error("获取提醒数据失败:", err));
@@ -21,28 +26,29 @@ export const AlertProvider = ({ children }) => {
     }, [currentUser?.id]);
 
     // 2. 监听来自服务器的实时新提醒
-      useEffect(() => {
-        if (!socket) {
-            console.log("🟡 [FRONTEND-CHECKPOINT-3] AlertContext 正在等待 WebSocket 连接...");
-            return;
-        }
+     // --- 3. 核心修改：监听 Pusher 的私人频道 ---
+    useEffect(() => {
+        if (!pusher || !currentUser?.id) return;
 
-        console.log("🟢 [FRONTEND-CHECKPOINT-3] WebSocket 已连接，正在绑定 'new_alert' 监听器。");
-        
+        // 订阅一个以用户ID命名的“私人频道”
+        const channelName = `private-${currentUser.id}`;
+        const channel = pusher.subscribe(channelName);
+        console.log(`[Pusher] 正在订阅私人频道: ${channelName}`);
+
         const handleNewAlert = (newAlert) => {
-            console.log("🎉🎉🎉 [FRONTEND-CHECKPOINT-3] 成功！已收到 'new_alert' 事件:", newAlert);
+            console.log(`✅ [Pusher] 在频道 ${channelName} 收到 new_alert 事件:`, newAlert);
             setAlerts(prev => [newAlert, ...prev]);
         };
-
-        socket.on('new_alert', handleNewAlert);
+        
+        channel.bind('new_alert', handleNewAlert);
 
         return () => {
-            console.log("🔴 [FRONTEND-CHECKPOINT-3] 正在清理 'new_alert' 监听器。");
-            socket.off('new_alert', handleNewAlert);
+            channel.unbind_all();
+            pusher.unsubscribe(channelName);
         };
-    }, [socket]);
+    }, [pusher, currentUser?.id]);
 
-    // 3. addAlert 调用后端API
+    // 3. addAlert 现在是调用后端API
     const addAlert = async (senderId, recipientId, message, link = '#') => {
         const newAlert = {
             id: uuidv4(),
@@ -52,19 +58,17 @@ export const AlertProvider = ({ children }) => {
         };
 
         try {
-            await fetch('http://localhost:3001/api/alerts', {
+            // --- 核心修改 2：使用动态URL ---
+            await fetch(`${API_BASE_URL}/api/alerts`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newAlert),
             });
-            // 成功后无需任何操作，等待WebSocket推送
         } catch (error) {
             console.error("创建提醒失败:", error);
         }
     };
     
-    // 4. --- 核心修正：清理并简化其他函数 ---
-    // 在真实应用中，这些也应该是API调用，但为了演示，我们暂时只修改前端state
     const markAsRead = (alertId) => {
         setAlerts(prev => prev.map(a => (a.id === alertId ? { ...a, isRead: true } : a)));
     };
@@ -75,7 +79,6 @@ export const AlertProvider = ({ children }) => {
 
     const clearAlerts = (userId) => {
         setAlerts(prev => prev.filter(a => a.recipientId !== userId));
-        // 在真实应用中，这里应该调用后端的 DELETE /api/alerts/:userId
     };
 
     const value = { alerts, addAlert, markAsRead, markAllAsRead, clearAlerts };

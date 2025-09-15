@@ -13,9 +13,11 @@
   "type": "commonjs",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "nodemailer": "^7.0.5",
     "nodemon": "^3.1.10",
+    "pusher": "^5.2.0",
     "socket.io": "^4.8.1"
   }
 }

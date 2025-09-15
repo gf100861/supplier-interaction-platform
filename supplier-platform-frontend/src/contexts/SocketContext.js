@@ -3,22 +3,25 @@ import io from 'socket.io-client';
 
 const SocketContext = createContext();
 
+// --- 核心修改 1：定义动态的Socket URL ---
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001';
+
 export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
     useEffect(() => {
         if (currentUser?.id) {
-            const newSocket = io('http://localhost:3001', {
+            // --- 核心修改 2：使用动态URL ---
+            const newSocket = io(SOCKET_URL, {
                 query: { userId: currentUser.id }
             });
             
-            // --- 在这里增加日志 ---
             newSocket.on('connect', () => {
-                console.log(`✅ [FRONTEND-CHECKPOINT-2] WebSocket 已成功连接！Socket ID: ${newSocket.id}`);
+                console.log(`✅ WebSocket 已成功连接！Socket ID: ${newSocket.id}`);
             });
             newSocket.on('disconnect', () => {
-                console.log(`❌ [FRONTEND-CHECKPOINT-2] WebSocket 已断开连接。`);
+                console.log(`❌ WebSocket 已断开连接。`);
             });
 
             setSocket(newSocket);

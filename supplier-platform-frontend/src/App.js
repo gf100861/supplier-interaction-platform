@@ -11,7 +11,7 @@ import { SupplierProvider } from './contexts/SupplierContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfigProvider } from './contexts/ConfigContext';
-
+import { PusherProvider } from './contexts/PusherContext'; // <-- 替换 SocketProvider
 // Import all pages and components
 import MainLayout from './Components/MainLayout';
 import ProtectedRoute from './Components/ProtectedRoute';
@@ -46,24 +46,26 @@ const ThemedApp = () => {
                         <SupplierProvider>
                             <AlertProvider>
                                 <NoticeProvider>
-                                    {/* 3. 路由和UI */}
-                                    <BrowserRouter>
-                                        <Routes>
-                                            <Route path="/login" element={<LoginPage />} />
-                                            <Route element={<ProtectedRoute />}>
-                                                <Route path="/" element={<MainLayout />}>
-                                                    <Route index element={<DashboardPage />} />
-                                                    <Route path="notices" element={<NoticePage />} />
-                                                    <Route path="audit-plan" element={<AuditPlanPage />} />
-                                                    <Route path="batch-create" element={<BatchNoticeCreationPage />} />
-                                                    <Route path="upload" element={<FileUploadPage />} />
-                                                    <Route path="settings" element={<SettingsPage />} />
-                                                    <Route path="analysis" element={<ProblemAnalysisPage />} />
-                                                    <Route path="reports" element={<ConsolidatedReportPage />} />
+                                    <PusherProvider> {/* <-- 使用 PusherProvider */}
+                                        {/* 3. 路由和UI */}
+                                        <BrowserRouter>
+                                            <Routes>
+                                                <Route path="/login" element={<LoginPage />} />
+                                                <Route element={<ProtectedRoute />}>
+                                                    <Route path="/" element={<MainLayout />}>
+                                                        <Route index element={<DashboardPage />} />
+                                                        <Route path="notices" element={<NoticePage />} />
+                                                        <Route path="audit-plan" element={<AuditPlanPage />} />
+                                                        <Route path="batch-create" element={<BatchNoticeCreationPage />} />
+                                                        <Route path="upload" element={<FileUploadPage />} />
+                                                        <Route path="settings" element={<SettingsPage />} />
+                                                        <Route path="analysis" element={<ProblemAnalysisPage />} />
+                                                        <Route path="reports" element={<ConsolidatedReportPage />} />
+                                                    </Route>
                                                 </Route>
-                                            </Route>
-                                        </Routes>
-                                    </BrowserRouter>
+                                            </Routes>
+                                        </BrowserRouter>
+                                    </PusherProvider>
                                 </NoticeProvider>
                             </AlertProvider>
                         </SupplierProvider>
