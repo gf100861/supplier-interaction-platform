@@ -1,18 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input } from 'antd';
-import { PrinterOutlined, DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined } from '@ant-design/icons';
-import { mockNoticesData, noticeCategories, categoryColumnConfig, allPossibleStatuses } from '../data/_mockData';
+import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin,List } from 'antd';
+import { PrinterOutlined, DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined,LeftOutlined, RightOutlined} from '@ant-design/icons';
+import { categoryColumnConfig, allPossibleStatuses } from '../data/_mockData';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
+import { useConfig } from '../contexts/ConfigContext';
 import { useNotification } from '../contexts/NotificationContext';
+
 import './ConsolidatedReport.css';
 
 const { Title, Paragraph, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Search } = Input; // 1. Import Search component
+
 
 // 2. --- 复用历史记录的辅助函数 ---
 const getHistoryItemDetails = (historyItem) => {
@@ -37,6 +40,21 @@ const getSummaryFromHistory = (history) => {
     };
 };
 
+const AttachmentsDisplay = ({ attachments }) => {
+    if (!attachments || attachments.length === 0) return null;
+    return ( <div style={{ marginTop: 12 }}><Text strong><PaperClipOutlined /> 附件:</Text><div style={{ marginTop: 8 }}><Space wrap>{attachments.map((file, i) => (<Button key={i} type="dashed" href={file.url} size="small" target="_blank" icon={<PaperClipOutlined />}>{file.name}</Button>))}</Space></div></div> );
+};
+
+const ImageScroller = ({ images, title }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+    if (!images || images.length === 0) return null;
+    const goToPrevious = () => setCurrentIndex(currentIndex === 0 ? images.length - 1 : currentIndex - 1);
+    const goToNext = () => setCurrentIndex(currentIndex === images.length - 1 ? 0 : currentIndex + 1);
+    return ( <div style={{ marginTop: 12 }}><Text strong><PictureOutlined /> {title}:</Text><div style={{ position: 'relative', marginTop: 8 }}><Image height={250} style={{ objectFit: 'contain', width: '100%', backgroundColor: '#f0f2f5', borderRadius: '8px' }} src={images[currentIndex].url || images[currentIndex].thumbUrl} />{images.length > 1 && (<><Button shape="circle" icon={<LeftOutlined />} onClick={goToPrevious} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)' }} /><Button shape="circle" icon={<RightOutlined />} onClick={goToNext} style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }} /><Tag style={{ position: 'absolute', bottom: 16, right: 16 }}>{currentIndex + 1} / {images.length}</Tag></>)}</div></div> );
+};
+
+
+
 const getStatusColor = (status) => {
     if (!status) return 'default';
     if (status.includes('完成')) return 'success'; // 绿色
@@ -48,7 +66,7 @@ const getStatusColor = (status) => {
 
 const ConsolidatedReportPage = () => {
     const { suppliers } = useSuppliers();
-    const { notices } = useNotices();
+      const { notices, loading: noticesLoading } = useNotices();
     const { messageApi } = useNotification();
     
     const [dateRange, setDateRange] = useState([dayjs().startOf('year'), dayjs().endOf('year')]);
@@ -57,18 +75,29 @@ const ConsolidatedReportPage = () => {
     const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     
-    const initialSelectedSuppliers = currentUser?.role === 'Supplier' ? [currentUser.id] : [];
+    // --- 核心修正 1：初始化时，使用供应商用户的 supplier_id ---
+    const initialSelectedSuppliers = currentUser?.role === 'Supplier' ? [currentUser.supplier_id] : [];
     const [selectedSuppliers, setSelectedSuppliers] = useState(initialSelectedSuppliers);
 
     const [searchTerm, setSearchTerm] = useState('');
 
+    const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
 
 
-    const groupedData = useMemo(() => {
+        const groupedData = useMemo(() => {
+       
         let accessibleData = [];
         if (currentUser?.role === 'Supplier') {
-            accessibleData = notices.filter(n => n.assignedSupplierId === currentUser.id);
+            const supplierCompanyId = currentUser.supplier_id;
+          
+            if (!supplierCompanyId) {
+
+                return {};
+            }
+            accessibleData = notices.filter(n => n.assignedSupplierId === supplierCompanyId);
+
         } else {
+
             accessibleData = notices;
         }
 
@@ -103,6 +132,8 @@ const ConsolidatedReportPage = () => {
             ...getSummaryFromHistory(notice.history || []),
         }));
 
+        
+
         return dataWithSummary.reduce((acc, notice) => {
             const category = notice.category || '未分类';
             if (!acc[category]) acc[category] = [];
@@ -110,19 +141,19 @@ const ConsolidatedReportPage = () => {
             return acc;
         }, {});
     // 2. 将 suppliers 添加到依赖项数组
-    }, [dateRange, selectedSuppliers, selectedCategories, selectedStatuses, currentUser, notices, searchTerm, suppliers]);
+    
+  }, [dateRange, selectedSuppliers, selectedCategories, selectedStatuses, currentUser, notices, searchTerm, suppliers]);
 
     const categories = Object.keys(groupedData);
 
     const showDetailsModal = (notice) => setDetailsModal({ visible: true, notice });
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
     // 5. --- 升级列生成函数，加入“操作”列 ---
+    //在dataIndex处修改Value值
     const generateColumnsForCategory = (category) => {
         const baseColumns = [
             { title: 'ID', dataIndex: 'id', key: 'id', width: 180 },
             { title: '供应商', dataIndex: 'assignedSupplierName', key: 'assignedSupplierName', width: 150 },
-            { title: '预计完成日期', dataIndex: 'deadline', key: 'deadline', width: 120 }, // 新增
-            { title: '最后审批人', dataIndex: 'lastApprover', key: 'lastApprover', width: 150 }, // 新增
              { 
                 title: '状态', 
                 dataIndex: 'status', 
@@ -131,6 +162,7 @@ const ConsolidatedReportPage = () => {
                 render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag> 
             },
             { title: '创建时间', dataIndex: ['sdNotice', 'createTime'], key: 'createTime', width: 120, render: (time) => dayjs(time).format('YYYY-MM-DD') },
+             { title: '预计完成日期', dataIndex: 'time', key: 'deadline', width: 120,render: (time) => dayjs(time).format('YYYY-MM-DD') }, // 新增
             
         ];
         const dynamicColumns = (categoryColumnConfig[category] || []).map(configCol => ({
@@ -226,6 +258,14 @@ const ConsolidatedReportPage = () => {
         messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
     };
 
+     if (noticesLoading) {
+        return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 200px)' }}>
+                <Spin size="large" />
+            </div>
+        );
+    }
+
 
     return (
         <div className="printable-container">
@@ -303,20 +343,25 @@ const ConsolidatedReportPage = () => {
                     );
                 }) : <Empty description="根据您的筛选条件，没有找到任何数据。" />}
             </div>
-            <Modal
+             <Modal
                 title={`详情: ${detailsModal.notice?.title || ''}`}
                 open={detailsModal.visible}
                 onCancel={handleDetailsCancel}
                 footer={null}
                 width={800}
+                destroyOnClose
             >
                 {detailsModal.notice && (
                     <>
                         <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
                         <Card size="small" type="inner">
                             <Paragraph><strong>问题描述:</strong> {detailsModal.notice.sdNotice.description}</Paragraph>
+                            <ImageScroller images={detailsModal.notice.sdNotice.images} title="初始图片" />
+                            <AttachmentsDisplay attachments={detailsModal.notice.sdNotice.attachments} />
+                            <Divider style={{margin: '16px 0'}} />
                             <Text type="secondary">由 {detailsModal.notice.sdNotice.creator} 于 {detailsModal.notice.sdNotice.createTime} 发起</Text>
                         </Card>
+                        
                         <Divider />
                         <Title level={5}>处理历史</Title>
                         <Timeline>
@@ -326,56 +371,51 @@ const ConsolidatedReportPage = () => {
                             </Timeline.Item>
                             {detailsModal.notice.history.map((h, index) => {
                                 const details = getHistoryItemDetails(h);
-                                const isApproval = h.type.includes('_approval') || h.type.includes('_rejection');
                                 return (
                                     <Timeline.Item key={index} color={details.color}>
-                                        <p><b>{h.submitter}</b> {details.text}</p>
-                                        {(h.description || h.images || h.attachments || (h.responsible && h.deadline)) && (
-                                            <Card size="small" type="inner" style={{ marginTop: 8 }}>
-                                                {isApproval && (
-                                                    <Paragraph><b>审批意见: </b>{h.description}</Paragraph>
-                                                )}
-
-                                                {h.type !== 'supplier_plan_submission' && h.description && !isApproval && (
-                                                    <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{h.description}</Paragraph>
-                                                )}
-
-                                                {h.type === 'supplier_plan_submission' && (
-                                                    <>
-                                                        <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{h.description}</Paragraph>
-                                                        <Divider style={{ margin: '12px 0' }} />
-                                                        <Space direction="vertical" size="small">
-                                                            <Text><PersonIcon style={{ marginRight: 8 }} /><b>负责人: </b>{h.responsible}</Text>
-                                                            <Text><CalendarOutlined style={{ marginRight: 8 }} /><b>预计完成日期: </b><Text type="danger">{h.deadline}</Text></Text>
-                                                        </Space>
-                                                    </>
-                                                )}
-                                                {h.images && h.images.length > 0 && (
-                                                    <div style={{ marginTop: 8 }}>
-                                                        <Text strong><PictureOutlined /> 提交的图片:</Text><br />
-                                                        <Image.PreviewGroup>
-                                                            {h.images.map((img, i) => (
-                                                                <Image key={i} width={80} height={80} src={img.url || img.thumbUrl} style={{ objectFit: 'cover', marginRight: 8, marginTop: 4, borderRadius: 4 }} />
-                                                            ))}
-                                                        </Image.PreviewGroup>
-                                                    </div>
-                                                )}
-
-                                                {h.attachments && h.attachments.length > 0 && (
-                                                    <div style={{ marginTop: 8 }}>
-                                                        <Text strong><PaperClipOutlined /> 提交的附件:</Text><br />
-                                                        {h.attachments.map((file, i) => (
-                                                            <Button key={i} type="link" href={file.url} size="small" target="_blank" icon={<PaperClipOutlined />}>{file.name}</Button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </Card>
-                                        )}
-                                        <small>{h.time}</small>
+                                        <div style={{ width: '100%' }}>
+                                            <p><b>{h.submitter}</b> {details.text}</p>
+                                            
+                                            {/* 如果是行动计划提交，则渲染行动计划列表 */}
+                                            {h.type === 'supplier_submission' && h.actionPlans ? (
+                                                <Card size="small" type="inner" style={{ marginTop: 8 }}>
+                                                    {h.description && <Paragraph>{h.description}</Paragraph>}
+                                                    <Divider style={{ margin: '12px 0' }} />
+                                                    <List
+                                                        size="small"
+                                                        dataSource={h.actionPlans}
+                                                        renderItem={(planItem, idx) => (
+                                                            <List.Item>
+                                                                <div>
+                                                                    <Text strong>{idx + 1}. {planItem.plan}</Text><br/>
+                                                                    <Text type="secondary" style={{marginLeft: '18px'}}>
+                                                                        <PersonIcon style={{ marginRight: 8 }} />{planItem.responsible}
+                                                                        <Divider type="vertical" />
+                                                                        <CalendarOutlined style={{ marginRight: 8 }} />{planItem.deadline}
+                                                                    </Text>
+                                                                </div>
+                                                            </List.Item>
+                                                        )}
+                                                    />
+                                                </Card>
+                                            ) : (
+                                                // 否则，渲染普通的描述和文件
+                                                (h.description || h.images?.length > 0 || h.attachments?.length > 0) && (
+                                                    <Card size="small" type="inner" style={{ marginTop: 8 }}>
+                                                        {h.description && <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{h.description}</Paragraph>}
+                                                    </Card>
+                                                )
+                                            )}
+                                            
+                                            <ImageScroller images={h.images} title="提交的图片" />
+                                            <AttachmentsDisplay attachments={h.attachments} />
+                                            <small>{h.time}</small>
+                                        </div>
                                     </Timeline.Item>
                                 );
                             })}
                         </Timeline>
+    
                     </>
                 )}
             </Modal>

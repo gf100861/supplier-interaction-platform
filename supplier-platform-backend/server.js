@@ -2,8 +2,17 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const Pusher = require("pusher");
-const { mockUsers, mockNoticesData, suppliersList, mockEventsData, noticeCategoryDetails, noticeCategories } = require('./_mockData');
+const mongoose = require('mongoose');
 
+// --- 1. 引入 Mongoose 模型 ---
+const Notice = require('./models/Notice');
+const Alert = require('./models/Alert');
+const User = require('./models/User'); // 引入 User 模型
+
+// --- 2. 只从 _mockData 导入静态配置 ---
+const { suppliersList, mockEventsData, noticeCategoryDetails, noticeCategories } = require('./_mockData');
+
+// --- Pusher 初始化 ---
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID,
   key: process.env.PUSHER_KEY,
@@ -14,12 +23,11 @@ const pusher = new Pusher({
 
 const app = express();
 
-// --- 核心修正：配置 CORS 白名单 ---
+// --- CORS 配置 ---
 const whitelist = [
-    'http://localhost:3000', // 允许本地开发环境访问
-    'https://supplier-interaction-platform-8myu.vercel.app' // 允许线上前端访问
+    'http://localhost:3000',
+    'https://supplier-interaction-platform-8myu.vercel.app'
 ];
-
 const corsOptions = {
     origin: function (origin, callback) {
         if (whitelist.indexOf(origin) !== -1 || !origin) {
@@ -32,25 +40,51 @@ const corsOptions = {
     credentials: true,
 };
 app.use(cors(corsOptions));
-
-
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-let alertsData = [];
 const PORT = process.env.PORT || 3001;
 
-// --- API Endpoints ---
+// --- 连接到 MongoDB Atlas ---
+mongoose.connect(process.env.DATABASE_URL)
+    .then(() => console.log("✅ 成功连接到 MongoDB Atlas 数据库!"))
+    .catch(err => console.error("❌ 数据库连接失败:", err));
 
-// User Authentication
-app.post('/api/login', (req, res) => {
+// --- API Endpoints (完全数据库驱动) ---
+
+// --- 用户认证 ---
+app.post('/api/login', async (req, res) => {
     const { username, password, role } = req.body;
-    const user = mockUsers[username];
-    if (user && user.password === password && user.role === role) {
-        const userData = { username, name: user.name, role: user.role, id: user.id, token: `fake-jwt-token-${Date.now()}` };
-        res.status(200).json(userData);
-    } else {
-        res.status(401).json({ message: '用户名、密码或角色错误！' });
+    try {
+        const user = await User.findOne({ username: username });
+        if (user && user.password === password && user.role === role) {
+            const userData = { username: user.username, name: user.name, role: user.role, id: user._id, token: `real-db-token-${Date.now()}` };
+            res.status(200).json(userData);
+        } else {
+            res.status(401).json({ message: '用户名、密码或角色错误！' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: '服务器内部错误' });
+    }
+});
+
+// --- 数据获取 ---
+app.get('/api/notices', async (req, res) => {
+    try {
+        const notices = await Notice.find().sort({ 'sdNotice.createTime': -1 });
+        res.status(200).json(notices);
+    } catch (error) {
+        res.status(500).json({ message: "获取通知单失败", error });
+    }
+});
+
+app.get('/api/alerts/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const userAlerts = await Alert.find({ recipientId: userId }).sort({ timestamp: -1 });
+        res.status(200).json(userAlerts);
+    } catch (error) {
+        res.status(500).json({ message: "获取提醒失败", error });
     }
 });
 
@@ -66,35 +100,62 @@ app.get('/api/alerts/:userId', (req, res) => {
 });
 
 // Data Creation & Updates
-app.post('/api/alerts', (req, res) => {
-    const newAlert = req.body;
-    alertsData.unshift(newAlert);
-    const channelName = `private-${newAlert.recipientId}`;
-    pusher.trigger(channelName, "new_alert", newAlert);
-    res.status(201).json(newAlert);
-});
-
-app.put('/api/notices/:id', (req, res) => {
-    const { id } = req.params;
-    const updates = req.body;
-    const noticeIndex = mockNoticesData.findIndex(n => n.id === id);
-    if (noticeIndex === -1) {
-        return res.status(404).json({ message: "未找到指定的通知单" });
+app.get('/api/notices', async (req, res) => {
+    try {
+        const notices = await Notice.find().sort({ 'sdNotice.createTime': -1 });
+        res.status(200).json(notices);
+    } catch (error) {
+        res.status(500).json({ message: "Failed to fetch notices", error });
     }
-    mockNoticesData[noticeIndex] = { ...mockNoticesData[noticeIndex], ...updates };
-    const updatedNotice = mockNoticesData[noticeIndex];
-    pusher.trigger("updates", "notice_updated", updatedNotice);
-    res.status(200).json(updatedNotice);
 });
 
-app.post('/api/notices/batch', (req, res) => {
+// POST /api/notices/batch - Creates multiple new notices in the database
+app.post('/api/notices/batch', async (req, res) => {
     const newNotices = req.body;
     if (!Array.isArray(newNotices) || newNotices.length === 0) {
-        return res.status(400).json({ message: "请求体必须是一个非空数组" });
+        return res.status(400).json({ message: "Request body must be a non-empty array" });
     }
-    mockNoticesData.push(...newNotices);
-    pusher.trigger("updates", "notices_added", newNotices);
-    res.status(201).json({ message: "批量创建成功", data: newNotices });
+    try {
+        const insertedNotices = await Notice.insertMany(newNotices);
+        pusher.trigger("updates", "notices_added", insertedNotices);
+        res.status(201).json({ message: "Batch creation successful", data: insertedNotices });
+    } catch (error) {
+        res.status(500).json({ message: "Batch creation failed", error });
+    }
+});
+
+// PUT /api/notices/:id - Updates a single notice in the database
+app.put('/api/notices/:id', async (req, res) => {
+    try {
+        const updatedNotice = await Notice.findOneAndUpdate(
+            { id: req.params.id }, // Find by custom 'id' field
+            req.body,
+            { new: true } // Return the updated document
+        );
+        if (!updatedNotice) {
+            return res.status(404).json({ message: "Notice not found" });
+        }
+        pusher.trigger("updates", "notice_updated", updatedNotice);
+        res.status(200).json(updatedNotice);
+    } catch (error) {
+        res.status(500).json({ message: "Update failed", error });
+    }
+});
+
+// POST /api/alerts - Creates a new alert in the database
+app.post('/api/alerts', async (req, res) => {
+    try {
+        const newAlertData = req.body;
+        const alert = new Alert(newAlertData);
+        const savedAlert = await alert.save();
+        
+        const channelName = `private-${savedAlert.recipientId}`;
+        pusher.trigger(channelName, "new_alert", savedAlert);
+        
+        res.status(201).json(savedAlert);
+    } catch (error) {
+        res.status(500).json({ message: "Alert creation failed", error });
+    }
 });
 
 // Server Listening (for local development) & Export (for Vercel)
