@@ -8,27 +8,91 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { categoryColumnConfig } from '../../data/_mockData';
-
+import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
-// --- 内部辅助组件 ---
+// --- 内部辅助组件 (代码无变化) ---
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 
+const SupplierSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
+    <div style={actionAreaStyle}>
+        <Title level={5}><SolutionOutlined /> 提交整改反馈</Title>
+        <Paragraph type="secondary">请提供详细的行动计划，并上传必要的图片证据或附件。</Paragraph>
+        <Form form={form} layout="vertical" onFinish={onFinish} autoComplete="off">
 
-//动态显示根据不同的column
+            {/* 行动计划部分 */}
+            <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
+                {(fields, { add, remove }) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
+                        {fields.map(({ key, name, ...restField }) => (
+                            <Card key={key} size="small" title={`行动项 #${key + 1}`} extra={<MinusCircleOutlined onClick={() => remove(name)} />}>
+                                <Form.Item {...restField} name={[name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
+                                    <TextArea rows={2} />
+                                </Form.Item>
+                                <Space wrap align="baseline">
+                                    <Form.Item {...restField} name={[name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
+                                        <Input />
+                                    </Form.Item>
+                                    <Form.Item {...restField} name={[name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
+                                        <DatePicker />
+                                    </Form.Item>
+                                </Space>
+                            </Card>
+                        ))}
+                        <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>添加行动项</Button>
+                    </div>
+                )}
+            </Form.List>
+
+            <Divider />
+
+            {/* 其他信息部分 */}
+            <Form.Item name="description" label="补充说明 (可选)">
+                <TextArea rows={3} placeholder="可以补充说明整体完成情况..." />
+            </Form.Item>
+            <Form.Item name="images" label="上传图片证据 (可选)" valuePropName="fileList" getValueFromEvent={normFile}>
+                <Upload listType="picture-card" beforeUpload={() => false} accept="image/*">
+                    <div><PlusOutlined /><div style={{ marginTop: 8 }}>上传图片</div></div>
+                </Upload>
+            </Form.Item>
+            <Form.Item name="attachments" label="上传附件 (可选)" valuePropName="fileList" getValueFromEvent={normFile}>
+                <Upload beforeUpload={() => false} multiple>
+                    <Button icon={<UploadOutlined />}>点击上传附件</Button>
+                </Upload>
+            </Form.Item>
+
+            <Divider />
+
+            <Form.Item>
+                <Button type="primary" htmlType="submit">提交整改材料</Button>
+            </Form.Item>
+        </Form>
+    </div>
+);
+
 const DynamicDetailsDisplay = ({ notice }) => {
-    if (!notice.category || !notice.sdNotice.details) return null;
+    // 修正 #2: 使用可选链 ?. 来安全地访问深层属性
+    if (!notice?.category || !notice?.sdNotice?.details) return null;
 
-    // 从配置中心获取当前类别的专属列定义
     const config = categoryColumnConfig[notice.category] || [];
-    // 过滤掉我们已经手动显示过的 title 和 description
     const dynamicFields = config.filter(
         col => col.dataIndex !== 'title' && col.dataIndex !== 'description'
     );
 
     if (dynamicFields.length === 0) return null;
+
+    const toPlainText = (val) => {
+        if (val == null) return '';
+        if (typeof val === 'object' && Array.isArray(val.richText)) {
+            return val.richText.map(r => r?.text || '').join('');
+        }
+        if (typeof val === 'object' && typeof val.richText === 'string') {
+            return val.richText;
+        }
+        return String(val);
+    };
 
     return (
         <>
@@ -37,14 +101,14 @@ const DynamicDetailsDisplay = ({ notice }) => {
                 {dynamicFields.map(field => (
                     <Text key={field.dataIndex}>
                         <Text strong>{field.title}: </Text>
-                        {/* 从 sdNotice.details 中获取对应的值 */}
-                        {notice.sdNotice.details[field.dataIndex]}
+                        {toPlainText(notice.sdNotice.details[field.dataIndex])}
                     </Text>
                 ))}
             </Space>
         </>
     );
 };
+// ... 其他内部辅助组件代码不变 ...
 const AttachmentsDisplay = ({ attachments }) => {
     if (!attachments || attachments.length === 0) return null;
     return (
@@ -115,103 +179,100 @@ const ImageScroller = ({ images, title }) => {
         </div>
     );
 };
+
+
 const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
     <div style={actionAreaStyle}>
         <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
-        <Paragraph type="secondary">您可以添加多个行动项，并为每一项指定负责人和完成日期。</Paragraph>
         <Form form={form} layout="vertical" onFinish={onFinish} autoComplete="off">
             <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
                 {(fields, { add, remove }) => (
                     <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
                         {fields.map(({ key, name, ...restField }) => (
-                            <Card key={key} size="small"
-                                extra={<MinusCircleOutlined onClick={() => remove(name)} />}
-                            >
-                                <Form.Item
-                                    {...restField}
-                                    name={[name, 'plan']}
-                                    label="行动方案"
-                                    rules={[{ required: true, message: '请输入行动方案' }]}
-                                >
-                                    <TextArea rows={2} placeholder="具体的行动方案..." />
+                            <Card key={key} size="small" title={`行动项 #${key + 1}`} extra={<MinusCircleOutlined onClick={() => remove(name)} />}>
+                                <Form.Item {...restField} name={[name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
+                                    <TextArea rows={2} />
                                 </Form.Item>
                                 <Space wrap align="baseline">
-                                    <Form.Item
-                                        {...restField}
-                                        name={[name, 'responsible']}
-                                        label="负责人"
-                                        rules={[{ required: true, message: '请输入负责人' }]}
-                                    >
-                                        <Input placeholder="负责人姓名" />
+                                    <Form.Item {...restField} name={[name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
+                                        <Input />
                                     </Form.Item>
-                                    <Form.Item
-                                        {...restField}
-                                        name={[name, 'deadline']}
-                                        label="完成日期"
-                                        rules={[{ required: true, message: '请选择日期' }]}
-                                    >
+                                    <Form.Item {...restField} name={[name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
                                         <DatePicker />
                                     </Form.Item>
                                 </Space>
                             </Card>
                         ))}
-                        <Form.Item>
-                            <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                                添加行动项
-                            </Button>
-                        </Form.Item>
+                        <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>添加行动项</Button>
                     </div>
                 )}
             </Form.List>
-            <Form.Item style={{ marginTop: 24 }}>
-                <Button type="primary" htmlType="submit">提交所有计划</Button>
-            </Form.Item>
+            <Divider />
+            <Form.Item><Button type="primary" htmlType="submit">提交计划</Button></Form.Item>
         </Form>
     </div>
 );
 
-const EvidenceSubmissionForm = ({ onFinish, form, handlePreview, actionAreaStyle}) => (<div style={actionAreaStyle}><Title level={5}><CameraOutlined /> 上传完成证据</Title><Form form={form} layout="vertical" onFinish={onFinish}><Form.Item name="description" label="完成情况说明"><TextArea rows={3} placeholder="可以补充说明完成情况..." /></Form.Item><Form.Item name="images" label="上传图片证据" valuePropName="fileList" getValueFromEvent={normFile} rules={[{ required: true, message: '请至少上传一张图片作为证据' }]}><Upload listType="picture-card" beforeUpload={() => false} onPreview={handlePreview} accept="image/*"><div><PlusOutlined /><div style={{ marginTop: 8 }}>上传</div></div></Upload></Form.Item><Form.Item name="attachments" label="上传附件 (可选)" valuePropName="fileList" getValueFromEvent={normFile}><Upload beforeUpload={() => false} multiple><Button icon={<UploadOutlined />}>点击上传附件</Button></Upload></Form.Item><Form.Item><Button type="primary" htmlType="submit">提交证据</Button></Form.Item></Form></div>);
+// 仅用于提交证据的表单
+const EvidencePerActionForm = ({ onFinish, form, notice }) => {
+    // 找到上一次提交并被批准的行动计划
+    const lastApprovedPlans = useMemo(() => {
+        const history = notice?.history || [];
+        const lastPlanSubmission = [...history].reverse().find(h => h.type === 'sd_plan_approval' || h.type === 'supplier_plan_submission');
+        return lastPlanSubmission?.actionPlans || [];
+    }, [notice]);
 
-const ApprovalArea = ({ onApprove, showRejectionModal, title, notice, actionAreaStyle }) => (
+    return (
+        <Form form={form} layout="vertical" onFinish={onFinish}>
+            <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
+            <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据图片。</Paragraph>
+            <Form.List name="evidence">
+                {(fields, { add, remove }) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
+                        {lastApprovedPlans.map((plan, index) => (
+                            <Card key={index} type="inner" title={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}>
+                                <Paragraph type="secondary">负责人: {plan.responsible} | 截止日期: {plan.deadline}</Paragraph>
+                                <Form.Item name={[index, 'description']} label="完成情况说明">
+                                    <TextArea rows={2} placeholder="请简述此项任务的完成情况..." />
+                                </Form.Item>
+                                <Form.Item name={[index, 'images']} label="上传图片证据" valuePropName="fileList" getValueFromEvent={normFile}>
+                                    <Upload listType="picture-card" beforeUpload={() => false}><PlusOutlined /></Upload>
+                                </Form.Item>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+            </Form.List>
+            <Divider />
+            <Form.Item><Button type="primary" htmlType="submit">提交所有证据</Button></Form.Item>
+        </Form>
+    );
+};
+
+// 通用的审核操作区
+const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, actionAreaStyle }) => (
     <div style={actionAreaStyle}>
         <Title level={5}>{title}</Title>
         <Space direction="vertical" style={{ width: '100%' }}>
-            <Button type="primary" icon={<CheckCircleOutlined />} style={{ width: '100%' }} onClick={onApprove}>
-                审核通过
-            </Button>
-            <Divider style={{ margin: '8px 0' }}>或</Divider>
-            <Button danger icon={<CloseCircleOutlined />} style={{ width: '100%' }} onClick={() => showRejectionModal(notice)}>
-                退回供应商
-            </Button>
+            <Button type="primary" icon={<CheckCircleOutlined />} onClick={onApprove}>{approveText || '批准'}</Button>
+            <Button danger icon={<CloseCircleOutlined />} onClick={onReject}>{rejectText || '驳回'}</Button>
         </Space>
     </div>
 );
 
 
-const getHistoryItemDetails = (historyItem) => {
-    switch (historyItem.type) {
-        case 'supplier_plan_submission': return { color: 'blue', text: '提交了行动计划' };
-        case 'supplier_evidence_submission': return { color: 'blue', text: '提交了完成证据' };
-        case 'sd_plan_approval': return { color: 'green', text: '批准了行动计划' };
-        case 'sd_plan_rejection': return { color: 'red', text: '退回了行动计划' };
-        case 'sd_evidence_approval': return { color: 'green', text: '审核通过了证据' };
-        case 'sd_evidence_rejection': return { color: 'red', text: '退回了提交的证据' };
-        case 'manager_reassignment': return { color: 'orange', text: '重分配了供应商' };
-        case 'manager_void': return { color: 'black', text: '作废了通知单' };
-        default: return { color: 'grey', text: '执行了未知操作' };
-    }
-};
+
 
 // --- 主弹窗组件 ---
 export const NoticeDetailModal = ({
-    notice, visible, onCancel, currentUser, form,
-    onPlanSubmit, onEvidenceSubmit, onPlanApprove, onEvidenceApprove,
-    showRejectionModal, handlePreview
+
+    notice, open, onCancel, currentUser, form,
+    onPlanSubmit, onPlanApprove, showPlanRejectionModal,
+    onEvidenceSubmit, onClosureApprove, showEvidenceRejectionModal,
+    onApproveEvidenceItem, onRejectEvidenceItem
 }) => {
-    // 修正 #1: Hook 必须在组件的最顶层调用
     const { token } = theme.useToken();
 
-    // 修正 #2: 依赖 hook 结果的变量，必须定义在 hook 之后
     const actionAreaStyle = {
         background: token.colorFillAlter,
         padding: '16px',
@@ -220,109 +281,153 @@ export const NoticeDetailModal = ({
     };
 
     if (!notice) return null;
+    const toPlainText = (val) => {
+        if (val == null) return '';
+        if (typeof val === 'object' && Array.isArray(val.richText)) {
+            return val.richText.map(r => r?.text || '').join('');
+        }
+        if (typeof val === 'object' && typeof val.richText === 'string') {
+            return val.richText;
+        }
+        return String(val);
+    };
+    const safeTitle = toPlainText(notice.title || '');
+
 
     const renderActionArea = () => {
-        const isAssignedSupplier = currentUser.role === 'Supplier' && currentUser.id === notice.assignedSupplierId;
-        const isSDOrManager = currentUser.role === 'SD' || currentUser.role === 'Manager';
+        const isAssignedSupplier = currentUser?.role === 'Supplier' && currentUser.supplier_id === notice.assignedSupplierId;
+        const isSDOrManager = currentUser?.role === 'SD' || currentUser?.role === 'Manager';
 
         switch (notice.status) {
-            // 修正 #3: 将 actionAreaStyle 作为 prop 传递下去
-            case '待供应商提交行动计划':
-                return isAssignedSupplier && <PlanSubmissionForm form={form} onFinish={onPlanSubmit} actionAreaStyle={actionAreaStyle} />;
-            case '待SD审核行动计划':
-                return isSDOrManager && <ApprovalArea onApprove={onPlanApprove} title="审核行动计划" notice={notice} showRejectionModal={showRejectionModal} actionAreaStyle={actionAreaStyle} />;
+            case '待供应商处理':
+                return isAssignedSupplier && <PlanSubmissionForm form={form} onFinish={onPlanSubmit} />;
+            case '待SD审核':
+            case '待SD审核计划':
+                return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} />;
             case '待供应商上传证据':
-                return isAssignedSupplier && <EvidenceSubmissionForm form={form} onFinish={onEvidenceSubmit} handlePreview={handlePreview} actionAreaStyle={actionAreaStyle} />;
-            case '待SD审核证据':
-                return isSDOrManager && <ApprovalArea onApprove={onEvidenceApprove} title="审核完成证据" notice={notice} showRejectionModal={showRejectionModal} actionAreaStyle={actionAreaStyle} />;
+                return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} />;
+            case '待SD关闭': {
+                if (!isSDOrManager) return null;
+                // 渲染逐条证据审批区
+                const history = notice.history || [];
+                const lastEvidenceIndex = [...history].reverse().findIndex(h => h.type === 'supplier_evidence_submission');
+                const realIndex = lastEvidenceIndex >= 0 ? history.length - 1 - lastEvidenceIndex : -1;
+                const lastEvidence = realIndex >= 0 ? history[realIndex] : null;
+                const evidenceList = lastEvidence?.actionPlans || [];
+                const approvedSet = new Set();
+                if (realIndex >= 0) {
+                    for (let i = realIndex + 1; i < history.length; i++) {
+                        const h = history[i];
+                        if (h.type === 'sd_evidence_item_approval' && typeof h.evidenceIndex === 'number') {
+                            approvedSet.add(h.evidenceIndex);
+                        }
+                    }
+                }
+                const approvedFlags = evidenceList.map((_, idx) => approvedSet.has(idx));
+                return (
+                    <div style={actionAreaStyle}>
+                        <Title level={5}>逐条审核证据</Title>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                            {evidenceList.map((plan, index) => (
+                                <Card key={index} size="small" title={<Text strong>{`证据 #${index + 1}: ${plan.plan}`}</Text>}>
+                                    <Paragraph type="secondary">{plan.evidenceDescription || '（供应商未提供文字说明）'}</Paragraph>
+                                    {plan.evidenceImages && plan.evidenceImages.length > 0 && (
+                                        <Image.PreviewGroup>
+                                            <Space wrap>
+                                                {plan.evidenceImages.map((img, i) => (
+                                                    <Image key={i} width={100} height={100} src={img.thumbUrl || img.url} style={{ objectFit: 'cover' }} />
+                                                ))}
+                                            </Space>
+                                        </Image.PreviewGroup>
+                                    )}
+                                    <Space style={{ marginTop: 8 }}>
+                                        <Button type="primary" icon={<CheckCircleOutlined />} disabled={approvedFlags[index]} onClick={() => onApproveEvidenceItem?.(index)}>
+                                            {approvedFlags[index] ? '已批准' : '批准此证据'}
+                                        </Button>
+                                        <Button danger icon={<CloseCircleOutlined />} onClick={() => onRejectEvidenceItem?.(index)}>驳回此证据并退回</Button>
+                                    </Space>
+                                </Card>
+                            ))}
+                            <Divider />
+                            <Popconfirm title="确定所有证据均已审核通过并关闭吗？" onConfirm={onClosureApprove}>
+                                <Button type="primary">全部批准并关闭</Button>
+                            </Popconfirm>
+                        </Space>
+                    </div>
+                );
+            }
             default:
                 return null;
         }
     };
 
+    const getHistoryItemLabel = (h) => {
+        const typeMap = {
+            supplier_plan_submission: "供应商提交了行动计划",
+            sd_plan_approval: "SD批准了行动计划",
+            sd_plan_rejection: "SD驳回了行动计划",
+            supplier_evidence_submission: "供应商提交了完成证据",
+            sd_evidence_rejection: "SD驳回了完成证据",
+            sd_closure_approve: "SD批准关闭",
+            manager_reassignment: "管理员重分配了供应商",
+            manager_void: "管理员作废了通知单",
+        };
+        const colorMap = {
+            submission: 'blue',
+            approval: 'green',
+            rejection: 'red',
+            reassignment: 'orange',
+            void: 'grey'
+        }
+        const key = Object.keys(colorMap).find(k => h.type.includes(k));
+        return {
+            text: typeMap[h.type] || "执行了操作",
+            color: colorMap[key] || 'grey'
+        };
+    };
+
+
     return (
-        <Modal title={`通知单详情: ${notice.title}`} open={visible} onCancel={onCancel} footer={null} width={800}>
+        // 修正 #1: 将 open={visible} 修改为 open={open}
+        <Modal title={`通知单详情: ${safeTitle}`} open={open} onCancel={onCancel} footer={null} width={800}>
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
             <Card size="small" type="inner">
-                <Paragraph><strong>问题描述:</strong> {notice.sdNotice.description}</Paragraph>
+                {/* 修正 #2: 将富文本数组转换为纯文本 */}
+                <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description)}</Paragraph>
                 <DynamicDetailsDisplay notice={notice} />
-                <ImageScroller images={notice.sdNotice.images} title="初始图片" />
-                <AttachmentsDisplay attachments={notice.sdNotice.attachments} />
+                <ImageScroller images={notice?.sdNotice?.images} title="初始图片" />
+                <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
                 <Divider style={{ margin: '12px 0' }} />
-                <Text type="secondary">由 {notice.sdNotice.creator} 于 {notice.sdNotice.createTime} 发起</Text>
+                <Text type="secondary">由 {notice?.sdNotice?.creator} 于 {notice?.sdNotice?.createTime} 发起</Text>
             </Card>
-
             <Divider />
+
             <Title level={5}>处理历史</Title>
-           {/* 请将这段代码粘贴到 NoticeDetailModal.js 中 */}
+            <Timeline>
+                <Timeline.Item color="green">
+                    <p><b>{notice.creatorName || '发起人'}</b> 在 {dayjs(notice.createdAt).format('YYYY-MM-DD HH:mm')} 发起了通知</p>
+                </Timeline.Item>
 
-<Timeline>
-    <Timeline.Item color="green">
-        <p><b>{notice.sdNotice.creator}</b> 发起了通知</p>
-        <small>{notice.sdNotice.createTime}</small>
-    </Timeline.Item>
+                {(notice.history || []).map((h, index) => {
+                    const label = getHistoryItemLabel(h);
+                    return (
+                        <Timeline.Item key={index} color={label.color}>
+                            <p><b>{h.submitter}</b> 在 {h.time} {label.text}</p>
 
-    {notice.history.map((h, index) => {
-        const details = getHistoryItemDetails(h);
+                            {/* 如果历史记录中有描述，则显示 */}
+                            {h.description && h.description.startsWith('[') && <Text type="danger">{h.description}</Text>}
 
-        // 判断这条历史记录是否有需要特殊展示的内容
-        const hasCardContent = h.description ||
-            (h.actionPlans && h.actionPlans.length > 0) ||
-            (h.images && h.images.length > 0) ||
-            (h.attachments && h.attachments.length > 0);
+                            {/* ✨ 在对应的历史节点，调用新组件来显示计划/证据详情 */}
+                            {(h.type === 'supplier_plan_submission' || h.type === 'supplier_evidence_submission') && (
+                                <ActionPlanReviewDisplay historyItem={h} />
+                            )}
+                        </Timeline.Item>
+                    );
+                })}
+            </Timeline>
 
-        return (
-            <Timeline.Item key={index} color={details.color}>
-                <p><b>{h.submitter}</b> {details.text}</p>
-
-                {/* 如果有内容，就用一个卡片把它们包起来展示 */}
-                {hasCardContent && (
-                    <Card size="small" type="inner" style={{ marginTop: 8 }}>
-                        {/* 显示文字描述 */}
-                        {h.description && <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{h.description}</Paragraph>}
-
-                        {/* 如果是行动计划提交，则渲染计划列表 */}
-                        {h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0 && (
-                            <>
-                                <Divider style={{ margin: '12px 0' }} />
-                                <List
-                                    size="small"
-                                    header={<Text strong>行动计划:</Text>}
-                                    dataSource={h.actionPlans}
-                                    renderItem={(planItem, idx) => (
-                                        <List.Item>
-                                            <div>
-                                                <Text strong>{idx + 1}. {planItem.plan}</Text><br />
-                                                <Text type="secondary" style={{ marginLeft: '18px' }}>
-                                                    <PersonIcon style={{ marginRight: 8 }} />{planItem.responsible}
-                                                    <Divider type="vertical" />
-                                                    <CalendarOutlined style={{ marginRight: 8 }} />{planItem.deadline}
-                                                </Text>
-                                            </div>
-                                        </List.Item>
-                                    )}
-                                />
-                            </>
-                        )}
-
-                        {/* 显示提交的图片 */}
-                        <ImageScroller images={h.images} title="提交的图片" />
-
-                        {/* 显示提交的附件 */}
-                        <AttachmentsDisplay attachments={h.attachments} />
-                    </Card>
-                )}
-
-                <small>{h.time}</small>
-            </Timeline.Item>
-        );
-    })}
-
-    {notice.status === '已完成' && (
-        <Timeline.Item color="green"><b>流程已完成</b></Timeline.Item>
-    )}
-</Timeline>
             <Divider />
+
             {renderActionArea()}
         </Modal>
     );

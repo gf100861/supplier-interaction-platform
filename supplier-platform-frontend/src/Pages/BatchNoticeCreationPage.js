@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
 import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal } from 'antd';
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
 import { useSuppliers } from '../contexts/SupplierContext';
-import { noticeCategories } from '../data/_mockData';
+// import { noticeCategories } from '../data/_mockData';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
 import { useNotification } from '../contexts/NotificationContext';
 import { Buffer } from 'buffer';
 import { useNotices } from '../contexts/NoticeContext';
+import { useCategories } from '../contexts/CategoryContext'; // 1. 导入新的 Hook
 window.Buffer = Buffer;
 
 const { Title, Paragraph } = Typography;
@@ -78,33 +78,30 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
 
 // --- 列配置中心 ---
 const categoryColumnConfig = {
-    '产品质量': [
-        { title: '标题', dataIndex: 'title', editable: true, width: '20%' },
-        { title: '缺陷描述', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
-        { title: '缺陷等级', dataIndex: 'defectLevel', width: 150, render: (text, record, handleCellChange) => (
-            <Select value={text} style={{ width: '100%' }} onChange={(value) => handleCellChange(record.key, 'defectLevel', value)}>
-                <Option value="严重">严重</Option>
-                <Option value="主要">主要</Option>
-                <Option value="次要">次要</Option>
-            </Select>
-        )},
+    'SEM': [
+        { title: 'Criteria n°', dataIndex: 'criteria', editable: true, width: '10%' },
+        { title: 'SEM Parameter', dataIndex: 'parameter', editable: true, width: '15%', onCell: () => ({ inputType: 'textarea' }) },
+        { title: 'Gap description', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
+        {
+            title: 'Actual SEM points', dataIndex: 'score', width: 150, render: (text, record, handleCellChange) => (
+                <InputNumber min={1} max={5} value={text} style={{ width: '100%' }} onChange={(value) => handleCellChange(record.key, 'score', value)} />
+            )
+        },
     ],
-    '现场管理': [
-        { title: '问题点', dataIndex: 'title', editable: true, width: '20%' },
-        { title: '具体描述', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
-        { title: '5S评分 (1-5)', dataIndex: 'score', width: 150, render: (text, record, handleCellChange) => (
-            <InputNumber min={1} max={5} value={text} style={{ width: '100%' }} onChange={(value) => handleCellChange(record.key, 'score', value)} />
-        )},
+    'Process': [
+        { title: 'PROCESS/QUESTIONS', dataIndex: 'title', editable: true, width: '20%' },
+        { title: 'FINDINGS/DEVIATIONS', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
+
     ],
-    '文档资质': [ { title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) } ],
-    '安全规范': [ { title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) } ],
-    '其他': [ { title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) } ],
+    '文档资质': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
+    '安全规范': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
+    '其他': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
 };
 
 
 const BatchNoticeCreationPage = () => {
     const [globalForm] = Form.useForm();
-    const { suppliers } = useSuppliers();
+    const { suppliers, loading: suppliersLoading } = useSuppliers();
     const [dataSource, setDataSource] = useState([]);
     const [globalSettings, setGlobalSettings] = useState(null);
     const [count, setCount] = useState(0);
@@ -113,7 +110,21 @@ const BatchNoticeCreationPage = () => {
     const [previewTitle, setPreviewTitle] = useState('');
     const [isPreviewVisible, setIsPreviewVisible] = useState(false);
     const { messageApi } = useNotification();
-     const { addNotices } = useNotices(); 
+    const { addNotices } = useNotices();
+    // const { categories, loading: categoriesLoading } = useCategories();
+    //  const { suppliers } = useSuppliers();
+    const { categories, loading: categoriesLoading } = useCategories();
+
+    const managedSuppliers = useMemo(() => {
+        if (!currentUser) return [];
+        if (currentUser.role === 'Manager') return suppliers;
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier);
+        }
+        return [];
+    }, [currentUser, suppliers]);
+
 
     const handleCellChange = (key, dataIndex, value) => {
         const newData = [...dataSource];
@@ -152,14 +163,14 @@ const BatchNoticeCreationPage = () => {
             setDataSource(newData);
         }
     };
-    
-     const columns = useMemo(() => {
+
+    const columns = useMemo(() => {
         if (!globalSettings?.category) {
             return [];
         }
-        
+
         let baseColumns = categoryColumnConfig[globalSettings.category] || [];
-        
+
         baseColumns = baseColumns.map(col => {
             if (col.render && !col.editable) {
                 return { ...col, render: (text, record) => col.render(text, record, handleCellChange) };
@@ -169,10 +180,10 @@ const BatchNoticeCreationPage = () => {
 
         // 定义所有类型都共用的列
         const commonColumns = [
-            { title: '图片', dataIndex: 'images', width: 120, render: (_, record) => ( <Upload listType="picture-card" fileList={record.images || []} beforeUpload={() => false} onChange={(info) => handleUploadChange(record.key, 'images', info)} accept="image/*" onPreview={handlePreview}>{(record.images || []).length >= 1 ? null : <div><PlusOutlined /></div>}</Upload> )},
-            { title: '附件', dataIndex: 'attachments', width: 120, render: (_, record) => ( <Upload fileList={record.attachments || []} beforeUpload={() => false} onChange={(info) => handleUploadChange(record.key, 'attachments', info)}><Button icon={<UploadOutlined />}>上传</Button></Upload> ) },
-            { title: '备注 (Comments)', dataIndex: 'comments', editable: true, onCell: () => ({ inputType: 'textarea' }) },
-            { title: '操作', dataIndex: 'operation', width: 80, render: (_, record) => ( <Popconfirm title="确定删除吗?" onConfirm={() => handleDelete(record.key)}><Button type="link" danger icon={<DeleteOutlined />} /></Popconfirm> )},
+            { title: '图片', dataIndex: 'images', width: 150, render: (_, record) => (<Upload listType="picture-card" fileList={record.images || []} beforeUpload={() => false} onChange={(info) => handleUploadChange(record.key, 'images', info)} accept="image/*" onPreview={handlePreview}>{(record.images || []).length >= 1 ? null : <div><PlusOutlined /></div>}</Upload>) },
+            { title: '附件', dataIndex: 'attachments', width: 120, render: (_, record) => (<Upload fileList={record.attachments || []} beforeUpload={() => false} onChange={(info) => handleUploadChange(record.key, 'attachments', info)}><Button icon={<UploadOutlined />}>上传</Button></Upload>) },
+            { title: '备注 (Comments)', dataIndex: 'comments', width: 100, editable: true, onCell: () => ({ inputType: 'textarea' }) },
+            { title: '操作', dataIndex: 'operation', width: 80, render: (_, record) => (<Popconfirm title="确定删除吗?" onConfirm={() => handleDelete(record.key)}><Button type="link" danger icon={<DeleteOutlined />} /></Popconfirm>) },
         ];
 
         // 组合动态列和通用列
@@ -204,20 +215,27 @@ const BatchNoticeCreationPage = () => {
     const onConfirmSettings = async () => {
         try {
             const values = await globalForm.validateFields();
+            
             if (globalSettings?.category !== values.category && dataSource.length > 0) {
                 messageApi.warning('问题类型已更改，表格数据已被清空。');
                 setDataSource([]);
             }
-            const selectedSupplier = suppliers.find(s => s.id === values.supplierId);
+
+            // 直接在 managedSuppliers (当前用户可见的供应商列表) 中查找
+            const selectedSupplier = managedSuppliers.find(s => s.id === values.supplierId);
+            
             setGlobalSettings({
                 ...values,
-                supplierName: selectedSupplier.name,
+                // 现在 selectedSupplier 一定能被找到
+                supplierName: selectedSupplier.name, 
             });
             messageApi.success('全局设置已锁定，现在可以添加条目了。');
         } catch (errorInfo) {
+            // 这里的 catch 现在只会在表单未填写完整时触发
             messageApi.error('请填写所有必填的全局设置项！');
         }
     };
+
 
     const onModifySettings = () => {
         if (dataSource.length > 0) {
@@ -227,7 +245,7 @@ const BatchNoticeCreationPage = () => {
         setGlobalSettings(null);
     };
 
- const handleSubmitAll = async () => {
+    const handleSubmitAll = async () => {
         if (!globalSettings) {
             messageApi.error('请先确认顶部的全局设置！');
             return;
@@ -239,48 +257,55 @@ const BatchNoticeCreationPage = () => {
         );
 
         if (validDataSource.length === 0) {
-            messageApi.error('请至少填写一条有效的整改项！空的或未填写的记录不会被提交。');
+            messageApi.error('请至少填写一条有效的整改项！');
             return;
         }
 
         const batchId = `BATCH-${dayjs().format('YYYYMMDDHHmmss')}-${Math.random().toString(36).substring(2, 8)}`;
-        
-        const batchNotices = validDataSource.map(item => {
+
+        // 构建符合 Supabase Schema 的数据数组
+        const batchNoticesToInsert = validDataSource.map((item, index) => {
             const { key, images, attachments, ...details } = item;
-            const noticeId = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+            // 生成给用户看的业务ID
+            const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${index}`;
+
             return {
-                id: noticeId,
-                batchId: batchId,
+                // Supabase 会自动生成 uuid 主键，我们不需要提供 id
+                notice_code: noticeCode,
+                batch_id: batchId,
                 category: globalSettings.category,
                 title: details.title,
-                assignedSupplierId: globalSettings.supplierId,
-                assignedSupplierName: globalSettings.supplierName,
-                status: '待供应商提交行动计划',
-                sdNotice: {
+                assigned_supplier_id: globalSettings.supplierId, // 假设 suppliers context 里的 id 是 uuid
+                assigned_supplier_name: globalSettings.supplierName,
+                status: '待供应商处理', // 使用简化的新流程状态
+                creator_id: currentUser.id, // 假设 currentUser.id 是 uuid
+                sd_notice: { // 将所有初始信息存入 jsonb 字段
                     creatorId: currentUser.id,
                     description: details.description || '',
                     creator: currentUser.name,
                     createTime: globalSettings.createTime.format('YYYY-MM-DD'),
                     images: images,
                     attachments: attachments,
-                    details: details,
+                    details: details, // 存储所有动态字段
                 },
                 history: [],
             };
         });
-        
-        console.log("--- 准备批量提交到后端的通知单数据 (已过滤空行) ---");
-        console.log(JSON.stringify(batchNotices, null, 2));
 
-        // --- 核心修改：调用中央 context 的 addNotices 函数 ---
-        await addNotices(batchNotices);
+        try {
+            // 调用中央 context 的 addNotices 函数，它会与 Supabase 交互
+            await addNotices(batchNoticesToInsert);
+            messageApi.success(`成功提交 ${batchNoticesToInsert.length} 条通知单！`);
 
-        // 只保留这一句成功提示，确保在异步操作成功后才显示
-        messageApi.success(`成功提交 ${batchNotices.length} 条通知单！`);
+            // 成功后再清空前端
+            setDataSource([]);
+            setGlobalSettings(null);
+            globalForm.resetFields();
 
-        setDataSource([]);
-        setGlobalSettings(null);
-        globalForm.resetFields();
+        } catch (error) {
+            messageApi.error(`提交失败: ${error.message}`);
+        }
     };
     const handleDownloadTemplate = async () => {
         const category = globalForm.getFieldValue('category');
@@ -288,22 +313,22 @@ const BatchNoticeCreationPage = () => {
             messageApi.error('请先选择问题类型，再下载对应的模板！');
             return;
         }
-        
+
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('模板');
-        
+
         // 使用与UI完全相同的列配置来生成模板
         const baseColumns = categoryColumnConfig[category] || [];
-        const excelColumns = [...baseColumns, { title: '备注 (Comments)'}, { title: '图片 (Images)'}].map(c => ({
+        const excelColumns = [...baseColumns, { title: '备注 (Comments)' }, { title: '图片 (Images)' }].map(c => ({
             header: c.title,
             key: c.dataIndex,
             width: c.title.length > 20 ? 50 : 30
         }));
-        
+
         worksheet.columns = excelColumns;
-        
+
         messageApi.success(`已开始下载“${category}”类型的模板。`);
-        
+
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
@@ -314,7 +339,7 @@ const BatchNoticeCreationPage = () => {
         document.body.removeChild(link);
     };
 
-   const handleExcelImport = async (file) => {
+    const handleExcelImport = async (file) => {
         if (!globalSettings?.category) {
             messageApi.error('请先选择问题类型并点击“确认设置”，再导入对应的文件！');
             return false;
@@ -331,8 +356,8 @@ const BatchNoticeCreationPage = () => {
             // --- 核心修正：让期望的表头与下载模板的表头完全一致 ---
             const baseColumns = categoryColumnConfig[globalSettings.category] || [];
             const expectedHeaders = [
-                ...baseColumns.map(col => col.title), 
-                '备注 (Comments)', 
+                ...baseColumns.map(col => col.title),
+                '备注 (Comments)',
                 '图片 (Images)' // <--- 把“图片”这一列加回到验证逻辑中
             ];
             const actualHeadersRaw = (worksheet.getRow(1).values || []);
@@ -340,14 +365,14 @@ const BatchNoticeCreationPage = () => {
             const actualHeaders = actualHeadersRaw.slice(1, expectedHeaders.length + 1);
 
             if (JSON.stringify(expectedHeaders) !== JSON.stringify(actualHeaders)) {
-                 messageApi.error({ 
-                    content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。请下载最新模板。`, 
-                    key: 'excelParse', 
-                    duration: 5 
+                messageApi.error({
+                    content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。请下载最新模板。`,
+                    key: 'excelParse',
+                    duration: 5
                 });
-                 console.log("期望的表头:", expectedHeaders);
-                 console.log("实际的表头:", actualHeaders);
-                 return false;
+                console.log("期望的表头:", expectedHeaders);
+                console.log("实际的表头:", actualHeaders);
+                return false;
             }
 
             // --- 图片解析逻辑 (保持不变) ---
@@ -355,9 +380,9 @@ const BatchNoticeCreationPage = () => {
             worksheet.getImages().forEach(image => {
                 const startRow = image.range.tl.nativeRow;
                 const img = workbook.getImage(image.imageId);
-                if (!img || !img.buffer) { 
+                if (!img || !img.buffer) {
                     console.warn(`无法读取第 ${startRow + 1} 行的图片数据。`);
-                    return; 
+                    return;
                 }
                 const imageBase64 = `data:image/${img.extension || 'png'};base64,${Buffer.from(img.buffer).toString('base64')}`;
                 if (!imageMap.has(startRow)) { imageMap.set(startRow, []); }
@@ -375,7 +400,7 @@ const BatchNoticeCreationPage = () => {
                     images: imageMap.get(rowNumber - 1) || [],
                     attachments: [],
                 };
-                
+
                 // 根据动态列配置来读取数据
                 baseColumns.forEach((col, index) => {
                     newRowData[col.dataIndex] = row.values[index + 1] || '';
@@ -395,7 +420,7 @@ const BatchNoticeCreationPage = () => {
             console.error("Excel 解析失败:", error);
             messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelParse', duration: 4 });
         }
-        
+
         return false;
     };
 
@@ -406,27 +431,52 @@ const BatchNoticeCreationPage = () => {
                 <Title level={4}>批量创建整改通知单</Title>
                 <Paragraph type="secondary">请先选择应用于所有条目的全局信息，然后点击“确认设置”进行锁定。</Paragraph>
                 <Form form={globalForm} layout="inline">
-                    <Form.Item name="supplierId" label="供应商" rules={[{ required: true }]}>
-                        <Select style={{ width: 200 }} placeholder="选择供应商" disabled={!!globalSettings}>
-                            {suppliers.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-                        </Select>
+                      <Form.Item name="supplierId" label="供应商" rules={[{ required: true, message: '请选择一个供应商' }]}>
+                        <Select
+                            showSearch
+                            style={{ width: 200 }}
+                            placeholder="选择供应商"
+                            disabled={!!globalSettings || suppliersLoading} // 加载时也禁用
+                            loading={suppliersLoading} // 显示加载动画
+                            filterOption={(input, option) =>
+                                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                            options={managedSuppliers.map(s => ({
+                                value: s.id,
+                                label: `${s.short_code} (${s.name})`
+                            }))}
+                        />
                     </Form.Item>
+
                     <Form.Item name="category" label="问题类型" rules={[{ required: true }]}>
-                        <Select style={{ width: 180 }} placeholder="选择问题类型" disabled={!!globalSettings} onChange={(value) => {
+                        <Select style={{ width: 180 }} placeholder="选择问题类型" disabled={!!globalSettings} loading={categoriesLoading} onChange={(value) => {
                             if (dataSource.length > 0) {
                                 messageApi.warning('切换类型将清空现有数据！');
                                 setDataSource([]);
                             }
                         }}>
-                           {noticeCategories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
+                            {categories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
                         </Select>
                     </Form.Item>
                     <Form.Item name="createTime" label="创建时间" rules={[{ required: true }]}>
                         <DatePicker disabled={!!globalSettings} />
                     </Form.Item>
-                    <Form.Item>
-                        {globalSettings ? ( <Button icon={<EditOutlined />} onClick={onModifySettings}>修改设置</Button> ) 
-                        : ( <Button type="primary" icon={<CheckCircleOutlined />} onClick={onConfirmSettings}>确认设置</Button> )}
+                     <Form.Item>
+                        {/* 3. --- 核心修正：为确认按钮也添加 loading 状态 --- */}
+                        {globalSettings ? (
+                            <Button icon={<EditOutlined />} onClick={onModifySettings}>修改设置</Button>
+                        ) : (
+                            <Button 
+                                type="primary" 
+                                icon={<CheckCircleOutlined />} 
+                                onClick={onConfirmSettings}
+                                // 当任何一个依赖的数据在加载时，都禁用并显示加载状态
+                                disabled={suppliersLoading || categoriesLoading}
+                                loading={suppliersLoading || categoriesLoading} 
+                            >
+                                {suppliersLoading || categoriesLoading ? '加载中...' : '确认设置'}
+                            </Button>
+                        )}
                     </Form.Item>
                 </Form>
             </Card>
@@ -448,10 +498,10 @@ const BatchNoticeCreationPage = () => {
                     dataSource={dataSource}
                     columns={columns}
                     pagination={false}
-                    locale={{ emptyText: ( <Empty description={globalSettings ? "请点击“手动添加一行”或从Excel导入" : "请先在上方确认全局设置"}/> )}}
+                    locale={{ emptyText: (<Empty description={globalSettings ? "请点击“手动添加一行”或从Excel导入" : "请先在上方确认全局设置"} />) }}
                 />
             </Card>
-            
+
             <div style={{ marginTop: 24, textAlign: 'right' }}>
                 <Button type="primary" size="large" onClick={handleSubmitAll} disabled={dataSource.length === 0}>
                     批量提交 {dataSource.length > 0 ? `(${dataSource.length}条)` : ''}

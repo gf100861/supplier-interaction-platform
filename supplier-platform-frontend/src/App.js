@@ -12,6 +12,7 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfigProvider } from './contexts/ConfigContext';
 import { PusherProvider } from './contexts/PusherContext'; // <-- 替换 SocketProvider
+import { CategoryProvider } from './contexts/CategoryContext'; // <-- 1. 导入
 // Import all pages and components
 import MainLayout from './Components/MainLayout';
 import ProtectedRoute from './Components/ProtectedRoute';
@@ -44,6 +45,7 @@ const ThemedApp = () => {
                     {/* 2. 依赖基础 Provider 的业务 Provider */}
                     <ConfigProvider>
                         <SupplierProvider>
+                             <CategoryProvider>
                             <AlertProvider>
                                 <NoticeProvider>
                                     <PusherProvider> {/* <-- 使用 PusherProvider */}
@@ -68,6 +70,7 @@ const ThemedApp = () => {
                                     </PusherProvider>
                                 </NoticeProvider>
                             </AlertProvider>
+                            </CategoryProvider>
                         </SupplierProvider>
                     </ConfigProvider>
                 </SocketProvider>

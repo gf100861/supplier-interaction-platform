@@ -1,460 +1,521 @@
-// src/Pages/NoticePage.js
-
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Tabs, Form, Modal, Button, Popconfirm, theme,Spin } from 'antd';
+import { Card, Typography, Input, Tabs, Form, Modal, Popconfirm, theme, Spin, List, Button, Space, Select, Divider, Timeline, Collapse, Image, Checkbox } from 'antd';
 import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
-// 1. 导入新创建的 Hooks 和组件
-import { useFilteredNotices } from '../hooks/useFilteredNotices';
-import { NoticeList } from '../Components/notice/NoticeList';
 
+// 1. 导入所有需要的组件、Hooks 和数据
+import { NoticeList } from '../Components/notice/NoticeList';
 import { RejectionModal } from '../Components/notice/RejectionModal';
 import { CorrectionModal } from '../Components/notice/CorrectionModal';
 import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
-// 2. 导入 Contexts 和数据
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import { useAlerts } from '../contexts/AlertContext';
-import { useConfig } from '../contexts/ConfigContext'; // 1. Import the useConfig hook
+import { useConfig } from '../contexts/ConfigContext';
+import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
+
 const { Title, Paragraph } = Typography;
 const { Search } = Input;
 const { TabPane } = Tabs;
 
 const NoticePage = () => {
-    // --- 状态管理 ---
+    // --- 状态管理 (已清理) ---
     const { notices, updateNotice, loading: noticesLoading } = useNotices();
-     const [activeCollapseKeys, setActiveCollapseKeys] = useState([]); // 这个 state 是正确的
     const { suppliers } = useSuppliers();
-    const { messageApi } = useNotification();
+    const { messageApi, notificationApi } = useNotification();
     const { token } = theme.useToken();
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedNotice, setSelectedNotice] = useState(null);
-    // const [isModalVisible, setIsModalVisible] = useState(false);
-    const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
-    const [rejectionModal, setRejectionModal] = useState({ visible: false, notice: null, handler: null });
-    const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
-    const [previewOpen, setPreviewOpen] = useState(false);
-    const [previewImage, setPreviewImage] = useState('');
-    const [previewTitle, setPreviewTitle] = useState('');
+    const { addAlert } = useAlerts();
+    const sendAlert = async (senderId, recipientId, msg, link) => {
+        try {
+            await addAlert(senderId, recipientId, msg, link);
+            notificationApi?.open({ message: '已发送提醒', description: msg, placement: 'bottomRight' });
+        } catch (e) {
+            console.error('发送提醒失败:', e);
+        }
+    };
+    const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
     const [form] = Form.useForm();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-    const { addAlert } = useAlerts(); // <-- 修改此行
-    // --- 数据逻辑 (使用自定义 Hook) ---
-    const { searchedNotices, groupedNotices } = useFilteredNotices(notices, currentUser, searchTerm);
 
-    const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
-    
-    const navigate = useNavigate(); // 获取 navigate 函数
-    const location = useLocation(); // 获取 location 对象
+    const [selectedNotice, setSelectedNotice] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCategories, setSelectedCategories] = useState([]);
+    const [activeCollapseKeys, setActiveCollapseKeys] = useState([]);
+    const [rejectionModal, setRejectionModal] = useState({ visible: false, notice: null, handler: null });
+    const [rejectionForm] = Form.useForm();
+    const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
+    const [reassignForm] = Form.useForm();
+
+    useEffect(() => {
+
+    }, [selectedNotice]);
+
+    // --- 数据逻辑 ---
+    const userVisibleNotices = useMemo(() => {
+
+
+        if (!currentUser || !notices) {
+
+            return [];
+        }
+
+
+        switch (currentUser.role) {
+            case 'Manager':
+
+                return notices;
+            case 'SD':
+                const managedSupplierIds = (currentUser.managed_suppliers || []).map(s => s.supplier.id);
+
+                return notices.filter(n => n.sdNotice?.creatorId === currentUser.id || managedSupplierIds.includes(n.assignedSupplierId));
+
+            case 'Supplier':
+                // 从当前用户对象中获取其所属的公司IDconcon
+                const supplierCompanyId = currentUser.supplier_id;
+
+                const filteredNotices = notices.filter(n => {
+                    // ✅ 修正：将 n.assigned_supplier_id 改为 n.assignedSupplierId
+                    const isMatch = n.assignedSupplierId === supplierCompanyId;
+                    return isMatch;
+                });
+
+                return filteredNotices;
+
+            default:
+                return [];
+        }
+    }, [notices, currentUser]);
+
+    const searchedNotices = useMemo(() => {
+        let data = userVisibleNotices;
+        const lowerCaseSearchTerm = searchTerm.toLowerCase().trim();
+        if (lowerCaseSearchTerm) {
+            data = data.filter(n => (n.title && n.title.toLowerCase().includes(lowerCaseSearchTerm)) || (n.noticeCode && n.noticeCode.toLowerCase().includes(lowerCaseSearchTerm)));
+        }
+        if (selectedCategories.length > 0) {
+            data = data.filter(n => selectedCategories.includes(n.category));
+        }
+        return data;
+    }, [userVisibleNotices, searchTerm, selectedCategories]);
+
+    const groupedNotices = useMemo(() => {
+        const grouped = {};
+        const singles = [];
+        searchedNotices.forEach(notice => {
+            if (notice.batchId) {
+                if (!grouped[notice.batchId]) grouped[notice.batchId] = [];
+                grouped[notice.batchId].push(notice);
+            } else {
+                singles.push(notice);
+            }
+        });
+        const batchItems = Object.values(grouped).map(batch => ({ isBatch: true, batchId: batch[0].batchId, notices: batch, representative: batch[0] }));
+        return [...batchItems, ...singles];
+    }, [searchedNotices]);
+
+    const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const noticeIdToOpen = params.get('open');
-
         if (noticeIdToOpen && notices.length > 0) {
             const noticeToOpen = notices.find(n => n.id === noticeIdToOpen);
             if (noticeToOpen) {
                 showDetailsModal(noticeToOpen);
-
-
                 navigate('/notices', { replace: true });
             }
         }
-    }, [location.search, notices, navigate]); // <-- 将 navigate 添加到依赖项
+    }, [location.search, notices, navigate]);
 
+    // --- 弹窗与通用 Handler ---
+  const showDetailsModal = (notice) => {
+    form.resetFields(); // 每次打开都重置表单
+    const history = notice.history || [];
+    const lastHistory = history[history.length - 1];
 
-    const showDetailsModal = (notice) => {
-        // 清空表单，防止旧数据污染
-        form.resetFields();
-
-        const history = notice.history || [];
-        const lastHistoryItem = history.length > 0 ? history[history.length - 1] : null;
-
-
-        if (notice.status === '待供应商提交行动计划' && lastHistoryItem?.type === 'sd_plan_rejection') {
-
-            // 3. 如果是，就从后往前查找上一次“供应商提交计划”的记录
-            const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission');
-
-            // 4. 如果找到了上次提交的记录，就用它的数据来填充表单
-            if (lastSubmission && lastSubmission.actionPlans) {
-                form.setFieldsValue({
-                    actionPlans: lastSubmission.actionPlans.map(p => ({
-                        ...p,
-                        // 重要：将日期字符串转换回 DatePicker 认识的 dayjs 对象
-                        deadline: p.deadline ? dayjs(p.deadline) : null
-                    }))
-                });
-            }
+    // 逻辑修正：检查 '计划被驳回' 的情况（兼容不同状态文案）
+    if (notice.status === '待供应商处理' && lastHistory?.type === 'sd_plan_rejection') {
+        const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission');
+        if (lastSubmission) {
+            form.setFieldsValue({
+                actionPlans: (lastSubmission.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline) : null })),
+            });
         }
+    }
+    // 逻辑补充：检查 '证据被驳回' 的情况
+    else if (notice.status === '待供应商上传证据' && lastHistory?.type === 'sd_evidence_rejection') {
+         const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
+         if(lastSubmission) {
+            // 注意：EvidencePerActionForm 的数据结构是 { evidence: [...] }
+            const evidenceValues = (lastSubmission.actionPlans || []).map(plan => ({
+                description: plan.evidenceDescription || '',
+                images: plan.evidenceImages || [],
+            }));
+            form.setFieldsValue({ evidence: evidenceValues });
+         }
+    }
 
-        else if (notice.status === '待供应商上传证据' && lastHistoryItem?.type === 'sd_evidence_rejection') {
-
-            const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
-            if (lastSubmission) {
-                form.setFieldsValue({
-                    description: lastSubmission.description,
-                    images: lastSubmission.images || [],
-                    attachments: lastSubmission.attachments || []
-                });
-            }
-        }
-
-        // --- 新增逻辑结束 ---
-
-        // 原有逻辑保持不变
-        setSelectedNotice(notice);
-        setIsDetailModalVisible(true);
-    };
-
-
+    setSelectedNotice(notice);
+};
     const handleDetailModalCancel = () => {
-        setIsDetailModalVisible(false);
-        setSelectedNotice(null);
-        form.resetFields();
-    };
 
-    const handleSdPlanApprove = async (id, description = '计划已批准，请尽快执行。') => {
-        const noticeId = id || selectedNotice.id;
-        const currentNotice = notices.find(n => n.id === noticeId);
-        if (!currentNotice) return;
+        setSelectedNotice(null);
+    }
+    const handleRejectionCancel = () => { rejectionForm.resetFields(); setRejectionModal({ visible: false, notice: null, handler: null }); };
+    const handleCorrectionCancel = () => { reassignForm.resetFields(); setCorrectionModal({ visible: false, notice: null }); };
+    const handleReviewToggle = async (notice, e) => {
+        e.stopPropagation();
+        await updateNotice(notice.id, { isReviewed: !notice.isReviewed });
+        messageApi.success(!notice.isReviewed ? '已标记为“已审阅”' : '已取消“已审阅”标记');
+    };
+    // --- 核心业务处理函数 (精简版) ---
+    
+    // 1. 供应商提交行动计划
+     const handlePlanSubmit = async (values) => {
+           const notice = selectedNotice;
+           if (!notice) return;
+           const formattedPlans = (values.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline).format('YYYY-MM-DD') : '' }));
+           const newHistory = { type: 'supplier_plan_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已提交行动计划。', actionPlans: formattedPlans };
+           const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+           await updateNotice(notice.id, { status: '待SD审核', history: [...currentHistory, newHistory] });
+           sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已提交 "${notice.title}" 的行动计划待审核。`, `/notices?open=${notice.id}`);
+           messageApi.success('行动计划提交成功！');
+           handleDetailModalCancel();
+       };
+   
+      // 2. SD 批准行动计划（支持从弹窗或列表快捷操作触发）
+       const handlePlanApprove = async (targetNotice) => {
+        const notice = targetNotice || selectedNotice;
+        if (!notice) return;
+
+        // ✅ 核心修正：找到供应商提交的最新一份行动计划
+        const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
+        if (!lastPlanSubmission) {
+            messageApi.error("无法找到供应商提交的行动计划，操作失败！");
+            return;
+        }
 
         const newHistory = {
             type: 'sd_plan_approval',
             submitter: currentUser.name,
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            description
+            description: '行动计划已批准，等待供应商上传完成证据。',
+            // ✅ 核心修正：将找到的行动计划 '接力' 保存到这条历史记录中
+            actionPlans: lastPlanSubmission.actionPlans,
         };
 
-        await updateNotice(noticeId, {
-            status: '待供应商上传证据',
-            history: currentNotice.history.concat(newHistory)
-        });
-
-        // --- 核心修正：使用正确的 noticeId 变量 ---
-        addAlert(
-            currentUser.id,
-            currentNotice.assignedSupplierId,
-            `您提交的 "${currentNotice.title}" 行动计划已通过审核。`,
-            `/notices?open=${noticeId}`
-        );
-
-        messageApi.success('行动计划已批准！');
-
-        // --- 核心修正：使用正确的弹窗状态和关闭函数 ---
-        if (selectedNotice?.id === noticeId) {
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        console.log('[handlePlanApprove] updating', notice.id, '-> 待供应商上传证据');
+        await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
+        
+        sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被批准。`, `/notices?open=${notice.id}`);
+        messageApi.success('计划已批准！');
+        if (!targetNotice) {
             handleDetailModalCancel();
         }
     };
+       
+       // 3. SD 驳回行动计划
+       const handlePlanReject = async (values, noticeArg) => {
+           const notice = noticeArg || rejectionModal.notice;
+           if (!notice) return;
+           const newHistory = { type: 'sd_plan_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[计划被驳回] ${values.rejectionReason}` };
+           const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+           try {
+               console.log('[handlePlanReject] updating', notice.id, '-> 待供应商处理');
+               await updateNotice(notice.id, { status: '待供应商处理', history: [...currentHistory, newHistory] });
+               sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被驳回，请根据意见修改并重新提交。`, `/notices?open=${notice.id}`);
+               messageApi.warning('计划已驳回！');
+           } catch (e) {
+               messageApi.error('退回失败：' + (e?.message || '未知错误'));
+               return;
+           } finally {
+               handleRejectionCancel();
+               if (selectedNotice?.id === notice.id) handleDetailModalCancel();
+           }
+       };
+   
+       // 4. 供应商提交完成证据
+       const handleEvidenceSubmit = async (values) => {
+           const notice = selectedNotice;
+           if (!notice) return;
+           // ✨ 新逻辑：从 values 中提取带证据的行动计划
+           const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'sd_plan_approval' || h.type === 'supplier_plan_submission');
+           const originalPlans = lastPlanSubmission?.actionPlans || [];
+   
+           const plansWithEvidence = originalPlans.map((plan, index) => ({
+               ...plan,
+               evidenceDescription: values.evidence?.[index]?.description || '',
+               evidenceImages: values.evidence?.[index]?.images || [],
+           }));
+   
+           const newHistory = { type: 'supplier_evidence_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已上传完成证据。', actionPlans: plansWithEvidence };
+           const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+           console.log('[handleEvidenceSubmit] updating', notice.id, '-> 待SD关闭');
+           await updateNotice(notice.id, { status: '待SD关闭', history: [...currentHistory, newHistory] });
+           sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`, `/notices?open=${notice.id}`);
+           messageApi.success('完成证据提交成功！');
+           handleDetailModalCancel();
+       };
+   
+      // 5. SD 批准并关闭（支持从弹窗或列表快捷操作触发）
+      const handleClosureApprove = async (targetNotice) => {
+          const notice = targetNotice || selectedNotice;
+          if(!notice) return;
+          const newHistory = { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '审核通过，问题关闭。' };
+           const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+          console.log('[handleClosureApprove] updating', notice.id, '-> 已完成');
+          await updateNotice(notice.id, { status: '已完成', history: [...currentHistory, newHistory]});
+           sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改已被批准关闭。`, `/notices?open=${notice.id}`);
+          messageApi.success('通知单已关闭！');
+          if (!targetNotice) {
+              handleDetailModalCancel();
+          }
+       };
+       
+       // 6. SD 驳回证据
+       const handleEvidenceReject = async (values) => {
+           const notice = rejectionModal.notice;
+           if (!notice) return;
+           const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回] ${values.rejectionReason}` };
+           const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+           console.log('[handleEvidenceReject] updating', notice.id, '-> 待供应商上传证据');
+           await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
+           sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改证据已被驳回，原因: ${values.rejectionReason}`, `/notices?open=${notice.id}`);
+           messageApi.warning('证据已驳回！');
+           handleRejectionCancel();
+           if (selectedNotice?.id === notice.id) handleDetailModalCancel();
+       };
 
-   const handleSdEvidenceApprove = async (id, description = '证据审核通过，问题关闭。') => {
-        const noticeId = id || selectedNotice.id;
-        const currentNotice = notices.find(n => n.id === noticeId);
-        if (!currentNotice) return;
+        // 6.1 SD 逐条批准证据
+        const handleEvidenceItemApprove = async (index) => {
+            const notice = selectedNotice;
+            if (!notice) return;
 
-        const newHistory = { type: 'sd_evidence_approval', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description };
-        
-        await updateNotice(noticeId, {
-            status: '已完成',
-            history: currentNotice.history.concat(newHistory)
-        });
-        
-        addAlert(
-            currentUser.id,
-            currentNotice.assignedSupplierId,
-            `您提交的关于 "${currentNotice.title}" 的证据已通过审核，问题已关闭。`,
-            `/notices?open=${noticeId}`
-        );
+            const history = Array.isArray(notice.history) ? notice.history : [];
+            // 找到最新一次供应商证据提交的位置
+            let lastEvidencePos = -1;
+            for (let i = history.length - 1; i >= 0; i--) {
+                if (history[i].type === 'supplier_evidence_submission') { lastEvidencePos = i; break; }
+            }
+            const lastEvidenceSubmission = lastEvidencePos >= 0 ? history[lastEvidencePos] : null;
+            const submittedPlans = lastEvidenceSubmission?.actionPlans || [];
+            if (index < 0 || index >= submittedPlans.length) {
+                messageApi.error('无效的证据索引');
+                return;
+            }
 
-        messageApi.success('证据审核通过，流程已完成！');
-        if (selectedNotice?.id === noticeId) handleDetailModalCancel();
-    };
+            // 统计该次提交后的逐条批准记录
+            const approvedSet = new Set();
+            for (let i = lastEvidencePos + 1; i < history.length; i++) {
+                const h = history[i];
+                if (h.type === 'sd_evidence_item_approval' && typeof h.evidenceIndex === 'number') {
+                    approvedSet.add(h.evidenceIndex);
+                }
+            }
+            if (approvedSet.has(index)) {
+                messageApi.info('该条证据已批准');
+                return;
+            }
+            approvedSet.add(index);
 
-    const handleQuickApprove = (notice) => {
-        if (notice.status === '待SD审核行动计划') {
-            handleSdPlanApprove(notice.id, `行动计划已批准`);
-        } else if (notice.status === '待SD审核证据') {
-            handleSdEvidenceApprove(notice.id, `证据审核通过，问题关闭`);
-        }
-    };
+            const approvalHistory = {
+                type: 'sd_evidence_item_approval',
+                submitter: currentUser.name,
+                time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                description: `已批准证据第 ${index + 1} 条`,
+                evidenceIndex: index,
+            };
 
-    const showCorrectionModal = (notice) => {
-        setCorrectionModal({ visible: true, notice });
-    };
-
-    const handlePlanSubmit = async (values) => {
-        const currentNotice = selectedNotice;
-        if (!currentNotice) return;
-
-        const formattedActionPlans = (values.actionPlans || []).map(plan => ({
-            ...plan,
-            deadline: plan.deadline ? dayjs(plan.deadline).format('YYYY-MM-DD') : ''
-        }));
-
-        const newHistory = {
-            type: 'supplier_plan_submission',
-            submitter: currentUser.name,
-            time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            actionPlans: formattedActionPlans,
-            description: "提交了行动计划以供审核。"
+            const allApproved = approvedSet.size === submittedPlans.length;
+            if (allApproved) {
+                const closeHistory = { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '所有证据均已批准，问题关闭。' };
+                console.log('[handleEvidenceItemApprove] all approved -> 已完成');
+                await updateNotice(notice.id, { status: '已完成', history: [...history, approvalHistory, closeHistory] });
+                sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改证据均已批准，单据已关闭。`, `/notices`);
+                messageApi.success('该条证据已批准，所有证据均通过，单据已关闭！');
+                handleDetailModalCancel();
+            } else {
+                console.log('[handleEvidenceItemApprove] single approved index', index);
+                await updateNotice(notice.id, { history: [...history, approvalHistory] });
+                // 发送实时提醒：第 index+1 条证据已批准
+                sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的第 ${index + 1} 条证据已被批准。`, `/notices?open=${notice.id}`);
+                messageApi.success('该条证据已批准');
+            }
         };
 
-        await updateNotice(currentNotice.id, {
-            status: '待SD审核行动计划', // 狀態變更為：待SD審核行動計劃
-            history: currentNotice.history.concat(newHistory)
-        });
+        // 6.2 SD 逐条驳回证据（退回至行动阶段）
+        const handleEvidenceItemReject = async (values, index) => {
+            const notice = selectedNotice;
+            if (!notice) return;
 
-        const creatorId = currentNotice.sdNotice.creatorId;
-        addAlert(
-            currentUser.id, // 1. 发送人: 当前供应商
-            creatorId,      // 2. 接收人: 创建通知的SD
-            `供应商 ${currentUser.name} 已提交了 "${currentNotice.title}" 的行动计划。`, // 3. 消息
-            `/notices?open=${currentNotice.id}` // 4. 链接
-        );
+            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+            const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回-第${index + 1}项] ${values.rejectionReason}`, evidenceIndex: index };
 
-        messageApi.success('行动计划提交成功！');
-        handleDetailModalCancel(); // <--- 修改为此行
-    };
-
-  const handleSdEvidenceReject = async (values, id) => {
-        const noticeId = id || selectedNotice.id;
-        const currentNotice = notices.find(n => n.id === noticeId);
-        if (!currentNotice) return;
-        
-        const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被退回] ${values.rejectionReason}` };
-        
-        await updateNotice(noticeId, {
-            status: '待供应商上传证据',
-            history: currentNotice.history.concat(newHistory)
-        });
-        
-        addAlert(
-            currentUser.id,
-            currentNotice.assignedSupplierId,
-            `您为 "${currentNotice.title}" 提交的证据已被退回，原因：${values.rejectionReason}`,
-            `/notices?open=${noticeId}`
-        );
-
-        messageApi.warning('证据审核不通过，已退回！');
-        if (selectedNotice?.id === noticeId) handleDetailModalCancel()
-    };
-
-
-    const showRejectionModal = (notice) => {
-        let handler;
-        if (notice.status === '待SD审核行动计划') {
-            handler = (values) => handleSdPlanReject(values, notice.id);
-        } else if (notice.status === '待SD审核证据') {
-            handler = (values) => handleSdEvidenceReject(values, notice.id);
-        }
-        setRejectionModal({ visible: true, notice, handler });
-    };
-
-    const handleRejectionSubmit = (values) => {
-        if (rejectionModal.handler) {
-            rejectionModal.handler(values);
-        }
-        setRejectionModal({ visible: false, notice: null, handler: null });
-    };
-
-
-    const getBase64 = (file) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = (error) => reject(error);
-    });
-
-    const handlePreview = async (file) => {
-        if (!file.url && !file.preview) {
-            file.preview = await getBase64(file.originFileObj);
-        }
-        setPreviewImage(file.url || file.preview);
-        setPreviewOpen(true);
-        setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
-    };
-
-    const handlePreviewCancel = () => setPreviewOpen(false);
-
-    const handleEvidenceSubmit = async (values) => {
-        const currentNotice = selectedNotice;
-        if (!currentNotice) return;
-
-        const newHistory = {
-            type: 'supplier_evidence_submission',
-            submitter: currentUser.name,
-            time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            description: values.description,
-            images: values.images || [],
-            attachments: values.attachments || []
+            // 驳回任意一条证据即退回到“待供应商上传证据”（保留上次行动计划与证据历史，供应商在此基础上修改/补充）
+            console.log('[handleEvidenceItemReject] updating', notice.id, '-> 待供应商上传证据 (item', index, ')');
+            await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
+            // 实时提醒：证据第 index+1 条被驳回
+            sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的第 ${index + 1} 条证据被驳回，请按要求补充并重新上传证据。`, `/notices?open=${notice.id}`);
+            messageApi.warning('该条证据已驳回，单据退回到提交证据阶段');
+            handleRejectionCancel();
+            handleDetailModalCancel();
         };
+       
+      // 通用驳回弹窗
+      const handleRejectionSubmit = async () => {
+          try {
+              const values = await rejectionForm.validateFields();
+              if (!rejectionModal.handler) {
+                  messageApi.error('未找到处理函数，请重试');
+                  return;
+              }
+              await rejectionModal.handler(values);
+              messageApi.success('已提交退回原因');
+              // 双保险：若子处理未主动关闭弹窗，这里也关闭
+              if (rejectionModal.visible) {
+                  handleRejectionCancel();
+              }
+          } catch (error) {
+              console.log('Validate Failed:', error);
+          }
+      };
 
-        await updateNotice(currentNotice.id, {
-            status: '待SD审核证据',
-            history: currentNotice.history.concat(newHistory)
-        });
-          const creatorId = currentNotice.sdNotice.creatorId;
-        addAlert(
-            currentUser.id, // 1. 发送人: 当前供应商
-            creatorId,      // 2. 接收人: 创建通知的SD
-            `供应商 ${currentUser.name} 已为 "${currentNotice.title}" 提交了证据。`, // 3. 消息
-            `/notices?open=${currentNotice.id}` // 4. 链接
-        );
-        messageApi.success('证据提交成功！');
-        handleDetailModalCancel();
-    };
-
-    const handleCorrectionCancel = () => {
-        setCorrectionModal({ visible: false, notice: null });
-    };
-
+         // ✨ 新增：处理管理员“重分配供应商”的逻辑
     const handleReassignment = async (values) => {
-        const { newSupplierId } = values;
-        const noticeToUpdate = correctionModal.notice;
-        const newSupplier = suppliers.find(s => s.id === newSupplierId);
+        const notice = correctionModal.notice;
+        if (!notice) return;
 
-        if (!noticeToUpdate || !newSupplier) return;
+        const newSupplier = suppliers.find(s => s.id === values.newSupplierId);
+        if (!newSupplier) {
+            messageApi.error('未找到指定的供应商！');
+            return;
+        }
 
         const newHistory = {
             type: 'manager_reassignment',
             submitter: currentUser.name,
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            description: `[管理操作] 将此通知从 ${noticeToUpdate.assignedSupplierName} 重新指派给 ${newSupplier.name}。`
+            description: `[管理修正] 通知单已重分配给新的供应商: ${newSupplier.name}。原因: ${values.reason || '未提供原因'}`,
         };
 
-        await updateNotice(noticeToUpdate.id, {
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        await updateNotice(notice.id, {
             assignedSupplierId: newSupplier.id,
             assignedSupplierName: newSupplier.name,
-            status: '待供应商提交行动计划', // 状态重置
-            history: noticeToUpdate.history.concat(newHistory)
+            history: [...currentHistory, newHistory],
         });
 
-        messageApi.success('通知单已成功重新指派！');
-        handleCorrectionCancel();
+        // 为相关方创建提醒
+        addAlert(currentUser.id, notice.assignedSupplierId, `"${notice.title}" 已被重分配，您无需再处理。`, `/notices`);
+        addAlert(currentUser.id, newSupplier.id, `您有一个新的通知单被分配: "${notice.title}"。`, `/notices?open=${notice.id}`);
+        addAlert(currentUser.id, notice.creatorId, `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.name}。`, `/notices?open=${notice.id}`);
+
+        messageApi.success('通知单已成功重分配！');
+        setCorrectionModal({ visible: false, notice: null }); // 关闭修正弹窗
+        reassignForm.resetFields();
     };
 
-    const handleVoidNotice = async () => {
-        const noticeToUpdate = correctionModal.notice;
-        if (!noticeToUpdate) return;
+    // ✨ 新增：处理管理员“作废通知单”的逻辑
+    const handleVoidNotice = async (values) => {
+        const notice = correctionModal.notice;
+        if (!notice) return;
 
         const newHistory = {
             type: 'manager_void',
             submitter: currentUser.name,
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            description: '[管理操作] 此通知单已被作废。'
+            description: `[管理修正] 通知单已作废。原因: ${values.reason || '未提供原因'}`,
         };
 
-        await updateNotice(noticeToUpdate.id, {
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        await updateNotice(notice.id, {
             status: '已作废',
-            history: noticeToUpdate.history.concat(newHistory)
+            history: [...currentHistory, newHistory],
         });
+
+        // 为相关方创建提醒
+        addAlert(currentUser.id, notice.assignedSupplierId, `"${notice.title}" 已被作废，您无需再处理。`, `/notices`);
+        addAlert(currentUser.id, notice.creatorId, `您创建的 "${notice.title}" 已被作废。`, `/notices?open=${notice.id}`);
 
         messageApi.warning('通知单已作废！');
-        handleCorrectionCancel();
+        setCorrectionModal({ visible: false, notice: null }); // 关闭修正弹窗
+        reassignForm.resetFields();
     };
+   
 
-    const handleSdPlanReject = async (values, id) => {
-        const noticeId = id || selectedNotice.id;
-        const currentNotice = notices.find(n => n.id === noticeId);
-        if (!currentNotice) return;
-        const newHistory = { type: 'sd_plan_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[计划被退回] ${values.rejectionReason}` };
-        await updateNotice(noticeId, {
-            status: '待供应商提交行动计划',
-            history: currentNotice.history.concat(newHistory)
-        });
-        const supplierId = currentNotice.assignedSupplierId;
-        addAlert(
-            currentUser.id,
-            supplierId,
-            `您提交的 "${currentNotice.title}" 行动计划已通过审核，请尽快上传证据。`,
-            `/notices?open=${noticeId}`
-        );
-        messageApi.warning('行动计划已退回！');
-        if (isDetailModalVisible && selectedNotice?.id === noticeId) handleDetailModalCancel();
-    };
-
-    const handleReviewToggle = async (notice, e) => {
-        e.stopPropagation(); // 阻止事件冒泡，防止意外行为
-        const newReviewedState = !notice.isReviewed;
-        
-        await updateNotice(notice.id, {
-            isReviewed: newReviewedState
-        });
-
-        messageApi.success(newReviewedState ? '已标记为“已审阅”' : '已取消“已审阅”标记');
-    };
+const showRejectionModal = (notice, rejectHandler) => {
+    console.log('[showRejectionModal] open for notice', notice?.id);
+    setRejectionModal({
+        visible: true,
+        notice: notice,
+        handler: (values) => rejectHandler(values, notice)
+    });
+    messageApi.info('请填写退回原因');
+};
 
     const getActionsForItem = (item) => {
-        const actions = [];
-        const isSDOrManager = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager');
-        const isManager = currentUser && currentUser.role === 'Manager';
-
-        const stopPropagationAndRun = (e, func) => {
-            e?.stopPropagation();
-            func();
-        };
-
-        if (isSDOrManager && (item.status === '待SD审核行动计划' || item.status === '待SD审核证据')) {
-            actions.push(
-                <Popconfirm
-                    key="approve" title="确定要通过吗?"
-                    onConfirm={(e) => stopPropagationAndRun(e, () => handleQuickApprove(item))}
-                    onCancel={(e) => e?.stopPropagation()}
-                >
-                    <Button type="link" onClick={(e) => e.stopPropagation()}>通过</Button>
-                </Popconfirm>
-            );
-            actions.push(
-                <Button key="reject" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item))}>
-                    驳回
-                </Button>
-            );
-        }
-        if (isManager && item.status !== '已完成' && item.status !== '已作废') {
-            actions.push(
-                <Button key="correct" type="link" style={{ color: token.colorWarning }} onClick={(e) => {
-                    e.stopPropagation();
-                    showCorrectionModal(item);
-                }}>
-                    修正/撤回
-                </Button>
-            );
-        }
-        actions.push(
-            <Button key="details" onClick={(e) => stopPropagationAndRun(e, () => showDetailsModal(item))}>
-                查看详情
-            </Button>
-        );
-
-        return actions;
-    };
+    const actions = [];
+    const stopPropagationAndRun = (e, func) => { e?.stopPropagation(); func(); };
     
+    // SD 和 Manager 的快捷操作
+    if (currentUser.role === 'SD' || currentUser.role === 'Manager') {
+        // 审批计划阶段（兼容不同文案）
+        if (item.status === '待SD审核' || item.status === '待SD审核计划') {
+            actions.push(<Button key="quick_approve_plan" type="link" onClick={(e) => stopPropagationAndRun(e, () => handlePlanApprove(item))}>批准计划</Button>);
+            actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
+        }
+        // 关闭阶段
+        if (item.status === '待SD关闭') {
+            actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
+        }
+    }
+    
+    actions.push(<Button key="details" onClick={(e) => stopPropagationAndRun(e, () => showDetailsModal(item))}>查看详情</Button>);
+    
+    // 管理员的修正/撤回按钮 (如果需要)
+    if (currentUser.role === 'Manager' && item.status !== '已完成' && item.status !== '已作废') {
+        actions.push(<Button key="correct" type="link" style={{ color: token.colorWarning }} onClick={(e) => stopPropagationAndRun(e, () => setCorrectionModal({ visible: true, notice: item }))}>修正/撤回</Button>);
+    }
+
+    return actions;
+};
 
     const renderTabs = () => {
         if (!currentUser) return <p>请先登录</p>;
-          if (configLoading || noticesLoading) {
-            return (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
-                    <Spin size="large" />
-                </div>
-            );
-        }
-        const tabsConfig = {
-            Supplier: [{ key: 'pending', label: '待我处理', statuses: ['待供应商提交行动计划', '待供应商上传证据'] }, { key: 'review', label: '等待审核', statuses: ['待SD审核行动计划', '待SD审核证据'] }, { key: 'completed', label: '已完成', statuses: ['已完成'] },],
-            SD: [{ key: 'review', label: '待我审核', statuses: ['待SD审核行动计划', '待SD审核证据'] }, { key: 'pending', label: '待供应商处理', statuses: ['待供应商提交行动计划', '待供应商上传证据'] }, { key: 'completed', label: '已完成', statuses: ['已完成'] },],
-            Manager: [{ key: 'all', label: '所有单据', statuses: ['待供应商提交行动计划', '待SD审核行动计划', '待供应商上传证据', '待SD审核证据', '已完成'] }, { key: 'review', label: '待审核', statuses: ['待SD审核行动计划', '待SD审核证据'] }, { key: 'pending', label: '待供应商处理', statuses: ['待供应商提交行动计划', '待供应商上传证据'] }, { key: 'completed', label: '已完成', statuses: ['已完成'] },]
-        };
+        if (configLoading || noticesLoading) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}><Spin size="large" /></div>; }
+
+      // 在 NoticePage.js > renderTabs 函数中...
+
+const tabsConfig = {
+    Supplier: [
+        { key: 'pending', label: '待我处理', statuses: ['待供应商处理', '待供应商上传证据'] },
+        { key: 'review', label: '等待审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
+        { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
+    ],
+    SD: [
+        { key: 'review', label: '待我审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
+        { key: 'pending', label: '待供应商处理', statuses: ['待供应商处理', '待供应商上传证据'] },
+        { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
+    ],
+    Manager: [
+        { key: 'all', label: '所有单据', statuses: allPossibleStatuses },
+        { key: 'review', label: '待审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
+        { key: 'pending', label: '待供应商处理', statuses: ['待供应商处理', '待供应商上传证据'] },
+        { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
+    ]
+};
         const userTabs = tabsConfig[currentUser.role];
         return (
             <Tabs defaultActiveKey={userTabs[0].key} type="card">
                 {userTabs.map(tab => {
                     const filteredData = searchedNotices.filter(n => tab.statuses.includes(n.status));
-                    const tabGroupedData = groupedNotices.filter(g =>
-                        g.isBatch ? g.notices.some(n => tab.statuses.includes(n.status)) : tab.statuses.includes(g.status)
-                    );
+                    const tabGroupedData = groupedNotices.filter(g => g.isBatch ? g.notices.some(n => tab.statuses.includes(n.status)) : tab.statuses.includes(g.status));
                     return (
                         <TabPane tab={`${tab.label} (${filteredData.length})`} key={tab.key}>
+                            {/* --- 核心修正：在这里将所有需要的 props 完整地传递下去 --- */}
                             <NoticeList
                                 data={tabGroupedData}
                                 getActionsForItem={getActionsForItem}
@@ -474,40 +535,43 @@ const NoticePage = () => {
     };
 
     return (
-        <div style={{ padding: '24px', background: token.colorBgLayout }}>
+        <div style={{ padding: '24px' }}>
             <Card style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                    <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}></Paragraph></div>
-                    <Search placeholder="搜索标题、编号、供应商、种类..." allowClear onSearch={value => setSearchTerm(value)} onChange={e => setSearchTerm(e.target.value)} style={{ width: 300 }} />
+                    <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>{/* ... */}</Paragraph></div>
+                    <Space wrap>
+                        <Select mode="multiple" allowClear style={{ width: 250 }} placeholder="按问题类型筛选" onChange={setSelectedCategories} options={noticeCategories.map(c => ({ label: c, value: c }))} />
+                        <Search placeholder="搜索标题、编号..." allowClear onSearch={setSearchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ width: 300 }} />
+                    </Space>
                 </div>
             </Card>
+            <Card>{renderTabs()}</Card>
 
-            <Card>
-                {renderTabs()}
-            </Card>
-
-
-            <NoticeDetailModal
-                visible={isDetailModalVisible}
+           <NoticeDetailModal
+                open={!!selectedNotice}
                 notice={selectedNotice}
                 onCancel={handleDetailModalCancel}
                 currentUser={currentUser}
                 form={form}
+                
                 onPlanSubmit={handlePlanSubmit}
+                onPlanApprove={handlePlanApprove}
+                showPlanRejectionModal={() => setRejectionModal({ visible: true, notice: selectedNotice, handler: handlePlanReject })}
+                
                 onEvidenceSubmit={handleEvidenceSubmit}
-                onPlanApprove={() => handleSdPlanApprove(selectedNotice.id)}
-                onEvidenceApprove={() => handleSdEvidenceApprove(selectedNotice.id)}
-                showRejectionModal={showRejectionModal}
-                handlePreview={handlePreview}
+                onClosureApprove={handleClosureApprove}
+                showEvidenceRejectionModal={() => setRejectionModal({ visible: true, notice: selectedNotice, handler: handleEvidenceReject })}
+                onApproveEvidenceItem={(index) => handleEvidenceItemApprove(index)}
+                onRejectEvidenceItem={(index) => setRejectionModal({ visible: true, notice: selectedNotice, handler: (values) => handleEvidenceItemReject(values, index) })}
             />
 
             <RejectionModal
                 visible={rejectionModal.visible}
                 notice={rejectionModal.notice}
-                onCancel={() => setRejectionModal({ visible: false, notice: null, handler: null })}
-                _ onSubmit={handleRejectionSubmit}
+                form={rejectionForm}
+                onCancel={handleRejectionCancel}
+                onSubmit={handleRejectionSubmit}
             />
-
             <CorrectionModal
                 visible={correctionModal.visible}
                 notice={correctionModal.notice}
@@ -515,13 +579,12 @@ const NoticePage = () => {
                 onReassign={handleReassignment}
                 onVoid={handleVoidNotice}
                 suppliers={suppliers}
+                form={reassignForm}
             />
-
-            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handlePreviewCancel}>
-                <img alt="预览" style={{ width: '100%' }} src={previewImage} />
-            </Modal>
         </div>
     );
 };
+
+
 
 export default NoticePage;

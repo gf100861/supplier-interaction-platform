@@ -1,46 +1,61 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient'; // 1. 导入我们创建的 Supabase 客户端
 
 const ConfigContext = createContext();
 
-// --- 核心修改 1：定义动态的API基础URL ---
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-
-
 export const ConfigProvider = ({ children }) => {
-    const [config, setConfig] = useState({
-        noticeCategories: [],
-        noticeCategoryDetails: {},
-    });
-    const [loading, setLoading] = useState(true);
+    const [config, setConfig] = useState({
+        noticeCategories: [],
+        noticeCategoryDetails: {},
+    });
+    const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        // 在应用加载时，从后端获取全局配置
-        // --- 核心修改 2：使用动态URL ---
-        fetch(`${API_BASE_URL}/api/config`)
-            .then(res => res.json())
-            .then(data => {
-                setConfig(data);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error("获取应用配置失败:", err);
-                setLoading(false);
-            });
-    }, []); // 空依赖数组，确保只在启动时获取一次
+    useEffect(() => {
+        const fetchConfig = async () => {
+            try {
+                // --- 2. 核心修正：从 Supabase 的 'notice_categories' 表中获取数据 ---
+                const { data, error } = await supabase
+                    .from('notice_categories')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+                
+                if (error) throw error;
 
-    const value = {
-        ...config,
-        loading,
-    };
+                // --- 3. 将从数据库获取的数据，处理成我们前端需要的两种格式 ---
+                const categories = data.map(c => c.name); //  -> ['产品质量', '现场管理', ...]
+                
+                const details = data.reduce((acc, c) => {
+                    acc[c.name] = { id: c.id, name: c.name, color: c.color };
+                    return acc;
+                }, {}); // -> { '产品质量': { id: 'QC', ..., color: 'blue' }, ... }
 
-    return (
-        <ConfigContext.Provider value={value}>
-            {children}
-        </ConfigContext.Provider>
-    );
+                setConfig({
+                    noticeCategories: categories,
+                    noticeCategoryDetails: details,
+                });
+
+            } catch (err) {
+                console.error("从Supabase获取配置数据失败:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchConfig();
+    }, []);
+
+    const value = {
+        ...config,
+        loading,
+    };
+
+    return (
+        <ConfigContext.Provider value={value}>
+            {children}
+        </ConfigContext.Provider>
+    );
 };
 
-// 创建一个自定义 Hook，方便其他组件使用
 export const useConfig = () => {
-    return useContext(ConfigContext);
+    return useContext(ConfigContext);
 };

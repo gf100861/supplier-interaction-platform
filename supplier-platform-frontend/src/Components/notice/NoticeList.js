@@ -1,13 +1,42 @@
 import React from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, theme } from 'antd';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, theme,Tooltip } from 'antd';
 import { FileTextOutlined, ProfileOutlined, EyeOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
 // --- 子组件：单个通知单 ---
+const getStatusTag = (status) => {
+    let color;
+    switch (status) {
+        case '待供应商处理':
+            color = 'processing'; // 蓝色
+            break;
+        case '待供应商上传证据':
+            color = 'warning'; // 橙色
+            break;
+        case '待SD审核':
+        case '待SD关闭':
+            color = 'purple'; // 紫色
+            break;
+        case '已完成':
+            color = 'success'; // 绿色
+            break;
+        case '已作废':
+            color = 'default'; // 灰色
+            break;
+        default:
+            color = 'default';
+    }
+    return <Tag color={color}>{status}</Tag>;
+};
+
+
 const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleReviewToggle, token, currentUser, noticeCategoryDetails }) => {
     
     // --- 核心修正：在使用前，进行一次安全检查，防止极端情况下的崩溃 ---
+     const displayTitle = (item.title && typeof item.title === 'object') 
+        ? item.title.richText 
+        : item.title;
     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category]) 
         ? noticeCategoryDetails[item.category] 
         : { id: 'N/A', color: 'default' };
@@ -25,26 +54,28 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
                 />
             )}
             <List.Item.Meta
+                style={{ paddingLeft: '24px' }}
                 avatar={<FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary }} />}
                 title={
-                    <Space>
-                        <a onClick={() => showDetailsModal(item)}><Text strong>{item.title}</Text></a>
+                     <Space>
+                        <a onClick={() => showDetailsModal(item)}><Text strong>{displayTitle || ''}</Text></a>
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
                     </Space>
                 }
-                description={`编号: ${item.id} | 指派给: ${item.assignedSupplierName}`}
+                description={`编号: ${item.noticeCode || item.id} | 指派给: ${item.supplier.shortCode}`}
+                
             />
             <Space size="middle">
                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
-                <Tag color={item.status === '已完成' || item.status === '已作废' ? 'default' : item.status.includes('审核') ? 'warning' : 'processing'}>
-                    {item.status}
-                </Tag>
+                {/* ✨ 调用新函数来显示带颜色的状态 */}
+                {getStatusTag(item.status)}
             </Space>
         </List.Item>
     );
 };
 // --- 子组件：批量任务包 ---
 const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => (
+
     <List.Item style={{ display: 'block', padding: 0 }}>
         <Collapse
             bordered={false}
@@ -58,8 +89,12 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                 header={
                     <List.Item.Meta
                         avatar={<ProfileOutlined style={{ fontSize: '24px', color: props.token.colorPrimary }} />}
-                        title={<Text strong>{`批量任务 (共 ${batch.notices.length} 项)`}</Text>}
-                        description={`来自: ${batch.representative.sdNotice.creator} | 创建于: ${batch.representative.sdNotice.createTime.split(' ')[0]}`}
+                         title={
+                                <Tooltip title={batch.representative?.assignedSupplierName || '未知供应商'}>
+                                    <Text strong style={{ fontSize: '16px' }}> {batch.representative?.supplier?.shortCode || '未知'}-{batch.representative?.category || '未知'}</Text>
+                                </Tooltip>
+                            }
+                        description={`来自: ${batch.representative?.creator?.username || '未知创建人'} | 创建于: ${batch.representative.sdNotice.createTime.split(' ')[0]}`}
                     />
                 }
             >
