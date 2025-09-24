@@ -1,56 +1,61 @@
+// supplier-platform-frontend/src/contexts/AlertContext.js (Corrected)
+
 import React, { useState, createContext, useContext, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { usePusher } from './PusherContext'; // <-- 1. 替换 useSocket
+// --- This is the corrected import statement ---
+import { useSocket } from './SocketContext';
+
 const AlertContext = createContext();
 export const useAlerts = () => useContext(AlertContext);
 
-// --- 核心修改 1：定义动态的API基础URL ---
-// 如果环境变量存在（在Vercel部署时），则使用它；否则，回退到本地地址
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-
 
 export const AlertProvider = ({ children }) => {
     const [alerts, setAlerts] = useState([]);
-   const pusher = usePusher(); // <-- 2. 获取 pusher 实例
+    const socket = useSocket(); // Now this line will work correctly
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
-    // 1. 首次加载时，从后端API获取该用户的历史提醒
+    // Effect to fetch initial historical alerts
     useEffect(() => {
-        if (currentUser?.id) {
-            // --- 核心修改 2：使用动态URL ---
-            fetch(`${API_BASE_URL}/api/alerts/${currentUser.id}`)
-                .then(res => res.json())
-                .then(data => setAlerts(data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))))
-                .catch(err => console.error("获取提醒数据失败:", err));
+        if (currentUser) {
+            const userId = currentUser.role === 'Supplier' ? currentUser.supplier_id : currentUser.id;
+            if (userId) {
+                console.log(`[AlertContext] Attempting to fetch historical alerts for user/supplier ID: ${userId}`);
+                fetch(`${API_BASE_URL}/api/alerts/${userId}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        console.log(`[AlertContext] Successfully fetched ${data.length} historical alerts.`);
+                        setAlerts(data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+                    })
+                    .catch(err => console.error("[AlertContext] Failed to fetch historical alerts:", err));
+            }
         }
-    }, [currentUser?.id]);
+    }, [currentUser]);
 
-    // 2. 监听来自服务器的实时新提醒
-     // --- 3. 核心修改：监听 Pusher 的私人频道 ---
+    // Effect to listen for real-time alerts
     useEffect(() => {
-        if (!pusher || !currentUser?.id) return;
+        if (socket) {
+            console.log('[AlertContext] Socket instance is ready. Setting up "new_alert" listener...');
 
-        // 订阅一个以用户ID命名的“私人频道”
-        const channelName = `private-${currentUser.id}`;
-        const channel = pusher.subscribe(channelName);
-        console.log(`[Pusher] 正在订阅私人频道: ${channelName}`);
-
-        const handleNewAlert = (newAlert) => {
-            console.log(`✅ [Pusher] 在频道 ${channelName} 收到 new_alert 事件:`, newAlert);
-            setAlerts(prev => [newAlert, ...prev]);
-        };
+            const handleNewAlert = (newAlert) => {
+                console.log('✅ [AlertContext] Received "new_alert" event:', newAlert);
+                setAlerts(prevAlerts => [newAlert, ...prevAlerts]);
+            };
         
-        channel.bind('new_alert', handleNewAlert);
+            socket.on('new_alert', handleNewAlert);
 
-        return () => {
-            channel.unbind_all();
-            pusher.unsubscribe(channelName);
-        };
-    }, [pusher, currentUser?.id]);
+            return () => {
+                console.log('[AlertContext] Cleaning up "new_alert" listener...');
+                socket.off('new_alert', handleNewAlert);
+            };
+        } else {
+            console.log('[AlertContext] Waiting for socket instance...');
+        }
+    }, [socket]);
 
-    // 3. addAlert 现在是调用后端API
+    // Function to create a new alert by calling the backend
     const addAlert = async (senderId, recipientId, message, link = '#') => {
-        const newAlert = {
+        const newAlertData = {
             id: uuidv4(),
             senderId, recipientId, message, link,
             timestamp: new Date().toISOString(),
@@ -58,14 +63,13 @@ export const AlertProvider = ({ children }) => {
         };
 
         try {
-            // --- 核心修改 2：使用动态URL ---
             await fetch(`${API_BASE_URL}/api/alerts`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newAlert),
+                body: JSON.stringify(newAlertData),
             });
         } catch (error) {
-            console.error("创建提醒失败:", error);
+            console.error("Failed to create alert:", error);
         }
     };
     

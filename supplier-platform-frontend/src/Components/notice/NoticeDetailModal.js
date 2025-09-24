@@ -9,6 +9,7 @@ import {
 import dayjs from 'dayjs';
 import { categoryColumnConfig } from '../../data/_mockData';
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
+import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -236,7 +237,13 @@ const EvidencePerActionForm = ({ onFinish, form, notice }) => {
                                     <TextArea rows={2} placeholder="请简述此项任务的完成情况..." />
                                 </Form.Item>
                                 <Form.Item name={[index, 'images']} label="上传图片证据" valuePropName="fileList" getValueFromEvent={normFile}>
-                                    <Upload listType="picture-card" beforeUpload={() => false}><PlusOutlined /></Upload>
+                                    <Upload 
+                                        listType="picture-card" 
+                                        beforeUpload={() => false}
+                                        accept="image/*"
+                                    >
+                                        <PlusOutlined />
+                                    </Upload>
                                 </Form.Item>
                             </Card>
                         ))}
@@ -311,6 +318,13 @@ export const NoticeDetailModal = ({
                 const realIndex = lastEvidenceIndex >= 0 ? history.length - 1 - lastEvidenceIndex : -1;
                 const lastEvidence = realIndex >= 0 ? history[realIndex] : null;
                 const evidenceList = lastEvidence?.actionPlans || [];
+                
+                console.log('[NoticeDetailModal] Evidence debug info:', {
+                    noticeId: notice.id,
+                    lastEvidenceIndex: realIndex,
+                    lastEvidence: lastEvidence,
+                    evidenceList: evidenceList
+                });
                 const approvedSet = new Set();
                 if (realIndex >= 0) {
                     for (let i = realIndex + 1; i < history.length; i++) {
@@ -328,15 +342,12 @@ export const NoticeDetailModal = ({
                             {evidenceList.map((plan, index) => (
                                 <Card key={index} size="small" title={<Text strong>{`证据 #${index + 1}: ${plan.plan}`}</Text>}>
                                     <Paragraph type="secondary">{plan.evidenceDescription || '（供应商未提供文字说明）'}</Paragraph>
-                                    {plan.evidenceImages && plan.evidenceImages.length > 0 && (
-                                        <Image.PreviewGroup>
-                                            <Space wrap>
-                                                {plan.evidenceImages.map((img, i) => (
-                                                    <Image key={i} width={100} height={100} src={img.thumbUrl || img.url} style={{ objectFit: 'cover' }} />
-                                                ))}
-                                            </Space>
-                                        </Image.PreviewGroup>
-                                    )}
+                                    <EnhancedImageDisplay 
+                                        images={plan.evidenceImages} 
+                                        title="" 
+                                        size="xlarge"
+                                        showTitle={false}
+                                    />
                                     <Space style={{ marginTop: 8 }}>
                                         <Button type="primary" icon={<CheckCircleOutlined />} disabled={approvedFlags[index]} onClick={() => onApproveEvidenceItem?.(index)}>
                                             {approvedFlags[index] ? '已批准' : '批准此证据'}

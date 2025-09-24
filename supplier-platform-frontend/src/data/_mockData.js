@@ -77,14 +77,33 @@ export const mockNoticesData = [
             type: "sd_plan_approval", // 第二步：计划被批准
             submitter: "Philip Wang (Manager)",
             time: "2025-08-15 11:00:00",
-            description: "计划已批准，请尽快执行。"
+            description: "计划已批准，请尽快执行。",
+            actionPlans: [
+                {
+                    plan: "隔离所有包装破损产品，并进行内部评审",
+                    responsible: "李四-质量主管",
+                    deadline: "2025-08-20",
+                    status: "pending_evidence"
+                }
+            ]
         },
         {
             type: "supplier_evidence_submission", // 第三步：提交证据
             submitter: "李四 (供应商B)",
             time: "2025-08-16 10:00:00",
             description: "已完成整改，详情见附件图片。",
-            images: [{ "uid": "supp-img-1", "name": "repack.png", "url": "https://gw.alipayobjects.com/zos/rmsportal/mqaQswcyDLcXyDKnZfES.png" }]
+            actionPlans: [
+                {
+                    plan: "隔离所有包装破损产品，并进行内部评审",
+                    responsible: "李四-质量主管",
+                    deadline: "2025-08-20",
+                    evidenceDescription: "已完成产品隔离，所有破损包装已单独存放并标记。",
+                    evidenceImages: [
+                        { "uid": "supp-img-1", "name": "repack.png", "url": "https://gw.alipayobjects.com/zos/rmsportal/mqaQswcyDLcXyDKnZfES.png" }
+                    ],
+                    status: "pending_approval"
+                }
+            ]
         }
     ]
 },

@@ -12,6 +12,7 @@ import {
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AlertBell } from './AlertBell';
+import { ProductionAlertBell } from './ProductionAlertBell';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
@@ -26,7 +27,7 @@ const allMenuItems = [
         roles: ['SD', 'Manager', 'Supplier'],
         children: [
             { key: '/notices', label: '整改通知单列表', roles: ['SD', 'Manager', 'Supplier'] },
-            { key: '/upload', label: '创建单个通知', roles: ['SD', 'Manager'] },
+            { key: '/upload', label: '输入新的审核结果', roles: ['SD', 'Manager'] },
             { key: '/batch-create', label: '批量创建 (Excel)', roles: ['SD', 'Manager'] },
         ]
     },
@@ -124,7 +125,7 @@ const MainLayout = () => {
                 >
                     <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>供应商与SD信息交换平台</h2>
                     <Space size="large">
-                        <AlertBell />
+                        <ProductionAlertBell />
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>欢迎您, <Text strong>{userName}</Text></Text>
                         <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>登出</Button>

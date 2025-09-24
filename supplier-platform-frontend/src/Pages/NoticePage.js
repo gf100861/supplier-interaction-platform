@@ -14,6 +14,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import { useAlerts } from '../contexts/AlertContext';
+import { useAlertService } from '../services/AlertService';
 import { useConfig } from '../contexts/ConfigContext';
 import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
 
@@ -28,6 +29,8 @@ const NoticePage = () => {
     const { messageApi, notificationApi } = useNotification();
     const { token } = theme.useToken();
     const { addAlert } = useAlerts();
+    const alertService = useAlertService();
+    
     const sendAlert = async (senderId, recipientId, msg, link) => {
         try {
             await addAlert(senderId, recipientId, msg, link);
@@ -157,6 +160,23 @@ const NoticePage = () => {
 
     setSelectedNotice(notice);
 };
+
+const getBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+});
+
+    const handlePreview = async (file) => {
+        if (!file.url && !file.preview) {
+            file.preview = await getBase64(file.originFileObj);
+        }
+        // 使用Antd的Image组件预览功能，不需要额外的Modal
+        return file.url || file.preview;
+    };
+
     const handleDetailModalCancel = () => {
 
         setSelectedNotice(null);
@@ -211,7 +231,12 @@ const NoticePage = () => {
         console.log('[handlePlanApprove] updating', notice.id, '-> 待供应商上传证据');
         await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
 
+        // 发送传统提醒
         sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被批准。`, `/notices?open=${notice.id}`);
+        
+        // 发送新的结构化提醒
+        await alertService.notifyPlanApproved(notice, currentUser.name);
+        
         messageApi.success('计划已批准！');
         if (!targetNotice) {
             handleDetailModalCancel();
@@ -239,35 +264,65 @@ const NoticePage = () => {
        };
 
        // 4. 供应商提交完成证据
-      const handleEvidenceSubmit = async (values) => {
-           const notice = selectedNotice;
-           if (!notice) return;
-           
-           const lastApprovedHistory = [...notice.history].reverse().find(h => h.type === 'sd_plan_approval');
-           const originalPlans = lastApprovedHistory?.actionPlans || [];
-   
-           // --- 核心修改 2: 只更新本次提交了证据的行动项 ---
-           const plansWithEvidence = originalPlans.map((plan, index) => {
-               // 只有待提交或被驳回的项才会被更新
-               if (plan.status === 'pending_evidence' || plan.status === 'rejected') {
-                   return {
-                       ...plan,
-                       evidenceDescription: values.evidence?.[index]?.description || '',
-                       evidenceImages: values.evidence?.[index]?.images || [],
-                       status: 'pending_approval', // 提交后状态变为待审批
-                   };
-               }
-               return plan; // 其他状态（如已批准的）保持不变
-           });
-   
-           const newHistory = { type: 'supplier_evidence_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已上传完成证据。', actionPlans: plansWithEvidence };
-           const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-           
-           await updateNotice(notice.id, { status: '待SD关闭', history: [...currentHistory, newHistory] });
-           sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`, `/notices?open=${notice.id}`);
-           messageApi.success('完成证据提交成功！');
-           handleDetailModalCancel();
-       };
+    const handleEvidenceSubmit = async (values) => {
+    const notice = selectedNotice;
+    if (!notice) return;
+
+    messageApi.loading({ content: '正在处理图片...', key: 'processing' });
+
+    const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'sd_plan_approval');
+    const originalPlans = lastPlanSubmission?.actionPlans || [];
+    
+    console.log('[handleEvidenceSubmit] Debug info:', {
+        noticeId: notice.id,
+        lastPlanSubmission: lastPlanSubmission,
+        originalPlans: originalPlans,
+        evidenceValues: values.evidence
+    });
+
+    // --- 核心修改：异步处理所有图片文件，确保它们有可用的 base64 URL ---
+    const plansWithEvidence = await Promise.all(
+        originalPlans.map(async (plan, index) => {
+            // 处理所有行动项的证据，不再限制状态
+            const evidenceItem = values.evidence?.[index];
+            const imageList = evidenceItem?.images || [];
+
+            const processedImages = await Promise.all(
+                imageList.map(async (file) => {
+                    // 如果文件是新上传的 (有 originFileObj) 并且还没有 url，就转换它
+                    if (file.originFileObj && !file.url) {
+                        const base64Url = await getBase64(file.originFileObj);
+                        return { ...file, url: base64Url, thumbUrl: base64Url };
+                    }
+                    // 如果文件已经有 url (可能是之前上传的)，则直接返回
+                    return file;
+                })
+            );
+
+            return {
+                ...plan,
+                evidenceDescription: evidenceItem?.description || '',
+                evidenceImages: processedImages, // 使用处理过的图片列表
+                status: 'pending_approval',
+            };
+        })
+    );
+    
+    const newHistory = { type: 'supplier_evidence_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已上传完成证据。', actionPlans: plansWithEvidence };
+    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+    await updateNotice(notice.id, { status: '待SD关闭', history: [...currentHistory, newHistory] });
+    
+    messageApi.success({ content: '完成证据提交成功！', key: 'processing' });
+    
+    // 发送传统提醒
+    sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`, `/notices?open=${notice.id}`);
+    
+    // 发送新的结构化提醒
+    await alertService.notifyEvidenceSubmitted(notice, currentUser.name);
+    
+    handleDetailModalCancel();
+};
 
       // 5. SD 批准并关闭（支持从弹窗或列表快捷操作触发）
       const handleClosureApprove = async (targetNotice) => {
@@ -546,7 +601,7 @@ const tabsConfig = {
 
                 onPlanSubmit={handlePlanSubmit}
                 onPlanApprove={handlePlanApprove}
-                showPlanRejectionModal={() => setRejectionModal({ visible: true, notice: selectedNotice, handler: handlePlanReject })}
+                showPlanRejectionModal={() => showRejectionModal(selectedNotice, handlePlanReject)}
 
                 onEvidenceSubmit={handleEvidenceSubmit}
                 onClosureApprove={handleClosureApprove}

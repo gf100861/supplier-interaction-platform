@@ -10,6 +10,7 @@ import { NoticeProvider } from './contexts/NoticeContext';
 import { SupplierProvider } from './contexts/SupplierContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { AlertProvider } from './contexts/AlertContext';
+import { AlertProvider as ProductionAlertProvider } from './contexts/ProductionAlertContext';
 import { ConfigProvider } from './contexts/ConfigContext';
 import { PusherProvider } from './contexts/PusherContext'; // <-- 替换 SocketProvider
 import { CategoryProvider } from './contexts/CategoryContext'; // <-- 1. 导入
@@ -47,7 +48,8 @@ const ThemedApp = () => {
                         <SupplierProvider>
                              <CategoryProvider>
                             <AlertProvider>
-                                <NoticeProvider>
+                                <ProductionAlertProvider>
+                                    <NoticeProvider>
                                     <PusherProvider> {/* <-- 使用 PusherProvider */}
                                         {/* 3. 路由和UI */}
                                         <BrowserRouter>
@@ -68,7 +70,8 @@ const ThemedApp = () => {
                                             </Routes>
                                         </BrowserRouter>
                                     </PusherProvider>
-                                </NoticeProvider>
+                                    </NoticeProvider>
+                                </ProductionAlertProvider>
                             </AlertProvider>
                             </CategoryProvider>
                         </SupplierProvider>

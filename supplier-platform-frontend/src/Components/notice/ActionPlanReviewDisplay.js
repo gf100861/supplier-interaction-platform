@@ -1,8 +1,9 @@
 // src/Components/notice/ActionPlanReviewDisplay.js
 
 import React from 'react';
-import { Collapse, Typography, Space, Image, Divider, Tag } from 'antd';
+import { Collapse, Typography, Space, Divider, Tag } from 'antd';
 import { UserOutlined, CalendarOutlined } from '@ant-design/icons';
+import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 
 const { Panel } = Collapse;
 const { Text, Paragraph } = Typography;
@@ -47,27 +48,12 @@ export const ActionPlanReviewDisplay = ({ historyItem }) => {
                                 <Text type="secondary">{safeText(plan.evidenceDescription) || "（供应商未提供文字说明）"}</Text>
                             </Paragraph>
 
-                            <Paragraph>
-                                <Text strong>图片证据:</Text>
-                                <br />
-                                {(!plan.evidenceImages || plan.evidenceImages.length === 0) ? (
-                                    <Text type="secondary">（供应商未上传图片证据）</Text>
-                                ) : (
-                                    <Image.PreviewGroup>
-                                        <Space wrap>
-                                            {plan.evidenceImages.map((image, imgIndex) => (
-                                                <Image
-                                                    key={imgIndex}
-                                                    width={100}
-                                                    height={100}
-                                                    src={image.thumbUrl || image.url}
-                                                    style={{ objectFit: 'cover' }}
-                                                />
-                                            ))}
-                                        </Space>
-                                    </Image.PreviewGroup>
-                                )}
-                            </Paragraph>
+                            <EnhancedImageDisplay 
+                                images={plan.evidenceImages} 
+                                title="图片证据" 
+                                size="large"
+                                showTitle={true}
+                            />
                         </div>
                     )}
                 </Panel>
