@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
 import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal } from 'antd';
-import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 // import { noticeCategories } from '../data/_mockData';
 import dayjs from 'dayjs';
@@ -14,6 +14,7 @@ window.Buffer = Buffer;
 const { Title, Paragraph } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
+const { Dragger } = Upload; // 2. 引入 Dragger 组件
 
 // --- 可编辑单元格组件 ---
 const EditableContext = React.createContext(null);
@@ -28,6 +29,15 @@ const EditableRow = ({ index, ...props }) => {
         </Form>
     );
 };
+
+const getBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+  });
+
 
 const EditableCell = ({ title, editable, children, dataIndex, record, handleSave, inputType = 'input', ...restProps }) => {
     const [editing, setEditing] = useState(false);
@@ -136,8 +146,16 @@ const BatchNoticeCreationPage = () => {
         }
     };
 
-    const handlePreview = (file) => {
-        setPreviewImage(file.url || file.thumbUrl);
+    const handlePreview = async (file) => {
+        // 如果文件没有 url (不是已上传文件)，也没有 preview (我们还没生成过预览)
+        // 并且它是一个新上传的文件 (有 originFileObj)
+        if (!file.url && !file.preview && file.originFileObj) {
+            // 就为它生成一个高清的 Base64 预览图
+            file.preview = await getBase64(file.originFileObj);
+        }
+        
+        // 使用我们生成的高清 preview，或者已有的 url
+        setPreviewImage(file.url || file.preview);
         setPreviewTitle(file.name || '图片预览');
         setIsPreviewVisible(true);
     };
@@ -179,12 +197,49 @@ const BatchNoticeCreationPage = () => {
         });
 
         // 定义所有类型都共用的列
-        const commonColumns = [
-            { title: '图片', dataIndex: 'images', width: 150, render: (_, record) => (<Upload listType="picture-card" fileList={record.images || []} beforeUpload={() => false} onChange={(info) => handleUploadChange(record.key, 'images', info)} accept="image/*" onPreview={handlePreview}>{(record.images || []).length >= 1 ? null : <div><PlusOutlined /></div>}</Upload>) },
-            { title: '附件', dataIndex: 'attachments', width: 120, render: (_, record) => (<Upload fileList={record.attachments || []} beforeUpload={() => false} onChange={(info) => handleUploadChange(record.key, 'attachments', info)}><Button icon={<UploadOutlined />}>上传</Button></Upload>) },
-            { title: '备注 (Comments)', dataIndex: 'comments', width: 100, editable: true, onCell: () => ({ inputType: 'textarea' }) },
+          const commonColumns = [
+            // --- 3. 核心修改：重写“图片”列的渲染逻辑 ---
+            { 
+                title: '图片', 
+                dataIndex: 'images', 
+                width: 250, // 增加宽度以容纳 Dragger
+                render: (_, record) => (
+                    <Dragger
+                        multiple // 允许一次选择多个文件
+                        listType="picture" // 以紧凑列表形式展示
+                        fileList={record.images || []}
+                        beforeUpload={() => false} // 阻止自动上传
+                        onChange={(info) => handleUploadChange(record.key, 'images', info)}
+                        accept="image/*"
+                        onPreview={handlePreview}
+                        height={100} // 设置一个合适的高度
+                    >
+                        <p className="ant-upload-drag-icon">
+                            <InboxOutlined />
+                        </p>
+                        <p className="ant-upload-text">点击或拖拽</p>
+                    </Dragger>
+                )
+            },
+             { 
+                title: '附件', 
+                dataIndex: 'attachments', 
+                width: 120, 
+                render: (_, record) => ( 
+                    <Upload 
+                        // --- multiple 属性也在这里启用 ---
+                        multiple
+                        fileList={record.attachments || []} 
+                        beforeUpload={() => false} 
+                        onChange={(info) => handleUploadChange(record.key, 'attachments', info)}
+                    >
+                        <Button icon={<UploadOutlined />}>上传</Button>
+                    </Upload>
+                ) 
+            },
             { title: '操作', dataIndex: 'operation', width: 80, render: (_, record) => (<Popconfirm title="确定删除吗?" onConfirm={() => handleDelete(record.key)}><Button type="link" danger icon={<DeleteOutlined />} /></Popconfirm>) },
         ];
+
 
         // 组合动态列和通用列
         const allColumns = [...baseColumns, ...commonColumns];
@@ -261,10 +316,40 @@ const BatchNoticeCreationPage = () => {
             return;
         }
 
+          messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
+
+        // --- 核心修正 2：在提交前，异步处理所有行的数据，特别是图片 ---
+        const processRowData = async (item) => {
+            // 这个函数负责将单行数据中的新图片文件转换为高清Base64
+            const processFiles = async (fileList = []) => {
+                return Promise.all(fileList.map(async file => {
+                    if (file.originFileObj && !file.url) { // 如果是新上传的文件
+                        const base64Url = await getBase64(file.originFileObj);
+                        // 返回一个只包含高清 url 的干净对象
+                        return { uid: file.uid, name: file.name, status: 'done', url: base64Url };
+                    }
+                    return file; // 如果已经是处理过的文件，直接返回
+                }));
+            };
+
+            const processedImages = await processFiles(item.images);
+            const processedAttachments = await processFiles(item.attachments);
+            
+            return {
+                ...item,
+                images: processedImages,
+                attachments: processedAttachments,
+            };
+        };
+
+        // 等待所有行的数据都处理完毕
+        const processedDataSource = await Promise.all(validDataSource.map(processRowData));
+
         const batchId = `BATCH-${dayjs().format('YYYYMMDDHHmmss')}-${Math.random().toString(36).substring(2, 8)}`;
 
+
         // 构建符合 Supabase Schema 的数据数组
-        const batchNoticesToInsert = validDataSource.map((item, index) => {
+        const batchNoticesToInsert =  processedDataSource.map((item, index) => {
             const { key, images, attachments, ...details } = item;
 
             // 生成给用户看的业务ID

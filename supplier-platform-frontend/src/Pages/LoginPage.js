@@ -1,17 +1,48 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, Select, Card } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Select, Card, Layout, Row, Col, Typography, Avatar } from 'antd';
+import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 
 const { Option } = Select;
+const { Title, Text, Link } = Typography;
+
+// 为了让页面更美观，我们添加一个矢量插图组件
+const LoginIllustration = () => (
+    <svg width="100%" height="100%" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style={{stopColor: '#4f46e5', stopOpacity:1}} />
+                <stop offset="100%" style={{stopColor: '#1e90ff', stopOpacity:1}} />
+            </linearGradient>
+            <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style={{stopColor: '#a855f7', stopOpacity:1}} />
+                <stop offset="100%" style={{stopColor: '#f472b6', stopOpacity:1}} />
+            </linearGradient>
+        </defs>
+        <rect width="600" height="600" fill="#f0f2f5" />
+        <g transform="translate(300, 300)">
+            <circle cx="0" cy="0" r="250" fill="url(#grad1)" opacity="0.1" />
+            <circle cx="0" cy="0" r="200" fill="url(#grad2)" opacity="0.2" />
+            <path d="M-150,-150 Q-100,0 -150,150 L150,150 Q100,0 150,-150 Z" fill="white" stroke="url(#grad1)" strokeWidth="4" />
+            <path d="M-100,-100 Q-50,0 -100,100 L100,100 Q50,0 100,-100 Z" fill="rgba(255,255,255,0.8)" stroke="url(#grad2)" strokeWidth="3" />
+            <g fill="#4f46e5">
+                <rect x="-30" y="-30" width="60" height="60" rx="10" transform="rotate(45)" />
+                <circle cx="-120" cy="120" r="20" />
+                <circle cx="120" cy="-120" r="20" />
+            </g>
+        </g>
+    </svg>
+);
+
 
 const LoginPage = () => {
     const navigate = useNavigate();
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
 
+    // 您的登录逻辑完全不变
     const onFinish = async (values) => {
         setLoading(true);
         try {
@@ -22,11 +53,6 @@ const LoginPage = () => {
 
             if (authError) throw authError;
 
-            // --- 核心修改：使用关联查询，一次性获取用户及其管理的供应商 ---
-            // 这个查询的意思是：
-            // 1. 从 'users' 表中查找用户
-            // 2. 同时，通过 'sd_supplier_assignments' 这张关联表...
-            // 3. ...将该用户关联的所有 'suppliers' 表的完整信息(*)也一并取回
             const { data: userData, error: userError } = await supabase
                 .from('users')
                 .select(`
@@ -43,8 +69,6 @@ const LoginPage = () => {
             if (userData.role !== values.role) {
                 throw new Error("凭证或角色选择不正确！");
             }
-
-            console.log("登录成功！从数据库获取到的、包含完整关联供应商信息的 User 对象如下:", userData);
             
             messageApi.success('登录成功!');
             localStorage.setItem('user', JSON.stringify(userData));
@@ -58,46 +82,82 @@ const LoginPage = () => {
     };
 
     return (
-        <div style={{ background: '#f0f2f5', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Card title="供应商与SD信息交换平台" style={{ width: 400 }}>
-                <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'SD' }}>
-                    
-                    <Form.Item 
-                        name="email" 
-                        label="登录邮箱" 
-                        rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}
-                    >
-                        <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" />
-                    </Form.Item>
+        <Layout style={{ minHeight: '100vh' }}>
+            <Row justify="center" align="middle" style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+                
+                {/* 左侧插图区域，仅在大屏幕上显示 */}
+                <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ maxWidth: '500px', width: '100%' }}>
+                        <LoginIllustration />
+                    </div>
+                </Col>
 
-                    <Form.Item 
-                        name="password" 
-                        label="密码" 
-                        rules={[{ required: true, message: '请输入密码!' }]}
+                {/* 右侧登录表单区域 */}
+                <Col xs={22} sm={16} md={12} lg={10} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <Card
+                        style={{
+                            width: '100%',
+                            maxWidth: 400,
+                            boxShadow: '0 4px 20px 0 rgba(0, 0, 0, 0.1)',
+                            borderRadius: '12px',
+                        }}
                     >
-                        <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        name="role" 
-                        label="登录角色" 
-                        rules={[{ required: true, message: '请选择您的角色!' }]}
-                    >
-                        <Select placeholder="选择角色">
-                            <Option value="SD">SD</Option>
-                            <Option value="Manager">Manager</Option>
-                            <Option value="Supplier">Supplier</Option>
-                        </Select>
-                    </Form.Item>
-                    
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading}>
-                            登 录
-                        </Button>
-                    </Form.Item>
-                </Form>
-            </Card>
-        </div>
+                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                            <Avatar size={64} icon={<ApartmentOutlined />} style={{ backgroundColor: '#1890ff' }} />
+                            <Title level={3} style={{ marginTop: '16px' }}>供应商与SD信息交换平台</Title>
+                            <Text type="secondary">欢迎回来，请登录您的账户</Text>
+                        </div>
+
+                        <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'SD' }} layout="vertical">
+                            <Form.Item 
+                                name="email" 
+                                label="登录邮箱" 
+                                rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}
+                            >
+                                <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" size="large" />
+                            </Form.Item>
+
+                            <Form.Item 
+                                name="password" 
+                                label="密码" 
+                                rules={[{ required: true, message: '请输入密码!' }]}
+                            >
+                                <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
+                            </Form.Item>
+                            
+                            <Form.Item 
+                                name="role" 
+                                label="登录角色" 
+                                rules={[{ required: true, message: '请选择您的角色!' }]}
+                            >
+                                <Select placeholder="选择角色" size="large">
+                                    <Option value="SD">SD</Option>
+                                    <Option value="Manager">Manager</Option>
+                                    <Option value="Supplier">Supplier</Option>
+                                </Select>
+                            </Form.Item>
+                            
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">
+                                    登 录
+                                </Button>
+                            </Form.Item>
+                            
+                            {/* --- 新增的联系信息 --- */}
+                            <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                                <Text type="secondary" style={{ fontSize: '12px' }}>
+                                    如遇登录、密码等问题，请联系：
+                                    <Link href="mailto:louis.xin@volvo.com" style={{ fontSize: '12px', marginLeft: '4px' }}>
+                                        louis.xin@volvo.com
+                                    </Link>
+                                </Text>
+                            </div>
+
+                        </Form>
+                    </Card>
+                </Col>
+            </Row>
+        </Layout>
     );
 };
 

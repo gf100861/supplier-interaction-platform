@@ -144,34 +144,35 @@ const ImageScroller = ({ images, title }) => {
         const newIndex = isLastSlide ? 0 : currentIndex + 1;
         setCurrentIndex(newIndex);
     };
+      const getHighResUrl = (image) => {
+        // 优先使用我们生成的 'url'，其次才是 antd 的 'thumbUrl'
+        return image.url || image.thumbUrl;
+    };
 
-    return (
+  return (
         <div style={{ marginTop: 12 }}>
             <Text strong><PictureOutlined /> {title}:</Text>
             <div style={{ position: 'relative', marginTop: 8 }}>
-                <Image
-                    height={250}
-                    style={{ objectFit: 'contain', width: '100%', backgroundColor: '#f0f2f5', borderRadius: '8px' }}
-                    src={images[currentIndex].url || images[currentIndex].thumbUrl}
-                />
+                {/* 使用 antd 的 Image.PreviewGroup 来获得更高质量的预览体验 */}
+                <Image.PreviewGroup
+                    preview={{
+                        current: currentIndex,
+                        onChange: (current) => setCurrentIndex(current),
+                    }}
+                    items={images.map(img => getHighResUrl(img))}
+                >
+                    <Image
+                        height={250}
+                        style={{ objectFit: 'contain', width: '100%', backgroundColor: '#f0f2f5', borderRadius: '8px' }}
+                        src={getHighResUrl(images[currentIndex])}
+                    />
+                </Image.PreviewGroup>
+
                 {images.length > 1 && (
                     <>
-                        {/* 左箭头 */}
-                        <Button
-                            shape="circle"
-                            icon={<LeftOutlined />}
-                            onClick={goToPrevious}
-                            style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)' }}
-                        />
-                        {/* 右箭头 */}
-                        <Button
-                            shape="circle"
-                            icon={<RightOutlined />}
-                            onClick={goToNext}
-                            style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }}
-                        />
-                        {/* 图片计数器 */}
-                        <Tag style={{ position: 'absolute', bottom: 16, right: 16 }}>
+                        <Button shape="circle" icon={<LeftOutlined />} onClick={goToPrevious} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', zIndex: 10 }} />
+                        <Button shape="circle" icon={<RightOutlined />} onClick={goToNext} style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', zIndex: 10 }} />
+                        <Tag style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}>
                             {currentIndex + 1} / {images.length}
                         </Tag>
                     </>
