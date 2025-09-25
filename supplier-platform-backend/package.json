@@ -1,16 +1,22 @@
 {
   "name": "supplier-platform-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Supplier Platform Backend API",
+  "main": "api/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "echo 'No build step required'",
+    "vercel-build": "echo 'No build step required'"
   },
-  "keywords": [],
+  "keywords": ["supplier", "platform", "api", "notifications"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18.x"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",

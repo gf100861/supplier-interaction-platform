@@ -52,12 +52,14 @@ router.post('/api/alerts', (req, res) => {
         // 添加到存储
         alertsData.unshift(newAlert);
 
-        // 通过Socket.IO发送实时通知
+        // 通过Socket.IO发送实时通知（仅在本地开发环境）
         const io = req.app.get('io');
         if (io) {
             // 发送给特定用户
             io.to(alertData.recipientId).emit('new_alert', newAlert);
             console.log(`[AlertAPI] 实时通知已发送给用户: ${alertData.recipientId}`);
+        } else {
+            console.log(`[AlertAPI] Socket.IO 不可用（Vercel环境），通知已保存但未实时推送`);
         }
 
         console.log(`[AlertAPI] 新提醒已创建: ${newAlert.id}`);
@@ -214,7 +216,7 @@ router.post('/api/alerts/batch', (req, res) => {
             alertsData.unshift(newAlert);
             createdAlerts.push(newAlert);
 
-            // 发送实时通知
+            // 发送实时通知（仅在本地开发环境）
             if (io) {
                 io.to(recipientId).emit('new_alert', newAlert);
             }
@@ -232,3 +234,4 @@ router.post('/api/alerts/batch', (req, res) => {
 });
 
 module.exports = router;
+
