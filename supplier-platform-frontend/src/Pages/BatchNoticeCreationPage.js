@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
-import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal } from 'antd';
+import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal} from 'antd';
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 // import { noticeCategories } from '../data/_mockData';
@@ -11,7 +11,7 @@ import { useNotices } from '../contexts/NoticeContext';
 import { useCategories } from '../contexts/CategoryContext'; // 1. 导入新的 Hook
 window.Buffer = Buffer;
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph,Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const { Dragger } = Upload; // 2. 引入 Dragger 组件
@@ -31,12 +31,12 @@ const EditableRow = ({ index, ...props }) => {
 };
 
 const getBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-  });
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = (error) => reject(error);
+    });
 
 
 const EditableCell = ({ title, editable, children, dataIndex, record, handleSave, inputType = 'input', ...restProps }) => {
@@ -153,7 +153,7 @@ const BatchNoticeCreationPage = () => {
             // 就为它生成一个高清的 Base64 预览图
             file.preview = await getBase64(file.originFileObj);
         }
-        
+
         // 使用我们生成的高清 preview，或者已有的 url
         setPreviewImage(file.url || file.preview);
         setPreviewTitle(file.name || '图片预览');
@@ -197,45 +197,53 @@ const BatchNoticeCreationPage = () => {
         });
 
         // 定义所有类型都共用的列
-          const commonColumns = [
+        const commonColumns = [
             // --- 3. 核心修改：重写“图片”列的渲染逻辑 ---
-            { 
+           { 
                 title: '图片', 
                 dataIndex: 'images', 
-                width: 250, // 增加宽度以容纳 Dragger
+                width: 200, // 适当调整宽度
                 render: (_, record) => (
                     <Dragger
-                        multiple // 允许一次选择多个文件
-                        listType="picture" // 以紧凑列表形式展示
+                        multiple
+                        listType="picture"
                         fileList={record.images || []}
-                        beforeUpload={() => false} // 阻止自动上传
+                        beforeUpload={() => false}
                         onChange={(info) => handleUploadChange(record.key, 'images', info)}
                         accept="image/*"
                         onPreview={handlePreview}
-                        height={100} // 设置一个合适的高度
+                        // 移除固定的 height，让其自适应
                     >
-                        <p className="ant-upload-drag-icon">
-                            <InboxOutlined />
-                        </p>
-                        <p className="ant-upload-text">点击或拖拽</p>
+                        <div style={{ padding: '8px 0' }}> {/* 使用 div 包裹并增加内边距 */}
+                            <p className="ant-upload-drag-icon">
+                                <InboxOutlined />
+                            </p>
+                            <p className="ant-upload-text" style={{ fontSize: '12px' }}>点击或拖拽</p>
+                        </div>
                     </Dragger>
                 )
             },
-             { 
-                title: '附件', 
-                dataIndex: 'attachments', 
-                width: 120, 
-                render: (_, record) => ( 
-                    <Upload 
-                        // --- multiple 属性也在这里启用 ---
-                        multiple
-                        fileList={record.attachments || []} 
-                        beforeUpload={() => false} 
-                        onChange={(info) => handleUploadChange(record.key, 'attachments', info)}
-                    >
-                        <Button icon={<UploadOutlined />}>上传</Button>
-                    </Upload>
-                ) 
+            {
+                title: '附件',
+                dataIndex: 'attachments',
+                width: 120,
+                render: (_, record) => (
+                    <div>
+                        <Upload
+                            // --- multiple 属性也在这里启用 ---
+                            multiple
+                            fileList={record.attachments || []}
+                            beforeUpload={() => false}
+                            onChange={(info) => handleUploadChange(record.key, 'attachments', info)}
+                        >
+                            <Button icon={<UploadOutlined />}>上传</Button>
+                        </Upload>
+                        <Tooltip title="暂不支持 .txt 格式，请打包为 .zip 或使用其他格式。">
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>格式提示</Text>
+                        </Tooltip>
+                    </div>
+
+                )
             },
             { title: '操作', dataIndex: 'operation', width: 80, render: (_, record) => (<Popconfirm title="确定删除吗?" onConfirm={() => handleDelete(record.key)}><Button type="link" danger icon={<DeleteOutlined />} /></Popconfirm>) },
         ];
@@ -270,7 +278,7 @@ const BatchNoticeCreationPage = () => {
     const onConfirmSettings = async () => {
         try {
             const values = await globalForm.validateFields();
-            
+
             if (globalSettings?.category !== values.category && dataSource.length > 0) {
                 messageApi.warning('问题类型已更改，表格数据已被清空。');
                 setDataSource([]);
@@ -278,11 +286,11 @@ const BatchNoticeCreationPage = () => {
 
             // 直接在 managedSuppliers (当前用户可见的供应商列表) 中查找
             const selectedSupplier = managedSuppliers.find(s => s.id === values.supplierId);
-            
+
             setGlobalSettings({
                 ...values,
                 // 现在 selectedSupplier 一定能被找到
-                supplierName: selectedSupplier.name, 
+                supplierName: selectedSupplier.name,
             });
             messageApi.success('全局设置已锁定，现在可以添加条目了。');
         } catch (errorInfo) {
@@ -316,7 +324,7 @@ const BatchNoticeCreationPage = () => {
             return;
         }
 
-          messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
+        messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
 
         // --- 核心修正 2：在提交前，异步处理所有行的数据，特别是图片 ---
         const processRowData = async (item) => {
@@ -334,7 +342,7 @@ const BatchNoticeCreationPage = () => {
 
             const processedImages = await processFiles(item.images);
             const processedAttachments = await processFiles(item.attachments);
-            
+
             return {
                 ...item,
                 images: processedImages,
@@ -349,18 +357,20 @@ const BatchNoticeCreationPage = () => {
 
 
         // 构建符合 Supabase Schema 的数据数组
-        const batchNoticesToInsert =  processedDataSource.map((item, index) => {
+        const batchNoticesToInsert = processedDataSource.map((item, index) => {
             const { key, images, attachments, ...details } = item;
 
             // 生成给用户看的业务ID
             const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${index}`;
 
+            console.log(details)
+
             return {
-                // Supabase 会自动生成 uuid 主键，我们不需要提供 id
+                // Supabase 会自动生成 uuid 主键，我们不需要提供 id, 根据不同的审核类型来修改
                 notice_code: noticeCode,
                 batch_id: batchId,
                 category: globalSettings.category,
-                title: details.title,
+                title: details.title || details.parameter || 'New Notice',
                 assigned_supplier_id: globalSettings.supplierId, // 假设 suppliers context 里的 id 是 uuid
                 assigned_supplier_name: globalSettings.supplierName,
                 status: '待供应商处理', // 使用简化的新流程状态
@@ -516,7 +526,7 @@ const BatchNoticeCreationPage = () => {
                 <Title level={4}>批量创建整改通知单</Title>
                 <Paragraph type="secondary">请先选择应用于所有条目的全局信息，然后点击“确认设置”进行锁定。</Paragraph>
                 <Form form={globalForm} layout="inline">
-                      <Form.Item name="supplierId" label="供应商" rules={[{ required: true, message: '请选择一个供应商' }]}>
+                    <Form.Item name="supplierId" label="供应商" rules={[{ required: true, message: '请选择一个供应商' }]}>
                         <Select
                             showSearch
                             style={{ width: 200 }}
@@ -546,18 +556,18 @@ const BatchNoticeCreationPage = () => {
                     <Form.Item name="createTime" label="创建时间" rules={[{ required: true }]}>
                         <DatePicker disabled={!!globalSettings} />
                     </Form.Item>
-                     <Form.Item>
+                    <Form.Item>
                         {/* 3. --- 核心修正：为确认按钮也添加 loading 状态 --- */}
                         {globalSettings ? (
                             <Button icon={<EditOutlined />} onClick={onModifySettings}>修改设置</Button>
                         ) : (
-                            <Button 
-                                type="primary" 
-                                icon={<CheckCircleOutlined />} 
+                            <Button
+                                type="primary"
+                                icon={<CheckCircleOutlined />}
                                 onClick={onConfirmSettings}
                                 // 当任何一个依赖的数据在加载时，都禁用并显示加载状态
                                 disabled={suppliersLoading || categoriesLoading}
-                                loading={suppliersLoading || categoriesLoading} 
+                                loading={suppliersLoading || categoriesLoading}
                             >
                                 {suppliersLoading || categoriesLoading ? '加载中...' : '确认设置'}
                             </Button>

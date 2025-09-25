@@ -251,6 +251,9 @@ const FileUploadPage = () => {
             <Upload beforeUpload={() => false} multiple>
               <Button icon={<UploadOutlined />}>点击上传附件</Button>
             </Upload>
+            <Paragraph type="secondary" style={{ marginTop: '8px' }}>
+              提示：目前附件上传暂不支持 .txt 格式的文件，请打包为 .zip 或使用其他格式。
+            </Paragraph>
           </Form.Item>
 
           <Form.Item style={{ marginTop: 24, textAlign: 'right' }}>

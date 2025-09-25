@@ -1,7 +1,7 @@
 // src/Components/notice/NoticeDetailModal.js
 
 import React, { useState, useMemo } from 'react';
-import { List, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Collapse, Popconfirm, Select, Carousel } from 'antd';
+import { List, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Collapse, Popconfirm, Select, Carousel,message } from 'antd';
 import {
     FileTextOutlined, PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
     CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined
@@ -109,7 +109,7 @@ const DynamicDetailsDisplay = ({ notice }) => {
         </>
     );
 };
-// ... 其他内部辅助组件代码不变 ...
+
 const AttachmentsDisplay = ({ attachments }) => {
     if (!attachments || attachments.length === 0) return null;
     return (
@@ -118,7 +118,7 @@ const AttachmentsDisplay = ({ attachments }) => {
             <div style={{ marginTop: 8 }}>
                 <Space wrap>
                     {attachments.map((file, i) => (
-                        <Button key={i} type="dashed" href={file.url} size="small" target="_blank" icon={<PaperClipOutlined />}>
+                        <Button key={i} type="dashed" href={file.url} size="small" target="_blank"  download={file.name}  icon={<PaperClipOutlined />}>
                             {file.name}
                         </Button>
                     ))}
@@ -127,6 +127,7 @@ const AttachmentsDisplay = ({ attachments }) => {
         </div>
     );
 };
+
 
 const ImageScroller = ({ images, title }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
