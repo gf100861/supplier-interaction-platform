@@ -1,10 +1,9 @@
 // src/Pages/NoticePage.js
-
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Tabs, Form, Modal, Popconfirm, theme, Spin, List, Button, Space, Select, Divider, Timeline, Collapse, Image, Checkbox } from 'antd';
+import { Card, Typography, Input, Tabs, Form, Popconfirm, theme, Spin, Button, Space, Select,Tooltip } from 'antd';
 import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
-
+import {  SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
 // 1. 导入所有需要的组件、Hooks 和数据
 import { NoticeList } from '../Components/notice/NoticeList';
 import { RejectionModal } from '../Components/notice/RejectionModal';
@@ -51,6 +50,27 @@ const NoticePage = () => {
     const [rejectionForm] = Form.useForm();
     const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
     const [reassignForm] = Form.useForm();
+
+    const [listSortOrder, setListSortOrder] = useState('desc'); // 默认按日期降序（最新在前）
+
+    console.log('Noticecategory',noticeCategories)
+
+    console.log('Noticedetail',noticeCategoryDetails)
+
+
+const sortedNoticeCategories = useMemo(() => {
+        if (!noticeCategories || noticeCategories.length === 0) {
+            return [];
+        }
+        const target = "Process Audit"; // 您想要置顶的项
+        // 如果目标项存在于数组中，则将其置顶
+        if (noticeCategories.includes(target)) {
+            return [target, ...noticeCategories.filter(item => item !== target)];
+        }
+        // 如果不存在，则返回原始顺序
+        return noticeCategories;
+    }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+
 
     useEffect(() => {
 
@@ -100,7 +120,8 @@ const NoticePage = () => {
         return data;
     }, [userVisibleNotices, searchTerm, selectedCategories]);
 
-    const groupedNotices = useMemo(() => {
+
+      const groupedNotices = useMemo(() => {
         const grouped = {};
         const singles = [];
         searchedNotices.forEach(notice => {
@@ -112,8 +133,23 @@ const NoticePage = () => {
             }
         });
         const batchItems = Object.values(grouped).map(batch => ({ isBatch: true, batchId: batch[0].batchId, notices: batch, representative: batch[0] }));
-        return [...batchItems, ...singles];
-    }, [searchedNotices]);
+        
+        const combinedList = [...batchItems, ...singles];
+
+        // 在这里进行排序
+        const getSortableDate = (item) => {
+            const dateStr = item.isBatch ? item.representative.sdNotice?.createTime : item.sdNotice?.createTime;
+            return dayjs(dateStr || 0); // 如果日期不存在，则排在最后
+        };
+
+        if (listSortOrder === 'asc') {
+            combinedList.sort((a, b) => getSortableDate(a).diff(getSortableDate(b)));
+        } else if (listSortOrder === 'desc') {
+            combinedList.sort((a, b) => getSortableDate(b).diff(getSortableDate(a)));
+        }
+        
+        return combinedList;
+    }, [searchedNotices, listSortOrder]); // <-- 将 listSortOrder 加入依赖项
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -169,13 +205,6 @@ const getBase64 = (file) =>
     reader.onerror = (error) => reject(error);
 });
 
-    const handlePreview = async (file) => {
-        if (!file.url && !file.preview) {
-            file.preview = await getBase64(file.originFileObj);
-        }
-        // 使用Antd的Image组件预览功能，不需要额外的Modal
-        return file.url || file.preview;
-    };
 
     const handleDetailModalCancel = () => {
 
@@ -585,8 +614,22 @@ const tabsConfig = {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                     <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>{/* ... */}</Paragraph></div>
                     <Space wrap>
-                        <Select mode="multiple" allowClear style={{ width: 250 }} placeholder="按问题类型筛选" onChange={setSelectedCategories} options={noticeCategories.map(c => ({ label: c, value: c }))} />
+                        <Select mode="multiple" allowClear style={{ width: 250 }} placeholder="按问题类型筛选" onChange={setSelectedCategories} options={sortedNoticeCategories.map(c => ({ label: c, value: c }))} />
                         <Search placeholder="搜索标题、编号..." allowClear onSearch={setSearchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ width: 300 }} />
+                               <Tooltip title="按创建日期升序">
+                            <Button 
+                                icon={<SortAscendingOutlined />} 
+                                onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                type={listSortOrder === 'asc' ? 'primary' : 'default'}
+                            />
+                        </Tooltip>
+                        <Tooltip title="按创建日期降序">
+                            <Button 
+                                icon={<SortDescendingOutlined />} 
+                                onClick={() => setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                                type={listSortOrder === 'desc' ? 'primary' : 'default'}
+                            />
+                        </Tooltip>
                     </Space>
                 </div>
             </Card>

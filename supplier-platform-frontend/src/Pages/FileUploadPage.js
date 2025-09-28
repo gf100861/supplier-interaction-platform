@@ -54,7 +54,7 @@ const FileUploadPage = () => {
   // --- 新增排序逻辑 ---
   const sortedCategories = useMemo(() => {
     if (!categories || categories.length === 0) return [];
-    const desiredOrder = ['Process', 'SEM'];
+    const desiredOrder = ['Process Audit', 'SEM'];
     return [...categories].sort((a, b) => {
       const indexA = desiredOrder.indexOf(a);
       const indexB = desiredOrder.indexOf(b);
@@ -98,7 +98,7 @@ const FileUploadPage = () => {
       );
     }
 
-    if (selectedCategory === 'Process') {
+    if (selectedCategory === 'Process Audit') {
 
       return (
 

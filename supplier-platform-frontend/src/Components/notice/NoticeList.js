@@ -1,6 +1,8 @@
-import React from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, theme,Tooltip } from 'antd';
-import { FileTextOutlined, ProfileOutlined, EyeOutlined } from '@ant-design/icons';
+import React, { useState, useMemo } from 'react';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, theme, Tooltip } from 'antd';
+// 1. 引入排序图标
+import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
@@ -73,40 +75,91 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
         </List.Item>
     );
 };
-// --- 子组件：批量任务包 ---
-const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => (
 
-    <List.Item style={{ display: 'block', padding: 0 }}>
-        <Collapse
-            bordered={false}
-            style={{ width: '100%', backgroundColor: props.token.colorBgLayout }}
-            expandIconPosition="end"
-            activeKey={activeCollapseKeys}
-            onChange={(keys) => setActiveCollapseKeys(keys)}
-        >
-            <Collapse.Panel
-                key={batch.batchId}
-                header={
-                    <List.Item.Meta
-                        avatar={<ProfileOutlined style={{ fontSize: '24px', color: props.token.colorPrimary }} />}
-                         title={
-                                <Tooltip title={batch.representative?.assignedSupplierName || '未知供应商'}>
-                                    <Text strong style={{ fontSize: '16px' }}> {batch.representative?.supplier?.shortCode || '未知'}-{batch.representative?.category || '未知'}</Text>
-                                </Tooltip>
-                            }
-                        description={`来自: ${batch.representative?.creator?.username || '未知创建人'} | 创建于: ${batch.representative.sdNotice.createTime.split(' ')[0]}`}
-                    />
-                }
+const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
+    
+    const [sortOrder, setSortOrder] = useState('default'); 
+
+    const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
+    const supplierName = batch.representative?.assignedSupplierName || '未知供应商';
+    const category = batch.representative?.category || '未知类型';
+    const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
+    
+    const sortedNotices = useMemo(() => {
+        const noticesToSort = [...batch.notices];
+        if (sortOrder === 'asc') {
+            return noticesToSort.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        }
+        if (sortOrder === 'desc') {
+            return noticesToSort.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+        }
+        return noticesToSort;
+    }, [batch.notices, sortOrder]);
+    
+    const handleSort = (order) => {
+        setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
+    };
+
+    return (
+        <List.Item style={{ display: 'block', padding: 0 }}>
+            <Collapse
+                bordered={false}
+                style={{ width: '100%', backgroundColor: props.token.colorBgLayout }}
+                expandIconPosition="end"
+                activeKey={activeCollapseKeys}
+                onChange={(keys) => setActiveCollapseKeys(keys)}
             >
-                 <List
-                    dataSource={batch.notices}
-                    // 2. Pass all props down to the inner SingleNoticeItem
-                    renderItem={notice => <SingleNoticeItem item={notice} {...props} />}
-                />
-            </Collapse.Panel>
-        </Collapse>
-    </List.Item>
-);
+                <Collapse.Panel
+                    key={batch.batchId}
+                    header={
+                        <List.Item.Meta
+                            avatar={<ProfileOutlined style={{ fontSize: '24px', color: props.token.colorPrimary }} />}
+                            title={
+                                <Space align="center">
+                                    <Tooltip title={`${supplierName} - ${category}`}>
+                                        <Text strong style={{ fontSize: '16px' }}> 
+                                            {`${supplierShortCode} - ${category}`}
+                                        </Text>
+                                    </Tooltip>
+                                    
+                                    {/* --- 核心修正：只有当子项大于1时，才渲染排序按钮 --- */}
+                                    {batch.notices.length > 1 && (
+                                        <>
+                                            <Tooltip title="按标题升序排列">
+                                                <Button
+                                                    type={sortOrder === 'asc' ? 'primary' : 'text'}
+                                                    size="small"
+                                                    shape="circle"
+                                                    icon={<SortAscendingOutlined />}
+                                                    onClick={(e) => { e.stopPropagation(); handleSort('asc'); }}
+                                                />
+                                            </Tooltip>
+                                            <Tooltip title="按标题降序排列">
+                                                <Button
+                                                    type={sortOrder === 'desc' ? 'primary' : 'text'}
+                                                    size="small"
+                                                    shape="circle"
+                                                    icon={<SortDescendingOutlined />}
+                                                    onClick={(e) => { e.stopPropagation(); handleSort('desc'); }}
+                                                />
+                                            </Tooltip>
+                                        </>
+                                    )}
+                                </Space>
+                            }
+                            description={`通知日期: ${createDate} | (共 ${batch.notices.length} 项)`}
+                        />
+                    }
+                >
+                    <List
+                        dataSource={sortedNotices}
+                        renderItem={notice => <SingleNoticeItem item={notice} {...props} />}
+                    />
+                </Collapse.Panel>
+            </Collapse>
+        </List.Item>
+    );
+};
 
 // --- 主组件：通知单列表 ---
 export const NoticeList = (props) => {

@@ -2,7 +2,6 @@ import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
 import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal} from 'antd';
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
-// import { noticeCategories } from '../data/_mockData';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
 import { useNotification } from '../contexts/NotificationContext';
@@ -29,6 +28,8 @@ const EditableRow = ({ index, ...props }) => {
         </Form>
     );
 };
+
+
 
 const getBase64 = (file) =>
     new Promise((resolve, reject) => {
@@ -98,7 +99,7 @@ const categoryColumnConfig = {
             )
         },
     ],
-    'Process': [
+    'Process Audit': [
         { title: 'PROCESS/QUESTIONS', dataIndex: 'title', editable: true, width: '20%' },
         { title: 'FINDINGS/DEVIATIONS', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
 
@@ -134,6 +135,20 @@ const BatchNoticeCreationPage = () => {
         }
         return [];
     }, [currentUser, suppliers]);
+
+
+     const sortedCategories = useMemo(() => {
+        if (!categories || categories.length === 0) return [];
+        const desiredOrder = ['Process Audit', 'SEM'];
+        return [...categories].sort((a, b) => {
+          const indexA = desiredOrder.indexOf(a);
+          const indexB = desiredOrder.indexOf(b);
+          if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+          if (indexA !== -1) return -1;
+          if (indexB !== -1) return 1;
+          return a.localeCompare(b);
+        });
+      }, [categories]);
 
 
     const handleCellChange = (key, dataIndex, value) => {
@@ -264,7 +279,7 @@ const BatchNoticeCreationPage = () => {
 
 
     const handleAdd = () => {
-        if (!globalSettings) { messageApi.error('请先确认顶部的全局设置！'); return; }
+        if (!globalSettings) { messageApi.error('请点击"确认设置"的按钮！'); return; }
         const newRowData = { key: count, images: [], attachments: [] };
         const dynamicColumns = categoryColumnConfig[globalSettings.category] || [];
         dynamicColumns.forEach(col => {
@@ -310,7 +325,7 @@ const BatchNoticeCreationPage = () => {
 
     const handleSubmitAll = async () => {
         if (!globalSettings) {
-            messageApi.error('请先确认顶部的全局设置！');
+            messageApi.error('请点击“确认设置”按钮！');
             return;
         }
 
@@ -550,7 +565,7 @@ const BatchNoticeCreationPage = () => {
                                 setDataSource([]);
                             }
                         }}>
-                            {categories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
+                            {sortedCategories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
                         </Select>
                     </Form.Item>
                     <Form.Item name="createTime" label="创建时间" rules={[{ required: true }]}>
@@ -580,7 +595,7 @@ const BatchNoticeCreationPage = () => {
                 <Space style={{ marginBottom: 16 }}>
                     <Button onClick={handleAdd} type="primary" icon={<PlusOutlined />}>手动添加一行</Button>
                     <Upload accept=".xlsx" showUploadList={false} beforeUpload={handleExcelImport} disabled={!globalSettings}>
-                        <Tooltip title={!globalSettings ? "请先确认顶部的全局设置" : "只能上传 .xlsx 格式文件"}>
+                        <Tooltip title={!globalSettings ? "请点击“确认设置”按钮！" : "只能上传 .xlsx 格式文件"}>
                             <Button icon={<FileExcelOutlined />}>从Excel导入</Button>
                         </Tooltip>
                     </Upload>

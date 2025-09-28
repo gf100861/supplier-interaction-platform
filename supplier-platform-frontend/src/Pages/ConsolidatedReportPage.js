@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import  { useMemo, useState } from 'react';
 import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin,List } from 'antd';
-import { PrinterOutlined, DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined,LeftOutlined, RightOutlined} from '@ant-design/icons';
+import { DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined,LeftOutlined, RightOutlined} from '@ant-design/icons';
 import { categoryColumnConfig, allPossibleStatuses } from '../data/_mockData';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
@@ -15,6 +15,7 @@ const { Title, Paragraph, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Search } = Input; // 1. Import Search component
+
 
 
 // 2. --- 复用历史记录的辅助函数 ---
@@ -81,8 +82,32 @@ const ConsolidatedReportPage = () => {
 
     const [searchTerm, setSearchTerm] = useState('');
 
-    const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
+    const { noticeCategories } = useConfig();
 
+    const sortedNoticeCategories = useMemo(() => {
+            if (!noticeCategories || noticeCategories.length === 0) {
+                return [];
+            }
+            const target = "Process Audit"; // 您想要置顶的项
+            // 如果目标项存在于数组中，则将其置顶
+            if (noticeCategories.includes(target)) {
+                return [target, ...noticeCategories.filter(item => item !== target)];
+            }
+            // 如果不存在，则返回原始顺序
+            return noticeCategories;
+        }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+
+      const managedSuppliers = useMemo(() => {
+        if (!currentUser) return [];
+        if (currentUser.role === 'Manager') return suppliers;
+        if (currentUser.role === 'SD') {
+          const managed = currentUser.managed_suppliers || [];
+          return managed.map(assignment => assignment.supplier);
+        }
+        return [];
+      }, [currentUser, suppliers]);
+
+    console.log(managedSuppliers)
 
         const groupedData = useMemo(() => {
        
@@ -283,7 +308,7 @@ const ConsolidatedReportPage = () => {
                         onChange={setSelectedSuppliers}
                         value={selectedSuppliers}
                         disabled={currentUser?.role === 'Supplier'} // 如果是供应商，则禁用
-                        options={suppliers.map(s => ({ label: s.name, value: s.id }))}
+                         options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code} (${s.name})` }))}
                     />
 
                     <Select
@@ -292,7 +317,7 @@ const ConsolidatedReportPage = () => {
                         style={{ width: 300 }}
                         placeholder="筛选问题类型 (默认全部)"
                         onChange={setSelectedCategories}
-                        options={noticeCategories.map(c => ({ label: c, value: c }))}
+                        options={sortedNoticeCategories.map(c => ({ label: c, value: c }))}
                     />
                      <Select
                         mode="multiple"
