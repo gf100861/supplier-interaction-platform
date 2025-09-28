@@ -500,7 +500,7 @@ const BatchNoticeCreationPage = () => {
             });
 
             // --- 数据解析逻辑 (保持不变) ---
-            const importedData = [];
+           const importedData = [];
             let currentDataIndex = count;
             worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
                 if (rowNumber === 1) return;
@@ -510,13 +510,32 @@ const BatchNoticeCreationPage = () => {
                     images: imageMap.get(rowNumber - 1) || [],
                     attachments: [],
                 };
+                
+                // --- 在这里使用更健壮的单元格读取方法 ---
+                baseColumns.forEach((col, colIndex) => {
+                    const cell = row.getCell(colIndex + 1);
+                    let cellValue = '';
 
-                // 根据动态列配置来读取数据
-                baseColumns.forEach((col, index) => {
-                    newRowData[col.dataIndex] = row.values[index + 1] || '';
+                    if (cell.value) {
+                        // 如果是富文本对象，则提取所有文本
+                        if (cell.value.richText) {
+                            cellValue = cell.value.richText.map(rt => rt.text).join('');
+                        } 
+                        // 如果是普通对象（例如日期），转换为字符串
+                        else if (typeof cell.value === 'object') {
+                            cellValue = cell.value.toString();
+                        } 
+                        // 其他情况
+                        else {
+                            cellValue = cell.value;
+                        }
+                    }
+                    newRowData[col.dataIndex] = cellValue;
                 });
+
                 // 单独读取备注列
-                newRowData['comments'] = row.values[baseColumns.length + 1] || '';
+                const commentsCell = row.getCell(baseColumns.length + 1);
+                newRowData['comments'] = commentsCell.value ? commentsCell.value.toString() : '';
 
                 importedData.push(newRowData);
                 currentDataIndex++;
@@ -530,7 +549,6 @@ const BatchNoticeCreationPage = () => {
             console.error("Excel 解析失败:", error);
             messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelParse', duration: 4 });
         }
-
         return false;
     };
 
