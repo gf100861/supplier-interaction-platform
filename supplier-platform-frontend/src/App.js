@@ -26,7 +26,7 @@ import DashboardPage from './Pages/DashboardPage';
 import BatchNoticeCreationPage from './Pages/BatchNoticeCreationPage';
 import ProblemAnalysisPage from './Pages/ProblemAnalysisPage';
 import ConsolidatedReportPage from './Pages/ConsolidatedReportPage';
-
+import AdminPage from './Pages/AdminPage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -65,6 +65,7 @@ const ThemedApp = () => {
                                                         <Route path="settings" element={<SettingsPage />} />
                                                         <Route path="analysis" element={<ProblemAnalysisPage />} />
                                                         <Route path="reports" element={<ConsolidatedReportPage />} />
+                                                        <Route path="admin" element={<AdminPage />} /> 
                                                     </Route>
                                                 </Route>
                                             </Routes>

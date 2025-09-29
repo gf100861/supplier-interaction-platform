@@ -13,12 +13,12 @@ const LoginIllustration = () => (
     <svg width="100%" height="100%" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
         <defs>
             <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{stopColor: '#4f46e5', stopOpacity:1}} />
-                <stop offset="100%" style={{stopColor: '#1e90ff', stopOpacity:1}} />
+                <stop offset="0%" style={{ stopColor: '#4f46e5', stopOpacity: 1 }} />
+                <stop offset="100%" style={{ stopColor: '#1e90ff', stopOpacity: 1 }} />
             </linearGradient>
             <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{stopColor: '#a855f7', stopOpacity:1}} />
-                <stop offset="100%" style={{stopColor: '#f472b6', stopOpacity:1}} />
+                <stop offset="0%" style={{ stopColor: '#a855f7', stopOpacity: 1 }} />
+                <stop offset="100%" style={{ stopColor: '#f472b6', stopOpacity: 1 }} />
             </linearGradient>
         </defs>
         <rect width="600" height="600" fill="#f0f2f5" />
@@ -63,13 +63,13 @@ const LoginPage = () => {
                 `)
                 .eq('id', authData.user.id)
                 .single();
-            
+
             if (userError) throw userError;
 
             if (userData.role !== values.role) {
                 throw new Error("凭证或角色选择不正确！");
             }
-            
+
             messageApi.success('登录成功!');
             localStorage.setItem('user', JSON.stringify(userData));
             navigate('/');
@@ -84,7 +84,7 @@ const LoginPage = () => {
     return (
         <Layout style={{ minHeight: '100vh' }}>
             <Row justify="center" align="middle" style={{ minHeight: '100vh', background: '#f0f2f5' }}>
-                
+
                 {/* 左侧插图区域，仅在大屏幕上显示 */}
                 <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ maxWidth: '500px', width: '100%' }}>
@@ -109,40 +109,41 @@ const LoginPage = () => {
                         </div>
 
                         <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'SD' }} layout="vertical">
-                            <Form.Item 
-                                name="email" 
-                                label="登录邮箱" 
+                            <Form.Item
+                                name="email"
+                                label="登录邮箱"
                                 rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}
                             >
                                 <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" size="large" />
                             </Form.Item>
 
-                            <Form.Item 
-                                name="password" 
-                                label="密码" 
+                            <Form.Item
+                                name="password"
+                                label="密码"
                                 rules={[{ required: true, message: '请输入密码!' }]}
                             >
                                 <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
                             </Form.Item>
-                            
-                            <Form.Item 
-                                name="role" 
-                                label="登录角色" 
+
+                            <Form.Item
+                                name="role"
+                                label="登录角色"
                                 rules={[{ required: true, message: '请选择您的角色!' }]}
                             >
                                 <Select placeholder="选择角色" size="large">
-                                    <Option value="SD">SD</Option>
-                                    <Option value="Manager">Manager</Option>
                                     <Option value="Supplier">Supplier</Option>
+                                    <Option value="SD">Volvo-SD</Option>
+                                    <Option value="Manager">Volvo-Manager</Option>
+                                     <Option value="Admin">Volvo-Admin</Option>
                                 </Select>
                             </Form.Item>
-                            
+
                             <Form.Item>
                                 <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">
                                     登 录
                                 </Button>
                             </Form.Item>
-                            
+
                             {/* --- 新增的联系信息 --- */}
                             <div style={{ textAlign: 'center', marginTop: '16px' }}>
                                 <Text type="secondary" style={{ fontSize: '12px' }}>

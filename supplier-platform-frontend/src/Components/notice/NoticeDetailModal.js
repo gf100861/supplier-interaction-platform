@@ -1,29 +1,31 @@
 // src/Components/notice/NoticeDetailModal.js
-
 import React, { useState, useMemo } from 'react';
-import { List, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Collapse, Popconfirm, Select, Carousel,message } from 'antd';
+import { List, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Collapse, Popconfirm} from 'antd';
 import {
     FileTextOutlined, PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
-    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined
+    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined,
+    // --- 新增以下图标 ---
+    InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
+    FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { categoryColumnConfig } from '../../data/_mockData';
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
-
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 // --- 内部辅助组件 (代码无变化) ---
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 
-const SupplierSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
+
+const SupplierSubmissionForm = ({ onFinish, form, actionAreaStyle, handlePreview }) => ( // ✨ 注意：传入 handlePreview
     <div style={actionAreaStyle}>
         <Title level={5}><SolutionOutlined /> 提交整改反馈</Title>
         <Paragraph type="secondary">请提供详细的行动计划，并上传必要的图片证据或附件。</Paragraph>
         <Form form={form} layout="vertical" onFinish={onFinish} autoComplete="off">
 
-            {/* 行动计划部分 */}
+            {/* 行动计划部分 (保持不变) */}
             <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
                 {(fields, { add, remove }) => (
                     <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
@@ -49,19 +51,36 @@ const SupplierSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
 
             <Divider />
 
-            {/* 其他信息部分 */}
+            {/* 其他信息部分 (修改图片和附件上传) */}
             <Form.Item name="description" label="补充说明 (可选)">
                 <TextArea rows={3} placeholder="可以补充说明整体完成情况..." />
             </Form.Item>
-            <Form.Item name="images" label="上传图片证据 (可选)" valuePropName="fileList" getValueFromEvent={normFile}>
-                <Upload listType="picture-card" beforeUpload={() => false} accept="image/*">
-                    <div><PlusOutlined /><div style={{ marginTop: 8 }}>上传图片</div></div>
-                </Upload>
+
+            {/* --- ✨ 修改：图片上传升级为 Dragger 并添加预览功能 --- */}
+            <Form.Item name="images" label="上传图片证据 (可选, 可拖拽)" valuePropName="fileList" getValueFromEvent={normFile}>
+                <Upload.Dragger
+                    listType="picture" // 这里改为 picture，显示文件列表更清晰
+                    beforeUpload={() => false}
+                    onPreview={handlePreview} // 启用高清预览
+                    accept="image/*"
+                    multiple // 支持批量上传
+                >
+                    <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                    <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
+                    <p className="ant-upload-hint">支持单次或批量上传图片文件。</p>
+                </Upload.Dragger>
             </Form.Item>
-            <Form.Item name="attachments" label="上传附件 (可选)" valuePropName="fileList" getValueFromEvent={normFile}>
-                <Upload beforeUpload={() => false} multiple>
-                    <Button icon={<UploadOutlined />}>点击上传附件</Button>
-                </Upload>
+
+            {/* --- ✨ 修改：附件上传升级为 Dragger --- */}
+            <Form.Item name="attachments" label="上传附件 (可选, 可拖拽)" valuePropName="fileList" getValueFromEvent={normFile}>
+                <Upload.Dragger
+                    beforeUpload={() => false}
+                    multiple // 支持批量上传
+                >
+                    <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
+                    <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
+                    <p className="ant-upload-hint">支持上传PDF, Word, Excel等非图片文件。</p>
+                </Upload.Dragger>
             </Form.Item>
 
             <Divider />
@@ -217,7 +236,8 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
 );
 
 // 仅用于提交证据的表单
-const EvidencePerActionForm = ({ onFinish, form, notice }) => {
+// 仅用于提交证据的表单
+const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => { // ✨ 注意：传入 handlePreview
     // 找到上一次提交并被批准的行动计划
     const lastApprovedPlans = useMemo(() => {
         const history = notice?.history || [];
@@ -226,35 +246,68 @@ const EvidencePerActionForm = ({ onFinish, form, notice }) => {
     }, [notice]);
 
     return (
-        <Form form={form} layout="vertical" onFinish={onFinish}>
-            <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
-            <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据图片。</Paragraph>
-            <Form.List name="evidence">
-                {(fields, { add, remove }) => (
-                    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
-                        {lastApprovedPlans.map((plan, index) => (
-                            <Card key={index} type="inner" title={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}>
-                                <Paragraph type="secondary">负责人: {plan.responsible} | 截止日期: {plan.deadline}</Paragraph>
-                                <Form.Item name={[index, 'description']} label="完成情况说明">
-                                    <TextArea rows={2} placeholder="请简述此项任务的完成情况..." />
-                                </Form.Item>
-                                <Form.Item name={[index, 'images']} label="上传图片证据" valuePropName="fileList" getValueFromEvent={normFile}>
-                                    <Upload 
-                                        listType="picture-card" 
-                                        beforeUpload={() => false}
-                                        accept="image/*"
-                                    >
-                                        <PlusOutlined />
-                                    </Upload>
-                                </Form.Item>
-                            </Card>
-                        ))}
-                    </div>
-                )}
-            </Form.List>
-            <Divider />
-            <Form.Item><Button type="primary" htmlType="submit">提交所有证据</Button></Form.Item>
-        </Form>
+      // --- 这是修正后的代码 ---
+<Form form={form} layout="vertical" onFinish={onFinish}>
+    <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
+    <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
+    
+    {/* ✨ 核心修改：直接遍历 lastApprovedPlans，移除了 Form.List */}
+    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
+        {lastApprovedPlans.map((plan, index) => (
+            <Card key={index} type="inner" title={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}>
+                <Paragraph type="secondary">负责人: {plan.responsible} | 截止日期: {plan.deadline}</Paragraph>
+                
+                {/* 这个 Form.Item 的 name 写法是完全正确的，它会自动在 onFinish 的 values 中创建 evidence 数组 */}
+                <Form.Item 
+                    name={['evidence', index, 'description']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
+                    label="完成情况说明" 
+                    rules={[{ required: true, message: '请填写完成说明！' }]}
+                >
+                    <TextArea rows={2} placeholder="请简述此项任务的完成情况..." />
+                </Form.Item>
+                
+                <Form.Item 
+                    name={['evidence', index, 'images']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
+                    label="上传图片证据 (可拖拽)" 
+                    valuePropName="fileList" 
+                    getValueFromEvent={normFile}
+                >
+                    <Upload.Dragger 
+                        listType="picture"
+                        beforeUpload={() => false}
+                        onPreview={handlePreview}
+                        accept="image/*"
+                        multiple
+                        style={{width: 250,height: 100}}
+                    >
+                        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                        <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
+                    </Upload.Dragger>
+                </Form.Item>
+
+                <Form.Item 
+                    name={['evidence', index, 'attachments']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
+                    label="上传附件 (可选, 可拖拽)" 
+                    valuePropName="fileList" 
+                    getValueFromEvent={normFile}
+                >
+                    <Upload.Dragger 
+                        beforeUpload={() => false}
+                        multiple
+                        style={{width: 250,height: 100}}
+                    >
+                        <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
+                        <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
+                    </Upload.Dragger>
+                </Form.Item>
+
+            </Card>
+        ))}
+    </div>
+
+    <Divider />
+    <Form.Item><Button type="primary" htmlType="submit">提交所有证据</Button></Form.Item>
+</Form>
     );
 };
 
@@ -278,6 +331,31 @@ export const NoticeDetailModal = ({
     onApproveEvidenceItem, onRejectEvidenceItem
 }) => {
     const { token } = theme.useToken();
+
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewImage, setPreviewImage] = useState('');
+    const [previewTitle, setPreviewTitle] = useState('');
+
+     const getBase64 = (file) =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (error) => reject(error);
+        });
+
+    const handleCancel = () => setPreviewOpen(false);
+
+    const handlePreview = async (file) => {
+        if (!file.url && !file.preview) {
+            file.preview = await getBase64(file.originFileObj);
+        }
+        setPreviewImage(file.url || file.preview);
+        setPreviewOpen(true);
+        setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
+    };
+    // --- 新增结束 ---
+
 
     const actionAreaStyle = {
         background: token.colorFillAlter,
@@ -311,7 +389,7 @@ export const NoticeDetailModal = ({
             case '待SD审核计划':
                 return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} />;
             case '待供应商上传证据':
-                return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} />;
+                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
             case '待SD关闭': {
                 if (!isSDOrManager) return null;
                 // 渲染逐条证据审批区
@@ -440,5 +518,7 @@ export const NoticeDetailModal = ({
 
             {renderActionArea()}
         </Modal>
+
+        
     );
 };

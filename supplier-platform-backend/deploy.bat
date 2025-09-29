@@ -22,3 +22,4 @@ echo ✅ 部署完成！
 echo 📝 请记录部署后的URL，并更新前端的vercel.json配置
 echo 🔧 然后重新部署前端以使用新的API地址
 pause
+
