@@ -71,7 +71,7 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
         childNode = editing ? (
             <Form.Item style={{ margin: 0 }} name={dataIndex} rules={[{ required: dataIndex !== 'comments', message: `${title} is required.` }]}>
                 {inputType === 'textarea' ? (
-                    <TextArea ref={inputRef} onPressEnter={save} onBlur={save} autoSize />
+                    <TextArea ref={inputRef} onPressEnter={save} onBlur={save} autoSize={{ minRows: 3, maxRows: 8 }} />
                 ) : (
                     <Input ref={inputRef} onPressEnter={save} onBlur={save} />
                 )}

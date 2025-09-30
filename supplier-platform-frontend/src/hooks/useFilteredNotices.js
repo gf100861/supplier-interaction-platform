@@ -8,60 +8,53 @@ export const useFilteredNotices = (notices, currentUser, searchTerm, selectedCat
         return notices; // 简化示例
     }, [notices, currentUser]);
 
-    const searchedNotices = useMemo(() => {
-        let data = userVisibleNotices;
-
-        // --- 分类筛选 ---
-        if (selectedCategories && selectedCategories.length > 0) {
-            data = data.filter(n => selectedCategories.includes(n.category));
-        }
-
-        // --- 多关键词“交集”搜索 (带详细日志) ---
-        const keywords = searchTerm.toLowerCase().split(';').map(k => k.trim()).filter(Boolean);
+   const groupedNotices = useMemo(() => {
+        const batchGroups = {}; // 用于存放真正的批量任务
+        const dailyGroups = {}; // 用于存放按“供应商+日期”分组的单个任务
         
-        console.log(`--- [诊断日志] 开始关键词搜索 ---`);
-        console.log(` -> 搜索词: "${searchTerm}"`);
-        console.log(` -> 解析后的关键词数组:`, keywords);
-
-        if (keywords.length > 0) {
-            data = data.filter(notice => {
-                const searchableText = [
-                    notice.title,
-                    notice.noticeCode,
-                    notice.sdNotice?.description,
-                    notice.assignedSupplierName,
-                    notice.category,
-                ].join(' ').toLowerCase();
-
-                // .every() 确保所有关键词都必须存在于 searchableText 中
-                const isMatch = keywords.every(keyword => searchableText.includes(keyword));
-                
-                console.log(` -> 检查: "${notice.title}" | 是否匹配所有关键词: ${isMatch ? '✔️' : '❌'}`);
-                
-                return isMatch;
-            });
-        }
-        
-        console.log(` -> 搜索完成，共找到 ${data.length} 条匹配结果。`);
-        console.log(`--- [诊断日志] 关键词搜索结束 ---`);
-
-        return data;
-    }, [userVisibleNotices, searchTerm, selectedCategories]);
-
-    const groupedNotices = useMemo(() => {
-        // ... (分组逻辑保持不变)
-        const grouped = {};
-        const singles = [];
         searchedNotices.forEach(notice => {
             if (notice.batchId) {
-                if (!grouped[notice.batchId]) grouped[notice.batchId] = [];
-                grouped[notice.batchId].push(notice);
+                // 如果有 batchId, 按老方法分组
+                if (!batchGroups[notice.batchId]) batchGroups[notice.batchId] = [];
+                batchGroups[notice.batchId].push(notice);
             } else {
-                singles.push(notice);
+                // 如果没有 batchId，创建一个新的分组键
+                const dateKey = dayjs(notice.sdNotice?.createTime).format('YYYY-MM-DD');
+                const dailyGroupKey = `${notice.assignedSupplierId}-${dateKey}`;
+                
+                if (!dailyGroups[dailyGroupKey]) dailyGroups[dailyGroupKey] = [];
+                dailyGroups[dailyGroupKey].push(notice);
             }
         });
-        const batchItems = Object.values(grouped).map(batch => ({ isBatch: true, batchId: batch[0].batchId, notices: batch, representative: batch[0] }));
-        return [...batchItems, ...singles];
+
+        // 1. 处理真正的批量任务包
+        const batchItems = Object.values(batchGroups).map(batch => ({ 
+            isBatch: true, 
+            batchId: batch[0].batchId, 
+            notices: batch, 
+            representative: batch[0] 
+        }));
+
+        // 2. 处理“每日”任务包
+        const dailyItems = [];
+        Object.values(dailyGroups).forEach(group => {
+            if (group.length > 1) {
+                // 如果一个“供应商+日期”组合下有多个任务，也把它变成一个“批量包”
+                dailyItems.push({
+                    isBatch: true, // 标记为批量，以便UI复用
+                    batchId: `daily-${group[0].assignedSupplierId}-${dayjs(group[0].sdNotice?.createTime).format('YYYYMMDD')}`, // 创建一个唯一的虚拟 batchId
+                    notices: group,
+                    representative: group[0]
+                });
+            } else {
+                // 如果只有一个任务，就还把它当作单个项
+                dailyItems.push(group[0]);
+            }
+        });
+        
+        // 3. 将两者合并
+        return [...batchItems, ...dailyItems];
+
     }, [searchedNotices]);
 
     return { userVisibleNotices, searchedNotices, groupedNotices };

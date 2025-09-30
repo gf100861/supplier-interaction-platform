@@ -1,10 +1,9 @@
 // src/Components/notice/NoticeDetailModal.js
 import React, { useState, useMemo } from 'react';
-import { List, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Collapse, Popconfirm} from 'antd';
+import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Popconfirm } from 'antd';
 import {
-    FileTextOutlined, PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
-    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined,
-    // --- 新增以下图标 ---
+    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
+    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled,
     InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
@@ -17,80 +16,6 @@ const { TextArea } = Input;
 
 // --- 内部辅助组件 (代码无变化) ---
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
-
-
-const SupplierSubmissionForm = ({ onFinish, form, actionAreaStyle, handlePreview }) => ( // ✨ 注意：传入 handlePreview
-    <div style={actionAreaStyle}>
-        <Title level={5}><SolutionOutlined /> 提交整改反馈</Title>
-        <Paragraph type="secondary">请提供详细的行动计划，并上传必要的图片证据或附件。</Paragraph>
-        <Form form={form} layout="vertical" onFinish={onFinish} autoComplete="off">
-
-            {/* 行动计划部分 (保持不变) */}
-            <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
-                {(fields, { add, remove }) => (
-                    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
-                        {fields.map(({ key, name, ...restField }) => (
-                            <Card key={key} size="small" title={`行动项 #${key + 1}`} extra={<MinusCircleOutlined onClick={() => remove(name)} />}>
-                                <Form.Item {...restField} name={[name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
-                                    <TextArea rows={2} />
-                                </Form.Item>
-                                <Space wrap align="baseline">
-                                    <Form.Item {...restField} name={[name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
-                                        <Input />
-                                    </Form.Item>
-                                    <Form.Item {...restField} name={[name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
-                                        <DatePicker />
-                                    </Form.Item>
-                                </Space>
-                            </Card>
-                        ))}
-                        <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>添加行动项</Button>
-                    </div>
-                )}
-            </Form.List>
-
-            <Divider />
-
-            {/* 其他信息部分 (修改图片和附件上传) */}
-            <Form.Item name="description" label="补充说明 (可选)">
-                <TextArea rows={3} placeholder="可以补充说明整体完成情况..." />
-            </Form.Item>
-
-            {/* --- ✨ 修改：图片上传升级为 Dragger 并添加预览功能 --- */}
-            <Form.Item name="images" label="上传图片证据 (可选, 可拖拽)" valuePropName="fileList" getValueFromEvent={normFile}>
-                <Upload.Dragger
-                    listType="picture" // 这里改为 picture，显示文件列表更清晰
-                    beforeUpload={() => false}
-                    onPreview={handlePreview} // 启用高清预览
-                    accept="image/*"
-                    multiple // 支持批量上传
-                >
-                    <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                    <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
-                    <p className="ant-upload-hint">支持单次或批量上传图片文件。</p>
-                </Upload.Dragger>
-            </Form.Item>
-
-            {/* --- ✨ 修改：附件上传升级为 Dragger --- */}
-            <Form.Item name="attachments" label="上传附件 (可选, 可拖拽)" valuePropName="fileList" getValueFromEvent={normFile}>
-                <Upload.Dragger
-                    beforeUpload={() => false}
-                    multiple // 支持批量上传
-                >
-                    <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
-                    <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
-                    <p className="ant-upload-hint">支持上传PDF, Word, Excel等非图片文件。</p>
-                </Upload.Dragger>
-            </Form.Item>
-
-            <Divider />
-
-            <Form.Item>
-                <Button type="primary" htmlType="submit">提交整改材料</Button>
-            </Form.Item>
-        </Form>
-    </div>
-);
 
 const DynamicDetailsDisplay = ({ notice }) => {
     // 修正 #2: 使用可选链 ?. 来安全地访问深层属性
@@ -137,7 +62,7 @@ const AttachmentsDisplay = ({ attachments }) => {
             <div style={{ marginTop: 8 }}>
                 <Space wrap>
                     {attachments.map((file, i) => (
-                        <Button key={i} type="dashed" href={file.url} size="small" target="_blank"  download={file.name}  icon={<PaperClipOutlined />}>
+                        <Button key={i} type="dashed" href={file.url} size="small" target="_blank" download={file.name} icon={<PaperClipOutlined />}>
                             {file.name}
                         </Button>
                     ))}
@@ -164,12 +89,12 @@ const ImageScroller = ({ images, title }) => {
         const newIndex = isLastSlide ? 0 : currentIndex + 1;
         setCurrentIndex(newIndex);
     };
-      const getHighResUrl = (image) => {
+    const getHighResUrl = (image) => {
         // 优先使用我们生成的 'url'，其次才是 antd 的 'thumbUrl'
         return image.url || image.thumbUrl;
     };
 
-  return (
+    return (
         <div style={{ marginTop: 12 }}>
             <Text strong><PictureOutlined /> {title}:</Text>
             <div style={{ position: 'relative', marginTop: 8 }}>
@@ -210,16 +135,21 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
             <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
                 {(fields, { add, remove }) => (
                     <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
-                        {fields.map(({ key, name, ...restField }) => (
-                            <Card key={key} size="small" title={`行动项 #${key + 1}`} extra={<MinusCircleOutlined onClick={() => remove(name)} />}>
-                                <Form.Item {...restField} name={[name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
-                                    <TextArea rows={2} />
+                        {/* --- 核心修改 1: 修改 map 的参数，获取 index --- */}
+                        {fields.map((field, index) => (
+                            // --- 核心修改 2: Card 的 key 属性必须继续使用 field.key ---
+                            <Card key={field.key} size="small" title={`行动项 #${index + 1}`} extra={<MinusCircleOutlined onClick={() => remove(field.name)} />}>
+                                {/* 注意: 这里的 name 和 ...restField 都需要从 field 对象中获取
+                        例如: name={[field.name, 'plan']}
+                    */}
+                                <Form.Item {...field} name={[field.name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
+                                    <TextArea autoSize={{ minRows: 3, maxRows: 9 }} />
                                 </Form.Item>
                                 <Space wrap align="baseline">
-                                    <Form.Item {...restField} name={[name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
+                                    <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
                                         <Input />
                                     </Form.Item>
-                                    <Form.Item {...restField} name={[name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
+                                    <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
                                         <DatePicker />
                                     </Form.Item>
                                 </Space>
@@ -246,68 +176,68 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => { /
     }, [notice]);
 
     return (
-      // --- 这是修正后的代码 ---
-<Form form={form} layout="vertical" onFinish={onFinish}>
-    <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
-    <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
-    
-    {/* ✨ 核心修改：直接遍历 lastApprovedPlans，移除了 Form.List */}
-    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
-        {lastApprovedPlans.map((plan, index) => (
-            <Card key={index} type="inner" title={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}>
-                <Paragraph type="secondary">负责人: {plan.responsible} | 截止日期: {plan.deadline}</Paragraph>
-                
-                {/* 这个 Form.Item 的 name 写法是完全正确的，它会自动在 onFinish 的 values 中创建 evidence 数组 */}
-                <Form.Item 
-                    name={['evidence', index, 'description']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
-                    label="完成情况说明" 
-                    rules={[{ required: true, message: '请填写完成说明！' }]}
-                >
-                    <TextArea rows={2} placeholder="请简述此项任务的完成情况..." />
-                </Form.Item>
-                
-                <Form.Item 
-                    name={['evidence', index, 'images']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
-                    label="上传图片证据 (可拖拽)" 
-                    valuePropName="fileList" 
-                    getValueFromEvent={normFile}
-                >
-                    <Upload.Dragger 
-                        listType="picture"
-                        beforeUpload={() => false}
-                        onPreview={handlePreview}
-                        accept="image/*"
-                        multiple
-                        style={{width: 250,height: 100}}
-                    >
-                        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                        <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
-                    </Upload.Dragger>
-                </Form.Item>
+        // --- 这是修正后的代码 ---
+        <Form form={form} layout="vertical" onFinish={onFinish}>
+            <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
+            <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
 
-                <Form.Item 
-                    name={['evidence', index, 'attachments']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
-                    label="上传附件 (可选, 可拖拽)" 
-                    valuePropName="fileList" 
-                    getValueFromEvent={normFile}
-                >
-                    <Upload.Dragger 
-                        beforeUpload={() => false}
-                        multiple
-                        style={{width: 250,height: 100}}
-                    >
-                        <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
-                        <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
-                    </Upload.Dragger>
-                </Form.Item>
+            {/* ✨ 核心修改：直接遍历 lastApprovedPlans，移除了 Form.List */}
+            <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
+                {lastApprovedPlans.map((plan, index) => (
+                    <Card key={index} type="inner" title={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}>
+                        <Paragraph type="secondary">负责人: {plan.responsible} | 截止日期: {plan.deadline}</Paragraph>
 
-            </Card>
-        ))}
-    </div>
+                        {/* 这个 Form.Item 的 name 写法是完全正确的，它会自动在 onFinish 的 values 中创建 evidence 数组 */}
+                        <Form.Item
+                            name={['evidence', index, 'description']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
+                            label="完成情况说明"
+                            rules={[{ required: true, message: '请填写完成说明！' }]}
+                        >
+                            <TextArea autoSize={{ minRows: 3, maxRows: 8 }} placeholder="请简述此项任务的完成情况..." />
+                        </Form.Item>
 
-    <Divider />
-    <Form.Item><Button type="primary" htmlType="submit">提交所有证据</Button></Form.Item>
-</Form>
+                        <Form.Item
+                            name={['evidence', index, 'images']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
+                            label="上传图片证据 (可拖拽)"
+                            valuePropName="fileList"
+                            getValueFromEvent={normFile}
+                        >
+                            <Upload.Dragger
+                                listType="picture"
+                                beforeUpload={() => false}
+                                onPreview={handlePreview}
+                                accept="image/*"
+                                multiple
+                                style={{ width: 250, height: 100 }}
+                            >
+                                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                                <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
+                            </Upload.Dragger>
+                        </Form.Item>
+
+                        <Form.Item
+                            name={['evidence', index, 'attachments']} // ✨ 最佳实践：在 name 中也加入父级 'evidence'
+                            label="上传附件 (可选, 可拖拽)"
+                            valuePropName="fileList"
+                            getValueFromEvent={normFile}
+                        >
+                            <Upload.Dragger
+                                beforeUpload={() => false}
+                                multiple
+                                style={{ width: 250, height: 100 }}
+                            >
+                                <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
+                                <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
+                            </Upload.Dragger>
+                        </Form.Item>
+
+                    </Card>
+                ))}
+            </div>
+
+            <Divider />
+            <Form.Item><Button type="primary" htmlType="submit">提交所有证据</Button></Form.Item>
+        </Form>
     );
 };
 
@@ -327,8 +257,9 @@ export const NoticeDetailModal = ({
 
     notice, open, onCancel, currentUser, form,
     onPlanSubmit, onPlanApprove, showPlanRejectionModal,
-    onEvidenceSubmit, onClosureApprove, showEvidenceRejectionModal,
-    onApproveEvidenceItem, onRejectEvidenceItem
+    onEvidenceSubmit, onClosureApprove,
+    onApproveEvidenceItem, onRejectEvidenceItem,
+    onLikeToggle
 }) => {
     const { token } = theme.useToken();
 
@@ -336,7 +267,15 @@ export const NoticeDetailModal = ({
     const [previewImage, setPreviewImage] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
 
-     const getBase64 = (file) =>
+     if (!notice) {
+        return null;
+    }
+
+    // 3. 检查当前用户是否已经点赞
+    const isLiked = notice.likes && notice.likes.includes(currentUser?.id);
+    const isSDOrManager = currentUser?.role === 'SD' || currentUser?.role === 'Manager';
+
+    const getBase64 = (file) =>
         new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
@@ -355,7 +294,6 @@ export const NoticeDetailModal = ({
         setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
     };
     // --- 新增结束 ---
-
 
     const actionAreaStyle = {
         background: token.colorFillAlter,
@@ -376,7 +314,7 @@ export const NoticeDetailModal = ({
         return String(val);
     };
     const safeTitle = toPlainText(notice.title || '');
-
+    console.log('Notice的值为：', notice)
 
     const renderActionArea = () => {
         const isAssignedSupplier = currentUser?.role === 'Supplier' && currentUser.supplier_id === notice.assignedSupplierId;
@@ -389,7 +327,7 @@ export const NoticeDetailModal = ({
             case '待SD审核计划':
                 return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} />;
             case '待供应商上传证据':
-                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
+                return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
             case '待SD关闭': {
                 if (!isSDOrManager) return null;
                 // 渲染逐条证据审批区
@@ -398,7 +336,7 @@ export const NoticeDetailModal = ({
                 const realIndex = lastEvidenceIndex >= 0 ? history.length - 1 - lastEvidenceIndex : -1;
                 const lastEvidence = realIndex >= 0 ? history[realIndex] : null;
                 const evidenceList = lastEvidence?.actionPlans || [];
-                
+
                 console.log('[NoticeDetailModal] Evidence debug info:', {
                     noticeId: notice.id,
                     lastEvidenceIndex: realIndex,
@@ -422,9 +360,9 @@ export const NoticeDetailModal = ({
                             {evidenceList.map((plan, index) => (
                                 <Card key={index} size="small" title={<Text strong>{`证据 #${index + 1}: ${plan.plan}`}</Text>}>
                                     <Paragraph type="secondary">{plan.evidenceDescription || '（供应商未提供文字说明）'}</Paragraph>
-                                    <EnhancedImageDisplay 
-                                        images={plan.evidenceImages} 
-                                        title="" 
+                                    <EnhancedImageDisplay
+                                        images={plan.evidenceImages}
+                                        title=""
                                         size="xlarge"
                                         showTitle={false}
                                     />
@@ -481,7 +419,7 @@ export const NoticeDetailModal = ({
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
             <Card size="small" type="inner">
                 {/* 修正 #2: 将富文本数组转换为纯文本 */}
-                <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description)}</Paragraph>
+                <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description || notice?.sdNotice?.details?.finding)}</Paragraph>
                 <DynamicDetailsDisplay notice={notice} />
                 <ImageScroller images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
@@ -514,11 +452,30 @@ export const NoticeDetailModal = ({
                 })}
             </Timeline>
 
+            {notice.status === '已完成' && isSDOrManager && (
+                <>
+                    <Divider />
+                    <div style={{ textAlign: 'center' }}>
+                        <Button
+                            type={isLiked ? "primary" : "default"}
+                            icon={isLiked ? <StarFilled /> : <StarOutlined />}
+                            onClick={() => onLikeToggle(notice)}
+                            size="large"
+                        >
+                            {isLiked ? '已赞' : '点赞表彰'}
+                        </Button>
+                        <Paragraph type="secondary" style={{ marginTop: '8px' }}>为优秀的整改案例点赞，以在仪表盘上进行展示。
+                        </Paragraph>
+                    </div>
+                </>
+            )}
+
+
             <Divider />
 
             {renderActionArea()}
         </Modal>
 
-        
+
     );
 };

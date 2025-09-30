@@ -108,7 +108,7 @@ const LoginPage = () => {
                             <Text type="secondary">欢迎回来，请登录您的账户</Text>
                         </div>
 
-                        <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'SD' }} layout="vertical">
+                        <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'Supplier' }} layout="vertical">
                             <Form.Item
                                 name="email"
                                 label="登录邮箱"
@@ -131,10 +131,10 @@ const LoginPage = () => {
                                 rules={[{ required: true, message: '请选择您的角色!' }]}
                             >
                                 <Select placeholder="选择角色" size="large">
-                                    <Option value="Supplier">Supplier</Option>
+                                    <Option value="Supplier"> Supplier</Option>
                                     <Option value="SD">Volvo-SD</Option>
                                     <Option value="Manager">Volvo-Manager</Option>
-                                     <Option value="Admin">Volvo-Admin</Option>
+                                    <Option value="Admin">Volvo-Admin</Option>
                                 </Select>
                             </Form.Item>
 

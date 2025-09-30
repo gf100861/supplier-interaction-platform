@@ -34,13 +34,13 @@ const getStatusTag = (status) => {
 
 
 const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleReviewToggle, token, currentUser, noticeCategoryDetails }) => {
-    
+
     // --- 核心修正：在使用前，进行一次安全检查，防止极端情况下的崩溃 ---
-     const displayTitle = (item.title && typeof item.title === 'object') 
-        ? item.title.richText 
+    const displayTitle = (item.title && typeof item.title === 'object')
+        ? item.title.richText
         : item.title;
-    const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category]) 
-        ? noticeCategoryDetails[item.category] 
+    const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
+        ? noticeCategoryDetails[item.category]
         : { id: 'N/A', color: 'default' };
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD审核证据';
@@ -48,7 +48,7 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
     return (
         <List.Item actions={getActionsForItem(item)}>
             {isReviewable && (
-                <Checkbox 
+                <Checkbox
                     checked={item.isReviewed}
                     onChange={(e) => handleReviewToggle(item, e)}
                     onClick={(e) => e.stopPropagation()}
@@ -59,13 +59,13 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
                 style={{ paddingLeft: '24px' }}
                 avatar={<FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary }} />}
                 title={
-                     <Space>
+                    <Space>
                         <a onClick={() => showDetailsModal(item)}><Text strong>{displayTitle || ''}</Text></a>
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
                     </Space>
                 }
                 description={`编号: ${item.noticeCode || item.id} | 指派给: ${item.supplier.shortCode}`}
-                
+
             />
             <Space size="middle">
                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
@@ -77,14 +77,20 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
 };
 
 const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
-    
-    const [sortOrder, setSortOrder] = useState('default'); 
+
+    const [sortOrder, setSortOrder] = useState('default');
 
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
     const supplierName = batch.representative?.assignedSupplierName || '未知供应商';
     const category = batch.representative?.category || '未知类型';
     const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
-    
+    // --- 核心修正：在这里智能地判断并生成标题 ---
+    const isRealBatch = batch.batchId.startsWith('BATCH-');
+    const titleText = isRealBatch
+        ? `批量任务: ${supplierShortCode} - ${category}`
+        : `每日任务: ${supplierShortCode}- ${category}`;
+
+
     const sortedNotices = useMemo(() => {
         const noticesToSort = [...batch.notices];
         if (sortOrder === 'asc') {
@@ -95,7 +101,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         }
         return noticesToSort;
     }, [batch.notices, sortOrder]);
-    
+
     const handleSort = (order) => {
         setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
     };
@@ -116,12 +122,12 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                             avatar={<ProfileOutlined style={{ fontSize: '24px', color: props.token.colorPrimary }} />}
                             title={
                                 <Space align="center">
-                                    <Tooltip title={`${supplierName} - ${category}`}>
-                                        <Text strong style={{ fontSize: '16px' }}> 
-                                            {`${supplierShortCode} - ${category}`}
+                                    <Tooltip title={isRealBatch ? `${supplierName} - ${category}` : `${supplierName} - ${createDate}`}>
+                                        <Text strong style={{ fontSize: '16px' }}>
+                                            {titleText}
                                         </Text>
                                     </Tooltip>
-                                    
+
                                     {/* --- 核心修正：只有当子项大于1时，才渲染排序按钮 --- */}
                                     {batch.notices.length > 1 && (
                                         <>
@@ -168,8 +174,8 @@ export const NoticeList = (props) => {
             dataSource={props.data}
             renderItem={item => (
                 // 2. Pass all props down to the child components
-                item.isBatch 
-                    ? <NoticeBatchItem batch={item} {...props} /> 
+                item.isBatch
+                    ? <NoticeBatchItem batch={item} {...props} />
                     : <SingleNoticeItem item={item} {...props} />
             )}
             locale={{ emptyText: '暂无相关通知单' }}

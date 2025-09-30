@@ -76,55 +76,69 @@ const FileUploadPage = () => {
     setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
   };
 
-  const renderDynamicFields = () => {
+const renderDynamicFields = () => {
     if (!selectedCategory) return null;
-    if (selectedCategory === 'SEM') {
-      return (
-        <>
-          <Form.Item key="criteria" name={['details', 'criteria']} label="Criteria n°" rules={[{ required: true, message: '请输入 Criteria n°！' }]} >
-            <Input placeholder="请输入 Criteria n°" />
-          </Form.Item>
-          <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true, message: '请输入 SEM Parameter！' }]} >
-            <TextArea rows={3} placeholder="请输入 SEM Parameter" />
-          </Form.Item>
-          <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true, message: '请输入 Gap description！' }]} >
-            <TextArea rows={3} placeholder="请输入 Gap description" />
-          </Form.Item>
-          <Form.Item key="score" name={['details', 'score']} label="Actual SEM points" rules={[{ required: true, message: '请输入 Actual SEM points！' }]} >
 
-            <InputNumber min={1} max={5} style={{ width: '100%' }} placeholder="请输入1到5之间的分数" />
-          </Form.Item>
-        </>
-      );
+    if (selectedCategory === 'SEM') {
+        return (
+            <>
+                <Form.Item key="criteria" name={['details', 'criteria']} label="Criteria n°" rules={[{ required: true, message: '请输入 Criteria n°！' }]} >
+                    <Input placeholder="请输入 Criteria n°" />
+                </Form.Item>
+                
+                {/* --- 核心修改：使用 autoSize 替换 rows --- */}
+                <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true, message: '请输入 SEM Parameter！' }]} >
+                    <TextArea 
+                        autoSize={{ minRows: 3, maxRows: 5 }} // 高度将在3行到5行之间自动调整
+                        placeholder="请输入 SEM Parameter" 
+                    />
+                </Form.Item>
+                
+                {/* --- 核心修改：使用 autoSize 替换 rows --- */}
+                <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true, message: '请输入 Gap description！' }]} >
+                    <TextArea 
+                        autoSize={{ minRows: 3, maxRows: 6 }} // 高度将在3行到6行之间自动调整
+                        placeholder="请输入 Gap description" 
+                    />
+                </Form.Item>
+                
+                <Form.Item key="score" name={['details', 'score']} label="Actual SEM points" rules={[{ required: true, message: '请输入 Actual SEM points！' }]} >
+                    <InputNumber min={1} max={5} style={{ width: '100%' }} placeholder="请输入1到5之间的分数" />
+                </Form.Item>
+            </>
+        );
     }
 
     if (selectedCategory === 'Process Audit') {
-
-      return (
-
-        <>
-          <Form.Item
-            key="Process"
-            name={['details', 'process']}
-            label="PROCESS/QUESTIONS"
-            rules={[{ required: true, message: '请输入Process/Questions' }]}
-          >
-            <Input placeholder="请输入Process/Questions" />
-          </Form.Item>
-          <Form.Item
-            key="Findings"
-            name={['details', 'finding']}
-            label="FINDINGS/DEVIATIONS"
-            rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}
-          >
-            <TextArea rows={3} placeholder="请输入FINDINGS/DEVIATIONS" />
-          </Form.Item>
-        </>
-
-      )
+        return (
+            <>
+                <Form.Item
+                    key="Process"
+                    name={['details', 'process']}
+                    label="PROCESS/QUESTIONS"
+                    rules={[{ required: true, message: '请输入Process/Questions' }]}
+                >
+                    <Input placeholder="请输入Process/Questions" />
+                </Form.Item>
+                
+                {/* --- 核心修改：使用 autoSize 替换 rows --- */}
+                <Form.Item
+                    key="Findings"
+                    name={['details', 'finding']}
+                    label="FINDINGS/DEVIATIONS"
+                    rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}
+                >
+                    <TextArea 
+                        autoSize={{ minRows: 3, maxRows: 8 }} // 高度将在3行到8行之间自动调整
+                        placeholder="请输入FINDINGS/DEVIATIONS" 
+                    />
+                </Form.Item>
+            </>
+        )
     }
+
     return null;
-  };
+};
 
   const onFinish = async (values) => {
     setLoading(true);

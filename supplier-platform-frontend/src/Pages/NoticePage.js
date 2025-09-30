@@ -16,6 +16,7 @@ import { useAlerts } from '../contexts/AlertContext';
 import { useAlertService } from '../services/AlertService';
 import { useConfig } from '../contexts/ConfigContext';
 import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
+import { supabase } from '../supabaseClient'; // 确保导入 supabase
 
 const { Title, Paragraph } = Typography;
 const { Search } = Input;
@@ -51,6 +52,23 @@ const NoticePage = () => {
     const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
     const [reassignForm] = Form.useForm();
 
+
+    const handleLikeToggle = async (notice) => {
+        const currentLikes = notice.likes || [];
+        const userId = currentUser.id;
+        const isLiked = currentLikes.includes(userId);
+        const newLikesArray = isLiked ? currentLikes.filter(id => id !== userId) : [...currentLikes, userId];
+        
+        // 我们不再需要在这里调用 updateNotice，因为 Supabase Realtime 会处理
+        const { error } = await supabase
+            .from('notices')
+            .update({ likes: newLikesArray })
+            .eq('id', notice.id);
+        
+        if (error) { messageApi.error(`操作失败: ${error.message}`); }
+        else { messageApi.success(isLiked ? '已取消点赞' : '感谢您的认可！'); }
+    };
+
     const [listSortOrder, setListSortOrder] = useState('desc'); // 默认按日期降序（最新在前）
 
 
@@ -71,6 +89,18 @@ const NoticePage = () => {
     useEffect(() => {
 
     }, [selectedNotice]);
+
+     useEffect(() => {
+        // 如果弹窗是打开的，并且主 notices 列表已更新
+        if (selectedNotice && notices.length > 0) {
+            // 从最新的 notices 列表中找到我们当前正在查看的通知单
+            const updatedVersion = notices.find(n => n.id === selectedNotice.id);
+            if (updatedVersion) {
+                // 用最新版本的数据来更新弹窗的状态
+                setSelectedNotice(updatedVersion);
+            }
+        }
+    }, [notices]); // 这个 effect 只在 notices 数组变化时运行
 
     // --- 数据逻辑 ---
     const userVisibleNotices = useMemo(() => {
@@ -136,25 +166,51 @@ const NoticePage = () => {
     }, [userVisibleNotices, searchTerm, selectedCategories]);
 
 
+  // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
     const groupedNotices = useMemo(() => {
-        const grouped = {};
-        const singles = [];
+        const batchGroups = {}; // 用于存放真正的批量任务
+        const dailyGroups = {}; // 用于存放按“供应商+日期”分组的单个任务
+        
         searchedNotices.forEach(notice => {
             if (notice.batchId) {
-                if (!grouped[notice.batchId]) grouped[notice.batchId] = [];
-                grouped[notice.batchId].push(notice);
+                if (!batchGroups[notice.batchId]) batchGroups[notice.batchId] = [];
+                batchGroups[notice.batchId].push(notice);
             } else {
-                singles.push(notice);
+                const dateKey = dayjs(notice.sdNotice?.createTime).format('YYYY-MM-DD');
+                const dailyGroupKey = `${notice.assignedSupplierId}-${dateKey}`;
+                
+                if (!dailyGroups[dailyGroupKey]) dailyGroups[dailyGroupKey] = [];
+                dailyGroups[dailyGroupKey].push(notice);
             }
         });
-        const batchItems = Object.values(grouped).map(batch => ({ isBatch: true, batchId: batch[0].batchId, notices: batch, representative: batch[0] }));
 
-        const combinedList = [...batchItems, ...singles];
+        const batchItems = Object.values(batchGroups).map(batch => ({ 
+            isBatch: true, 
+            batchId: batch[0].batchId, 
+            notices: batch, 
+            representative: batch[0] 
+        }));
 
-        // 在这里进行排序
+        const dailyItems = [];
+        Object.values(dailyGroups).forEach(group => {
+            if (group.length > 1) {
+                dailyItems.push({
+                    isBatch: true,
+                    batchId: `daily-${group[0].assignedSupplierId}-${dayjs(group[0].sdNotice?.createTime).format('YYYYMMDD')}`,
+                    notices: group,
+                    representative: group[0]
+                });
+            } else {
+                dailyItems.push(group[0]);
+            }
+        });
+        
+        const combinedList = [...batchItems, ...dailyItems];
+
+        // 排序逻辑 (保持不变)
         const getSortableDate = (item) => {
             const dateStr = item.isBatch ? item.representative.sdNotice?.createTime : item.sdNotice?.createTime;
-            return dayjs(dateStr || 0); // 如果日期不存在，则排在最后
+            return dayjs(dateStr || 0);
         };
 
         if (listSortOrder === 'asc') {
@@ -162,9 +218,12 @@ const NoticePage = () => {
         } else if (listSortOrder === 'desc') {
             combinedList.sort((a, b) => getSortableDate(b).diff(getSortableDate(a)));
         }
-
+        
         return combinedList;
-    }, [searchedNotices, listSortOrder]); // <-- 将 listSortOrder 加入依赖项
+    }, [searchedNotices, listSortOrder]); // <-- 确保依赖项正确
+
+
+
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -672,6 +731,7 @@ const NoticePage = () => {
                 showEvidenceRejectionModal={() => setRejectionModal({ visible: true, notice: selectedNotice, handler: handleEvidenceReject })}
                 onApproveEvidenceItem={(index) => handleEvidenceItemApprove(index)}
                 onRejectEvidenceItem={(index) => setRejectionModal({ visible: true, notice: selectedNotice, handler: (values) => handleEvidenceItemReject(values, index) })}
+                onLikeToggle={handleLikeToggle}
             />
 
             <RejectionModal
