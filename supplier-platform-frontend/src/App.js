@@ -14,6 +14,7 @@ import { AlertProvider as ProductionAlertProvider } from './contexts/ProductionA
 import { ConfigProvider } from './contexts/ConfigContext';
 import { PusherProvider } from './contexts/PusherContext'; // <-- 替换 SocketProvider
 import { CategoryProvider } from './contexts/CategoryContext'; // <-- 1. 导入
+import { EventProvider } from './contexts/EventContext'; // <-- 1. 导入
 // Import all pages and components
 import MainLayout from './Components/MainLayout';
 import ProtectedRoute from './Components/ProtectedRoute';
@@ -46,34 +47,37 @@ const ThemedApp = () => {
                     {/* 2. 依赖基础 Provider 的业务 Provider */}
                     <ConfigProvider>
                         <SupplierProvider>
-                             <CategoryProvider>
-                            <AlertProvider>
-                                <ProductionAlertProvider>
-                                    <NoticeProvider>
-                                    <PusherProvider> {/* <-- 使用 PusherProvider */}
-                                        {/* 3. 路由和UI */}
-                                        <BrowserRouter>
-                                            <Routes>
-                                                <Route path="/login" element={<LoginPage />} />
-                                                <Route element={<ProtectedRoute />}>
-                                                    <Route path="/" element={<MainLayout />}>
-                                                        <Route index element={<DashboardPage />} />
-                                                        <Route path="notices" element={<NoticePage />} />
-                                                        <Route path="audit-plan" element={<AuditPlanPage />} />
-                                                        <Route path="batch-create" element={<BatchNoticeCreationPage />} />
-                                                        <Route path="upload" element={<FileUploadPage />} />
-                                                        <Route path="settings" element={<SettingsPage />} />
-                                                        <Route path="analysis" element={<ProblemAnalysisPage />} />
-                                                        <Route path="reports" element={<ConsolidatedReportPage />} />
-                                                        <Route path="admin" element={<AdminPage />} /> 
-                                                    </Route>
-                                                </Route>
-                                            </Routes>
-                                        </BrowserRouter>
-                                    </PusherProvider>
-                                    </NoticeProvider>
-                                </ProductionAlertProvider>
-                            </AlertProvider>
+                            <CategoryProvider>
+                                <EventProvider>
+                                    <AlertProvider>
+                                        <ProductionAlertProvider>
+                                            <NoticeProvider>
+                                                <PusherProvider> {/* <-- 使用 PusherProvider */}
+                                                    {/* 3. 路由和UI */}
+                                                    <BrowserRouter>
+                                                        <Routes>
+                                                            <Route path="/login" element={<LoginPage />} />
+                                                            <Route element={<ProtectedRoute />}>
+                                                                <Route path="/" element={<MainLayout />}>
+                                                                    <Route index element={<DashboardPage />} />
+                                                                    <Route path="notices" element={<NoticePage />} />
+                                                                    <Route path="audit-plan" element={<AuditPlanPage />} />
+                                                                    <Route path="batch-create" element={<BatchNoticeCreationPage />} />
+                                                                    <Route path="upload" element={<FileUploadPage />} />
+                                                                    <Route path="settings" element={<SettingsPage />} />
+                                                                    <Route path="analysis" element={<ProblemAnalysisPage />} />
+                                                                    <Route path="reports" element={<ConsolidatedReportPage />} />
+                                                                    <Route path="admin" element={<AdminPage />} />
+                                                                </Route>
+                                                            </Route>
+                                                        </Routes>
+                                                    </BrowserRouter>
+                                                </PusherProvider>
+                                            </NoticeProvider>
+                                        </ProductionAlertProvider>
+                                    </AlertProvider>
+
+                                </EventProvider>
                             </CategoryProvider>
                         </SupplierProvider>
                     </ConfigProvider>

@@ -18,7 +18,7 @@ const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
 
 const allMenuItems = [
-    { key: '/', icon: <HomeOutlined />, label: '仪表盘', roles: ['SD', 'Manager', 'Supplier'] },
+    { key: '/', icon: <HomeOutlined />, label: '仪表盘', roles: ['SD', 'Manager', 'Supplier','Admin'] },
     { key: '/audit-plan', icon: <AuditOutlined />, label: '年度计划', roles: ['SD', 'Manager'] },
     {
         key: 'notice-group',
