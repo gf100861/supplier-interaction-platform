@@ -70,11 +70,11 @@ const AuditPlanPage = () => {
     }, [currentYear]); // 依赖项为 currentYear
 
     // 放在 AuditPlanPage 组件的顶部
-useEffect(() => {
-    if (suppliers && suppliers.length > 0) {
-        console.log("从 Context 获取到的 Suppliers 数据:", suppliers);
-    }
-}, [suppliers]);
+    useEffect(() => {
+        if (suppliers && suppliers.length > 0) {
+            console.log("从 Context 获取到的 Suppliers 数据:", suppliers);
+        }
+    }, [suppliers]);
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -104,8 +104,8 @@ useEffect(() => {
     }, [events, currentUser]);
 
 
-    
-      const planStats = useMemo(() => {
+
+    const planStats = useMemo(() => {
         const stats = {
             total: filteredEvents.length,
             completed: 0,
@@ -221,27 +221,29 @@ useEffect(() => {
     const prevYear = () => setCurrentYear(currentYear - 1);
     const nextYear = () => setCurrentYear(currentYear + 1);
     const handleYearChange = (year) => setCurrentYear(year);
-      const generateYearOptions = () => {
+    const generateYearOptions = () => {
 
-        const current = dayjs().year();
+        const current = dayjs().year();
 
-        const years = [];
+        const years = [];
 
-        for (let i = current - 2; i <= current + 2; i++) {
+        for (let i = current - 2; i <= current + 2; i++) {
 
-            years.push(<Option key={i} value={i}>{i}</Option>);
+            years.push(<Option key={i} value={i}>{i}</Option>);
 
-        }
+        }
 
-        return years;
+        return years;
 
-    };
+    };
+
+    //根据SD的需要设计表头和添加数据
     const handleExportExcel = async () => { /* ... */ };
 
     return (
         <div style={{ padding: '0 24px 24px 24px' }}>
             {/* 顶部控制栏 (保持不变) */}
-           <Card style={{ marginBottom: '16px' }}>
+            <Card style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                         <Button icon={<LeftOutlined />} onClick={prevYear} size="small" style={{ marginRight: 8 }} />
@@ -287,7 +289,7 @@ useEffect(() => {
                                 {months.map(month => <div key={month} style={matrixStyles.headerCell}>{month}</div>)}
                             </div>
 
-                        
+
                             {suppliers.map(supplier => (
                                 <div key={supplier.id} style={matrixStyles.bodyRow}>
                                     {/* ✨ 核心修正：将 parmaId 更正为 parma_id 以匹配您的数据库表 */}
@@ -329,10 +331,14 @@ useEffect(() => {
                                                                 ellipsis={{ tooltip: false }} // Tooltip由外层提供，此处禁用默认的
                                                             >
                                                                 <Tag color={item.type === 'audit' ? 'blue' : 'orange'}>{item.category}</Tag>
-                                                                {item.audit_project}
+                                                                {
+                                                                    item.audit_project.length > 5
+                                                                        ? `${item.audit_project.substring(0, 5)}...`
+                                                                        : item.audit_project
+                                                                }
                                                             </Text>
                                                         </Tooltip>
-                                                        
+
                                                         {/* 右侧：操作按钮，固定宽度 */}
                                                         <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
                                                             <Popconfirm

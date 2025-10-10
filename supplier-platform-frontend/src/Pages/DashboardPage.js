@@ -16,17 +16,19 @@ const DashboardPage = () => {
     const [allUsers, setAllUsers] = useState([]);
     const [usersLoading, setUsersLoading] = useState(true);
 
+    const { suppliers } = useSuppliers(); // 2. 获取完整的供应商列表
+
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
     // --- 使用 useEffect 在组件加载时，独立获取所有用户的数据 ---
-    useEffect(() => {
+   useEffect(() => {
         const fetchUsers = async () => {
             try {
                 // 我们只需要 id 和 name 用于显示
                 const { data, error } = await supabase
                     .from('users')
-                    .select('id, name'); // 注意：请确保您的 users 表中有 'name' 字段
-
+                    .select('id, username'); // 确保您的 users 表中有 'name' 字段
+                
                 if (error) throw error;
                 setAllUsers(data);
             } catch (error) {
@@ -38,13 +40,13 @@ const DashboardPage = () => {
         fetchUsers();
     }, []);
 
+    // --- 4. 核心修正：userLookup 现在基于从数据库获取的 allUsers ---
     const userLookup = useMemo(() => {
         return allUsers.reduce((acc, user) => {
             acc[user.id] = user; // 使用数据库的 uuid 作为 key
             return acc;
         }, {});
     }, [allUsers]);
-
     // --- 核心：在这里计算所有仪表盘需要的数据 ---
     const dashboardData = useMemo(() => {
         if (noticesLoading || usersLoading) return null;
@@ -81,10 +83,10 @@ const DashboardPage = () => {
         const allOpenIssues = baseData.filter(n => n.status !== '已完成' && n.status !== '已作废').length;
 
         const pendingForSupplier = baseData.filter(n =>
-            (n.status === '待SD关闭' || n.status === '待SD审核'||n.status === '待供应商处理') &&
+            (n.status === '待SD关闭' || n.status === '待SD审核'||n.status === '待供应商处理'|| n.status === '待供应商上传证据') &&
             dayjs(n.createdAt).isAfter(thirtyDaysAgo)
         );
-        const supplierActionRequired = Object.entries(
+            const supplierActionRequired = Object.entries(
             pendingForSupplier.reduce((acc, notice) => {
                 const name = notice.supplier.shortCode;
                 if (name) { // 安全检查
@@ -94,6 +96,8 @@ const DashboardPage = () => {
                 return acc;
             }, {})
         ).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+
+       
 
         // SD点赞最多的改善 (这个是全局的，所以用 notices)
         const topImprovement = notices
@@ -107,6 +111,33 @@ const DashboardPage = () => {
     // 加载守卫
     if (!dashboardData) {
         return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
+    }
+
+     if (currentUser.role === 'Supplier') {
+        return (
+            <div>
+                <Card style={{ marginBottom: 24 }} bordered={false}>
+                    <Title level={4} style={{ margin: 0 }}>我的仪表盘</Title>
+                    <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>查看与您公司相关的核心问题指标。</Paragraph>
+                </Card>
+                <Row gutter={[24, 24]}>
+                    <Col xs={24} sm={12}>
+                        <Card bordered={false}><Statistic title="本月已关闭问题" value={dashboardData.closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Card>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                        <Card bordered={false}><Statistic title="当前所有未关闭问题" value={dashboardData.allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card>
+                    </Col>
+                </Row>
+                 <Card style={{ marginTop: 24 }} bordered={false}>
+                    <Empty description={
+                        <Space direction="vertical">
+                            <Text>所有待办事项，请前往“整改通知单”页面处理。</Text>
+                            <Button type="primary" onClick={() => navigate('/notices')}>立即前往</Button>
+                        </Space>
+                    } />
+                </Card>
+            </div>
+        );
     }
 
     const { closedThisMonth, allOpenIssues, supplierActionRequired, topImprovement } = dashboardData;
@@ -140,7 +171,12 @@ const DashboardPage = () => {
                                         title={<Text strong>{item.name}</Text>}
                                         description={`${item.count} 项待处理`}
                                     />
-                                    <Button type="link" onClick={() => navigate('/notices')}>去处理</Button>
+                                    <Button 
+                                        type="link" 
+                                        onClick={() => navigate('/notices', { state: { preSelectedSupplier: item.id } })}
+                                    >
+                                        去处理
+                                    </Button>
                                 </List.Item>
                             )}
                             locale={{ emptyText: <Empty description="太棒了！近30天内没有积压任务。" /> }}
@@ -166,8 +202,10 @@ const DashboardPage = () => {
                                 </Space>
                                 <Avatar.Group maxCount={4} style={{ marginLeft: 16 }}>
                                     {(topImprovement.likes).map(userId => (
-                                        <Tooltip key={userId} title={userLookup[userId]?.name || '未知用户'}>
-                                            <Avatar style={{ backgroundColor: '#1890ff' }}>{userLookup[userId]?.name?.[0] || '?'}</Avatar>
+                                        <Tooltip key={userId} title={userLookup[userId]?.username || '未知用户'}>
+                                            <Avatar style={{ backgroundColor: '#1890ff' }}>
+                                                {userLookup[userId]?.username?.[0]?.toUpperCase() || '?'}
+                                            </Avatar>
                                         </Tooltip>
                                     ))}
                                 </Avatar.Group>

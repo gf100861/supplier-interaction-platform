@@ -252,6 +252,7 @@ const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, act
     </div>
 );
 
+
 // --- 主弹窗组件 ---
 export const NoticeDetailModal = ({
 
@@ -267,7 +268,7 @@ export const NoticeDetailModal = ({
     const [previewImage, setPreviewImage] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
 
-     if (!notice) {
+    if (!notice) {
         return null;
     }
 
@@ -397,15 +398,24 @@ export const NoticeDetailModal = ({
             sd_closure_approve: "SD批准关闭",
             manager_reassignment: "管理员重分配了供应商",
             manager_void: "管理员作废了通知单",
+            // --- 核心修正：在这里新增对 like 和 unlike 的处理 ---
+            like: "点赞了此改善",
+            unlike: "取消了点赞"
         };
+
         const colorMap = {
             submission: 'blue',
             approval: 'green',
             rejection: 'red',
             reassignment: 'orange',
-            void: 'grey'
-        }
+            void: 'grey',
+            // --- 核心修正：为新类型定义颜色 ---
+            like: 'gold',
+            unlike: 'default'
+        };
+
         const key = Object.keys(colorMap).find(k => h.type.includes(k));
+
         return {
             text: typeMap[h.type] || "执行了操作",
             color: colorMap[key] || 'grey'
@@ -438,7 +448,7 @@ export const NoticeDetailModal = ({
                     const label = getHistoryItemLabel(h);
                     return (
                         <Timeline.Item key={index} color={label.color}>
-                            <p><b>{h.submitter}</b> 在 {h.time} {label.text}</p>
+                            <p><b>{h.submitter||'发起人'}</b> 在 {h.time} {label.text}</p>
 
                             {/* 如果历史记录中有描述，则显示 */}
                             {h.description && h.description.startsWith('[') && <Text type="danger">{h.description}</Text>}

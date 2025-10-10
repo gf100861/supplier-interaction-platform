@@ -4,17 +4,18 @@ import { BellOutlined } from '@ant-design/icons';
 import { useAlerts } from '../contexts/AlertContext';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { mockUsers } from '../data/_mockData';
+
 import { useNavigate } from 'react-router-dom'; // 1. 引入 useNavigate
 dayjs.extend(relativeTime);
 const { Text } = Typography;
 
 export const AlertBell = () => {
+    
     const { alerts, markAsRead, markAllAsRead, clearAlerts } = useAlerts();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const navigate = useNavigate(); // 2. 获取 navigate 函数
     const userLookup = useMemo(() => {
-        return Object.values(mockUsers).reduce((acc, user) => {
+        return Object.values(currentUser).reduce((acc, user) => {
             acc[user.id] = user.name;
             return acc;
         }, {});

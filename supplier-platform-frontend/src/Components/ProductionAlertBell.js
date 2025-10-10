@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { useProductionAlerts, ALERT_TYPES, ALERT_PRIORITY } from '../contexts/ProductionAlertContext';
-import { mockUsers } from '../data/_mockData';
+
 
 dayjs.extend(relativeTime);
 const { Text, Title } = Typography;
@@ -43,6 +43,16 @@ export const ProductionAlertBell = () => {
         clearAllAlerts,
         getUnreadAlerts,
     } = useProductionAlerts();
+
+    const mockUsers = {
+    'philip': { id: 'sd_01', password: '123', role: 'Manager', name: 'Philip Wang (Manager)', email: '325579336a@gmail.com', },
+    'xiaobing': { id: 'sd_02', password: '123', role: 'SD', name: 'Xiaobing Wu (SD)', email: '325579336a@gmail.com' },
+    // --- 新增用户 ---
+    'anna': { id: 'sd_03', password: '123', role: 'SD', name: 'Anna Li (SD)', email: 'anna.li@example.com' },
+    // 为供应商添加邮箱
+    'zhangsan': { id: 'sup_A', password: '123', role: 'Supplier', name: '张三 (供应商A)', email: '325579336a@gmail.com' },
+    'lisi': { id: 'sup_B', password: '123', role: 'Supplier', name: '李四 (供应商B)', email: '325579336a@gmail.com' },
+};
 
     const navigate = useNavigate();
     const [dropdownVisible, setDropdownVisible] = useState(false);

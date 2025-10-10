@@ -13,19 +13,15 @@ export const mockUsers = {
 };
 
 // --- 审计计划数据 ---
-export const mockAuditPlanData = [
-    { id: 'PLAN-001', year: 2025, plannedMonth: 3, supplierId: 'sup_A', supplierName: '供应商A',category: '现场管理', auditProject: 'ISO9001 年度复审', auditor: 'Philip Wang (Manager)', status: 'completed', completionDate: '2025-03-15' },
-    { id: 'PLAN-002', year: 2025, plannedMonth: 5, supplierId: 'sup_B', supplierName: '供应商B', category: '产品质量',auditProject: '生产线安全规范审计', auditor: 'Philip Wang (Manager)', status: 'pending', completionDate: null },
-    { id: 'PLAN-004', year: 2025, plannedMonth: 9, supplierId: 'sup_C', supplierName: '供应商C', category: '现场管理',auditProject: '原材料可追溯性体系审查', auditor: 'Philip Wang (Manager)', status: 'pending', completionDate: null },
-    { id: 'PLAN-005', year: 2025, plannedMonth: 8, supplierId: 'sup_B', supplierName: '供应商B', category: '文档资质',auditProject: '仓库物料管理流程审计', auditor: 'Xiaobing Wu (SD)', status: 'pending', completionDate: null },
-    { id: 'PLAN-006', year: 2025, plannedMonth: 10, supplierId: 'sup_C', supplierName: '供应商C',category: '现场管理', auditProject: '供应商社会责任评估', auditor: 'Xiaobing Wu (SD)', status: 'completed', completionDate: '2025-10-21' },
-];
 
 export const allPossibleStatuses = [
     '待供应商处理',
     '待SD关闭',
     '已完成',
-    '已作废'
+    '已作废',
+    '待供应商上传证据',
+    '待SD审核'
+
 ];
 export const mockNoticesData = [
     // --- 原有数据（补全字段）---
@@ -182,37 +178,6 @@ export const mockNoticesData = [
 ];
 
 
-export const suppliersList = [
-    { 
-        id: 'sup_A', 
-        name: '供应商A', 
-        parmaId: 'P-1001', 
-        cmt: 'CMT-Alpha', 
-        defaultSdName: 'Philip Wang (Manager)' 
-    },
-    { 
-        id: 'sup_B', 
-        name: '供应商B', 
-        parmaId: 'P-1002', 
-        cmt: 'CMT-Beta', 
-        defaultSdName: 'Xiaobing Wu (SD)' 
-    },
-    { 
-        id: 'sup_C', 
-        name: '供应商C', 
-        parmaId: 'P-1003', 
-        cmt: 'CMT-Alpha', 
-        defaultSdName: 'Philip Wang (Manager)' 
-    },
-    // 即使某个供应商在审计计划中没有任务，也应该在这里定义
-    { 
-        id: 'sup_D', 
-        name: '供应商D', 
-        parmaId: 'P-1004', 
-        cmt: 'CMT-Gamma', 
-        defaultSdName: 'Xiaobing Wu (SD)' 
-    }, 
-];
 
 
    export const mockEventsData = [

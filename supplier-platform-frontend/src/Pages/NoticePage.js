@@ -1,6 +1,6 @@
-// src/Pages/NoticePage.js
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Tabs, Form, Popconfirm, theme, Spin, Button, Space, Select, Tooltip } from 'antd';
+import { Card, Typography, Input, Tabs, Form, Modal, Popconfirm, theme, Spin, List, Button, Space, Select, Divider, Timeline, Collapse, Image, Checkbox, Tooltip } from 'antd';
+import { StarOutlined, StarFilled } from '@ant-design/icons'; // 1. 引入新图标
 import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
@@ -18,7 +18,7 @@ import { useConfig } from '../contexts/ConfigContext';
 import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
 import { supabase } from '../supabaseClient'; // 确保导入 supabase
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { Search } = Input;
 const { TabPane } = Tabs;
 
@@ -51,23 +51,8 @@ const NoticePage = () => {
     const [rejectionForm] = Form.useForm();
     const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
     const [reassignForm] = Form.useForm();
+    const [selectedStatuses, setSelectedStatuses] = useState([]);
 
-
-    const handleLikeToggle = async (notice) => {
-        const currentLikes = notice.likes || [];
-        const userId = currentUser.id;
-        const isLiked = currentLikes.includes(userId);
-        const newLikesArray = isLiked ? currentLikes.filter(id => id !== userId) : [...currentLikes, userId];
-        
-        // 我们不再需要在这里调用 updateNotice，因为 Supabase Realtime 会处理
-        const { error } = await supabase
-            .from('notices')
-            .update({ likes: newLikesArray })
-            .eq('id', notice.id);
-        
-        if (error) { messageApi.error(`操作失败: ${error.message}`); }
-        else { messageApi.success(isLiked ? '已取消点赞' : '感谢您的认可！'); }
-    };
 
     const [listSortOrder, setListSortOrder] = useState('desc'); // 默认按日期降序（最新在前）
 
@@ -90,7 +75,7 @@ const NoticePage = () => {
 
     }, [selectedNotice]);
 
-     useEffect(() => {
+    useEffect(() => {
         // 如果弹窗是打开的，并且主 notices 列表已更新
         if (selectedNotice && notices.length > 0) {
             // 从最新的 notices 列表中找到我们当前正在查看的通知单
@@ -162,15 +147,19 @@ const NoticePage = () => {
             });
         }
 
+        if (selectedStatuses.length > 0) {
+            data = data.filter(n => selectedStatuses.includes(n.status));
+        }
+
         return data;
-    }, [userVisibleNotices, searchTerm, selectedCategories]);
+    }, [userVisibleNotices, searchTerm, selectedCategories, selectedStatuses]);
 
 
-  // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
+    // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
     const groupedNotices = useMemo(() => {
         const batchGroups = {}; // 用于存放真正的批量任务
         const dailyGroups = {}; // 用于存放按“供应商+日期”分组的单个任务
-        
+
         searchedNotices.forEach(notice => {
             if (notice.batchId) {
                 if (!batchGroups[notice.batchId]) batchGroups[notice.batchId] = [];
@@ -178,17 +167,17 @@ const NoticePage = () => {
             } else {
                 const dateKey = dayjs(notice.sdNotice?.createTime).format('YYYY-MM-DD');
                 const dailyGroupKey = `${notice.assignedSupplierId}-${dateKey}`;
-                
+
                 if (!dailyGroups[dailyGroupKey]) dailyGroups[dailyGroupKey] = [];
                 dailyGroups[dailyGroupKey].push(notice);
             }
         });
 
-        const batchItems = Object.values(batchGroups).map(batch => ({ 
-            isBatch: true, 
-            batchId: batch[0].batchId, 
-            notices: batch, 
-            representative: batch[0] 
+        const batchItems = Object.values(batchGroups).map(batch => ({
+            isBatch: true,
+            batchId: batch[0].batchId,
+            notices: batch,
+            representative: batch[0]
         }));
 
         const dailyItems = [];
@@ -204,7 +193,7 @@ const NoticePage = () => {
                 dailyItems.push(group[0]);
             }
         });
-        
+
         const combinedList = [...batchItems, ...dailyItems];
 
         // 排序逻辑 (保持不变)
@@ -218,7 +207,7 @@ const NoticePage = () => {
         } else if (listSortOrder === 'desc') {
             combinedList.sort((a, b) => getSortableDate(b).diff(getSortableDate(a)));
         }
-        
+
         return combinedList;
     }, [searchedNotices, listSortOrder]); // <-- 确保依赖项正确
 
@@ -239,6 +228,24 @@ const NoticePage = () => {
             }
         }
     }, [location.search, notices, navigate]);
+
+    // --- 核心修正：新增 useEffect 来实时同步 selectedNotice ---
+    useEffect(() => {
+
+
+        if (selectedNotice) {
+
+            const updatedVersion = notices.find(n => n.id === selectedNotice.id);
+            if (updatedVersion) {
+
+                // 比较新旧数据，看是否真的有变化
+                if (JSON.stringify(updatedVersion) !== JSON.stringify(selectedNotice)) {
+
+                    setSelectedNotice(updatedVersion);
+                }
+            }
+        }
+    }, [notices]);
 
     // --- 弹窗与通用 Handler ---
     const showDetailsModal = (notice) => {
@@ -594,6 +601,24 @@ const NoticePage = () => {
     };
 
 
+    const handleLikeToggle = async (notice) => {
+        const currentLikes = notice.likes || [];
+        const userId = currentUser.id;
+        const isLiked = currentLikes.includes(userId);
+        const newLikesArray = isLiked ? currentLikes.filter(id => id !== userId) : [...currentLikes, userId];
+        const newHistoryEntry = { type: isLiked ? 'unlike' : 'like', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss') };
+        const updatedHistory = [...(notice.history || []), newHistoryEntry];
+
+        // --- 核心修正：直接使用 updateNotice Hook ---
+        try {
+            await updateNotice(notice.id, { likes: newLikesArray, history: updatedHistory });
+            messageApi.success(isLiked ? '已取消点赞' : '感谢您的认可！');
+        } catch (error) {
+            messageApi.error(`操作失败: ${error.message}`);
+        }
+    };
+
+
     const showRejectionModal = (notice, rejectHandler) => {
         console.log('[showRejectionModal] open for notice', notice?.id);
         setRejectionModal({
@@ -605,7 +630,10 @@ const NoticePage = () => {
     };
 
     const getActionsForItem = (item) => {
+
         const actions = [];
+        const isSDOrManager = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager');
+        const isManager = currentUser && currentUser.role === 'Manager';
         const stopPropagationAndRun = (e, func) => { e?.stopPropagation(); func(); };
 
         // SD 和 Manager 的快捷操作
@@ -616,8 +644,22 @@ const NoticePage = () => {
                 actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
             }
             // 关闭阶段
-            if (item.status === '待SD关闭') {
-                actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
+            // if (item.status === '待SD关闭') {
+            //     actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
+            // }
+            if (item.status === '已完成' && isSDOrManager) {
+                const isLiked = item.likes && item.likes.includes(currentUser.id);
+                actions.push(
+                    <Space key="like-action" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                            type={isLiked ? "primary" : "text"}
+                            shape="circle"
+                            icon={isLiked ? <StarFilled /> : <StarOutlined />}
+                            onClick={(e) => stopPropagationAndRun(e, () => handleLikeToggle(item))}
+                        />
+                        <Text type="secondary">{item.likes?.length || 0}</Text>
+                    </Space>
+                );
             }
         }
 
@@ -646,7 +688,8 @@ const NoticePage = () => {
             SD: [
                 { key: 'pending', label: '待供应商处理', statuses: ['待供应商处理', '待供应商上传证据'] },
                 { key: 'review', label: '待我审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
-                { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
+                { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
+                { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
             ],
             Manager: [
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses },
@@ -689,6 +732,14 @@ const NoticePage = () => {
                     <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>{/* ... */}</Paragraph></div>
                     <Space wrap>
                         <Select mode="multiple" allowClear style={{ width: 250 }} placeholder="按问题类型筛选" onChange={setSelectedCategories} options={sortedNoticeCategories.map(c => ({ label: c, value: c }))} />
+                        <Select
+                            mode="multiple"
+                            allowClear
+                            style={{ width: 250 }}
+                            placeholder="按状态筛选"
+                            onChange={setSelectedStatuses}
+                            options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
+                        />
                         <Search
                             placeholder="搜索内容 (可用;；@分隔多关键词)"
                             allowClear
