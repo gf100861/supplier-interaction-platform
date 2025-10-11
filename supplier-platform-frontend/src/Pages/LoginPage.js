@@ -1,48 +1,165 @@
-import React, { useState } from 'react';
-import { Form, Input, Button, Select, Card, Layout, Row, Col, Typography, Avatar } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carousel, Image, Divider,Spin } from 'antd';
 import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
+import './LoginPage.css'; // Make sure this CSS file is created
 
-const { Option } = Select;
-const { Title, Text, Link } = Typography;
+const { Title, Paragraph, Text, Link } = Typography;
 
-// 为了让页面更美观，我们添加一个矢量插图组件
-const LoginIllustration = () => (
-    <svg width="100%" height="100%" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{ stopColor: '#4f46e5', stopOpacity: 1 }} />
-                <stop offset="100%" style={{ stopColor: '#1e90ff', stopOpacity: 1 }} />
-            </linearGradient>
-            <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{ stopColor: '#a855f7', stopOpacity: 1 }} />
-                <stop offset="100%" style={{ stopColor: '#f472b6', stopOpacity: 1 }} />
-            </linearGradient>
-        </defs>
-        <rect width="600" height="600" fill="#f0f2f5" />
-        <g transform="translate(300, 300)">
-            <circle cx="0" cy="0" r="250" fill="url(#grad1)" opacity="0.1" />
-            <circle cx="0" cy="0" r="200" fill="url(#grad2)" opacity="0.2" />
-            <path d="M-150,-150 Q-100,0 -150,150 L150,150 Q100,0 150,-150 Z" fill="white" stroke="url(#grad1)" strokeWidth="4" />
-            <path d="M-100,-100 Q-50,0 -100,100 L100,100 Q50,0 100,-100 Z" fill="rgba(255,255,255,0.8)" stroke="url(#grad2)" strokeWidth="3" />
-            <g fill="#4f46e5">
-                <rect x="-30" y="-30" width="60" height="60" rx="10" transform="rotate(45)" />
-                <circle cx="-120" cy="120" r="20" />
-                <circle cx="120" cy="-120" r="20" />
-            </g>
-        </g>
-    </svg>
-);
+// --- 1. Custom Hook: Typing Effect ---
+const useTypingEffect = (textToType, speed = 50) => {
+    const [displayedText, setDisplayedText] = useState("");
+    const [index, setIndex] = useState(0);
+
+    // Effect to reset the animation when the text prop changes
+    useEffect(() => {
+        setDisplayedText("");
+        setIndex(0);
+    }, [textToType]);
+
+    // Effect to handle the character-by-character typing
+    useEffect(() => {
+        if (index < textToType.length) {
+            const timeout = setTimeout(() => {
+                setDisplayedText((prev) => prev + textToType.charAt(index));
+                setIndex((prevIndex) => prevIndex + 1);
+            }, speed);
+            return () => clearTimeout(timeout);
+        }
+    }, [index, textToType, speed]);
+
+    return displayedText;
+};
 
 
+// --- 2. Dynamic Image Carousel Component ---
+const LoginCarousel = () => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+        const [imagesLoaded, setImagesLoaded] = useState({});
+
+    const carouselItems = useMemo(() => [
+        {
+            src: 'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?w=800',
+            title: '协同 · 无界',
+            description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
+            bgColor: '#e0f2fe', // Light sky blue
+            cardBgColor: 'rgba(240, 249, 255, 0.7)',
+        },
+        {
+            src: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=800',
+            title: '数据 · 驱动',
+            description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
+            bgColor: '#f0fdf4', // Light mint green
+            cardBgColor: 'rgba(240, 253, 244, 0.7)',
+        },
+        {
+            src: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800',
+            title: '效率 · 提升',
+            description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
+            bgColor: '#f5f3ff', // Light lavender
+            cardBgColor: 'rgba(245, 243, 255, 0.75)',
+        },
+    ], []);
+
+   useEffect(() => {
+        carouselItems.forEach((item) => {
+            const img = new window.Image(); // Use the browser's Image object
+            img.src = item.src;
+            img.onload = () => {
+                // When an image finishes loading, update its status in our state
+                setImagesLoaded((prevLoaded) => ({
+                    ...prevLoaded,
+                    [item.src]: true,
+                }));
+            };
+        });
+    }, [carouselItems]); // Dependency array ensures this runs once
+
+    const currentItem = carouselItems[currentIndex];
+    const isCurrentImageLoaded = !!imagesLoaded[currentItem.src];
+
+    // --- ✨ STEP 3: Conditionally start the typing animation ---
+    // If the image is loaded, pass the description. Otherwise, pass a loading message or empty string.
+    const typedDescription = useTypingEffect(
+        isCurrentImageLoaded ? currentItem.description : '图片加载中...'
+    );
+
+    // Effect to control the global body background color
+    useEffect(() => {
+        document.body.style.backgroundColor = currentItem.bgColor;
+        document.body.style.transition = 'background-color 0.5s ease-in-out';
+        return () => { // Cleanup function
+            document.body.style.backgroundColor = '';
+            document.body.style.transition = '';
+        };
+    }, [currentItem]);
+
+    return (
+        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <Carousel
+                autoplay
+                dots={false}
+                fade
+                style={{ width: '100%', maxWidth: '500px' }}
+                afterChange={(current) => setCurrentIndex(current)}
+            >
+                {carouselItems.map((item, index) => (
+                    <div key={index}>
+                        <Image src={item.src} preview={false} style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }} />
+                    </div>
+                ))}
+            </Carousel>
+            <Card style={{ marginTop: '-60px', width: '90%', maxWidth: '450px', zIndex: 10, backdropFilter: 'blur(10px)', backgroundColor: currentItem.cardBgColor, border: '1px solid rgba(255, 255, 255, 0.2)', transition: 'background-color 0.5s ease-in-out' }}>
+                <Title level={3}>{currentItem.title}</Title>
+                {/* ✨ --- 修改 Paragraph 为一个 div 容器 --- ✨ */}
+                <div
+                    className="typing-text-container"
+                    style={{
+                        position: 'relative', // 设为相对定位，作为子元素的定位基准
+                        minHeight: '72px', // 同样可以保留 minHeight 作为兜底
+                    }}
+                >
+                    {/* 底层：看不见的完整文本，用于撑开空间 */}
+                    <Paragraph
+                        type="secondary"
+                        style={{
+                            visibility: 'hidden', // 使用 visibility 而不是 display:none 来保留空间
+                        }}
+                    >
+                        {currentItem.description}
+                    </Paragraph>
+
+                    {/* 顶层：看得见的打字效果文本 */}
+                    <Paragraph
+                        type="secondary"
+                        style={{
+                            position: 'absolute', // 绝对定位，覆盖在底层之上
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                        }}
+                    >
+                           {/* Optional: Show a spinner while the image is loading */}
+                    {!isCurrentImageLoaded && <Spin size="small" />} 
+                        {typedDescription}
+                        <span className="typing-cursor">|</span>
+                    </Paragraph>
+                </div>
+            </Card>
+        </div>
+    );
+};
+
+
+// --- 3. Main Login Page Component ---
 const LoginPage = () => {
     const navigate = useNavigate();
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
 
-    // 您的登录逻辑完全不变
     const onFinish = async (values) => {
         setLoading(true);
         try {
@@ -50,25 +167,14 @@ const LoginPage = () => {
                 email: values.email,
                 password: values.password,
             });
-
             if (authError) throw authError;
 
             const { data: userData, error: userError } = await supabase
                 .from('users')
-                .select(`
-                    *,
-                    managed_suppliers:sd_supplier_assignments (
-                        supplier:suppliers (*)
-                    )
-                `)
+                .select(`*, managed_suppliers:sd_supplier_assignments(supplier:suppliers(*))`)
                 .eq('id', authData.user.id)
                 .single();
-
             if (userError) throw userError;
-
-            if (userData.role !== values.role) {
-                throw new Error("凭证或角色选择不正确！");
-            }
 
             messageApi.success('登录成功!');
             localStorage.setItem('user', JSON.stringify(userData));
@@ -83,81 +189,77 @@ const LoginPage = () => {
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-            <Row justify="center" align="middle" style={{ minHeight: '100vh', background: '#f0f2f5' }}>
-
-                {/* 左侧插图区域，仅在大屏幕上显示 */}
-                <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Row justify="center" align="middle" style={{ flex: 1 }}>
+                {/* Left Side: Visuals and Branding */}
+                <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                        {/* <Image width={100} src="/volvo-logo.png"  preview={false} /> */}
+                        <Title level={2} style={{ marginTop: '16px', color: '#1f2937' }}>供应商与SD信息交换平台</Title>
+                        <Paragraph type="secondary" style={{ fontSize: '16px', maxWidth: '450px' }}>
+                            连接供应链的每一个环节，实现数据驱动的智能决策。
+                        </Paragraph>
+                    </div>
                     <div style={{ maxWidth: '500px', width: '100%' }}>
-                        <LoginIllustration />
+                        <LoginCarousel />
                     </div>
                 </Col>
 
-                {/* 右侧登录表单区域 */}
+                {/* Right Side: Login Form */}
                 <Col xs={22} sm={16} md={12} lg={10} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    <Card
-                        style={{
-                            width: '100%',
-                            maxWidth: 400,
-                            boxShadow: '0 4px 20px 0 rgba(0, 0, 0, 0.1)',
-                            borderRadius: '12px',
-                        }}
-                    >
+                    <Card style={{ width: '100%', maxWidth: 400, boxShadow: '0 4px 20px 0 rgba(0, 0, 0, 0.1)', borderRadius: '12px' }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <Avatar size={64} icon={<ApartmentOutlined />} style={{ backgroundColor: '#1890ff' }} />
-                            <Title level={3} style={{ marginTop: '16px' }}>供应商与SD信息交换平台</Title>
-                            <Text type="secondary">欢迎回来，请登录您的账户</Text>
+                            <Title level={3} style={{ marginTop: '16px' }}>欢迎回来</Title>
+                            <Text type="secondary">请登录您的账户</Text>
                         </div>
 
-                        <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'Supplier' }} layout="vertical">
-                            <Form.Item
-                                name="email"
-                                label="登录邮箱"
-                                rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}
-                            >
+                        <Form name="login_form" onFinish={onFinish} layout="vertical" autoComplete="off">
+                            <Form.Item label="登录邮箱" name="email" rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}>
                                 <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" size="large" />
                             </Form.Item>
 
-                            <Form.Item
-                                name="password"
-                                label="密码"
-                                rules={[{ required: true, message: '请输入密码!' }]}
-                            >
+                            <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码!' }]}>
                                 <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
                             </Form.Item>
 
-                            <Form.Item
-                                name="role"
-                                label="登录角色"
-                                rules={[{ required: true, message: '请选择您的角色!' }]}
-                            >
-                                <Select placeholder="选择角色" size="large">
-                                    <Option value="Supplier"> Supplier</Option>
-                                    <Option value="SD">Volvo-SD</Option>
-                                    <Option value="Manager">Volvo-Manager</Option>
-                                    <Option value="Admin">Volvo-Admin</Option>
-                                </Select>
+                            <Form.Item>
+                                <div style={{ textAlign: 'right' }}>
+                                    <Link href="/forgot-password" target="_blank">忘记密码？</Link>
+                                </div>
                             </Form.Item>
 
                             <Form.Item>
-                                <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">
-                                    登 录
-                                </Button>
+                                <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">登 录</Button>
                             </Form.Item>
 
-                            {/* --- 新增的联系信息 --- */}
-                            <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                            <div style={{ textAlign: 'center' }}>
                                 <Text type="secondary" style={{ fontSize: '12px' }}>
-                                    如遇登录、密码等问题，请联系：
-                                    <Link href="mailto:louis.xin@volvo.com" style={{ fontSize: '12px', marginLeft: '4px' }}>
-                                        louis.xin@volvo.com
-                                    </Link>
+                                    如遇登录问题，请联系：
+                                    <Link href="mailto:louis.xin@volvo.com" style={{ fontSize: '12px', marginLeft: '4px' }}>louis.xin@volvo.com</Link>
                                 </Text>
                             </div>
-
                         </Form>
+
+                        <Divider style={{ margin: '16px 0' }} />
+
+                        <div style={{ textAlign: 'center' }}>
+                            <Text type="secondary" style={{ fontSize: '12px' }}>
+                                <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>帮助中心</Link>
+                                <Divider type="vertical" />
+                                <Link href="/privacy-policy" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
+                            </Text>
+                        </div>
                     </Card>
                 </Col>
             </Row>
+
+            <Layout.Footer style={{ textAlign: 'center', background: 'transparent' }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved. (
+                    {new Date().toLocaleDateString('cn-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
+                    )
+                </Text>
+            </Layout.Footer>
         </Layout>
     );
 };

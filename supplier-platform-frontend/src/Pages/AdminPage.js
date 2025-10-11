@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'; // 引入 useMemo
+import { useNavigate } from 'react-router-dom';
+
 import {
     Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio // 引入 Radio
 } from 'antd';
@@ -11,6 +13,7 @@ const { Title, Paragraph, Text } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 const { Search } = Input; // 从 Input 中解构 Search
+
 
 const AdminPage = () => {
     // --- State Management ---
@@ -37,6 +40,11 @@ const AdminPage = () => {
 
     const currentUser = JSON.parse(localStorage.getItem('user'));
 
+      const navigate = useNavigate();
+
+  if (currentUser.role !== 'Admin') {
+      navigate('/'); // 跳转到初始页面
+    }
     const filteredNotices = useMemo(() => {
         return notices.filter(notice => {
             // 状态筛选逻辑
@@ -68,6 +76,8 @@ const AdminPage = () => {
 
             if (suppliersError) throw suppliersError;
             setAllSuppliers(suppliersData.map(s => ({ key: s.id, title: s.name })));
+
+            console.log('Supplier', allSuppliers)
 
             // 新增：Fetch all notices
             const { data: noticesData, error: noticesError } = await supabase.from('notices').select('*').order('created_at', { ascending: false });

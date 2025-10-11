@@ -20,6 +20,7 @@ const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList
 const DynamicDetailsDisplay = ({ notice }) => {
     // 修正 #2: 使用可选链 ?. 来安全地访问深层属性
     if (!notice?.category || !notice?.sdNotice?.details) return null;
+    console.log('notice',notice.creator.username)
 
     const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(
@@ -441,11 +442,12 @@ export const NoticeDetailModal = ({
             <Title level={5}>处理历史</Title>
             <Timeline>
                 <Timeline.Item color="green">
-                    <p><b>{notice.creatorName || '发起人'}</b> 在 {dayjs(notice.createdAt).format('YYYY-MM-DD HH:mm')} 发起了通知</p>
+                    <p><b>{notice?.creator?.username || '发起人'}</b> 在 {dayjs(notice.createdAt).format('YYYY-MM-DD HH:mm')} 发起了通知</p>
                 </Timeline.Item>
 
                 {(notice.history || []).map((h, index) => {
                     const label = getHistoryItemLabel(h);
+                    console.log('h是什么',h)
                     return (
                         <Timeline.Item key={index} color={label.color}>
                             <p><b>{h.submitter||'发起人'}</b> 在 {h.time} {label.text}</p>

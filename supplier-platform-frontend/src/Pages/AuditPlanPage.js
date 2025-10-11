@@ -3,7 +3,7 @@ import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, 
 import { PlusOutlined, UserOutlined, DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
-import { noticeCategories } from '../data/_mockData';
+import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 import ExcelJS from 'exceljs';
@@ -27,6 +27,7 @@ const matrixStyles = {
 
 
 
+
 const AuditPlanPage = () => {
     const [events, setEvents] = useState([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -39,24 +40,42 @@ const AuditPlanPage = () => {
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
 
+    const navigate = useNavigate();
 
+
+  if (currentUser.role === 'Supplier') {
+      navigate('/'); // 跳转到初始页面
+    }
 
     // --- 核心修改：从 Supabase 获取数据 ---
-    const fetchData = async () => {
+   const fetchData = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            const { data: eventsData, error: eventsError } = await supabase
                 .from('audit_plans')
                 .select('*')
-                .eq('year', currentYear); // 只获取当前年份的数据
+                .eq('year', currentYear);
+            if (eventsError) throw eventsError;
+            setEvents(eventsData || []);
 
-            if (error) throw error;
-            setEvents(data || []);
             const { data: categoriesData, error: categoriesError } = await supabase
                 .from('notice_categories')
                 .select('id, name');
             if (categoriesError) throw categoriesError;
-            setCategories(categoriesData || []);
+
+            // --- 核心修正：在这里对获取到的 categoriesData 进行排序 ---
+            const sortedCategories = (categoriesData || []).sort((a, b) => {
+                const order = { "Process Audit": 1, "SEM": 2 };
+                // a 的优先级 - b 的优先级
+                // 如果 a 在 order 中，它会得到一个低数字（例如1），排在前面
+                // 如果 a 不在 order 中，它会得到 Infinity，排在后面
+                const aOrder = order[a.name] || Infinity;
+                const bOrder = order[b.name] || Infinity;
+                return aOrder - bOrder;
+            });
+            
+            setCategories(sortedCategories);
+
         } catch (error) {
             messageApi.error(`加载规划数据失败: ${error.message}`);
         } finally {

@@ -52,8 +52,8 @@ const NoticePage = () => {
     const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
     const [reassignForm] = Form.useForm();
     const [selectedStatuses, setSelectedStatuses] = useState([]);
-
-
+    const [allUsers, setAllUsers] = useState([]);
+    const [usersLoading, setUsersLoading] = useState(true);
     const [listSortOrder, setListSortOrder] = useState('desc'); // 默认按日期降序（最新在前）
 
 
@@ -69,6 +69,21 @@ const NoticePage = () => {
         // 如果不存在，则返回原始顺序
         return noticeCategories;
     }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                const { data, error } = await supabase.from('users').select('id, name, supplier_id');
+                if (error) throw error;
+                setAllUsers(data);
+            } catch (error) {
+                console.error("获取用户列表失败:", error);
+            } finally {
+                setUsersLoading(false);
+            }
+        };
+        fetchUsers();
+    }, []);
 
 
     useEffect(() => {
@@ -95,12 +110,19 @@ const NoticePage = () => {
         }
         switch (currentUser.role) {
             case 'Manager':
+            case 'Admin': // 管理员和经理可以看到所有
 
                 return notices;
             case 'SD':
                 const managedSupplierIds = (currentUser.managed_suppliers || []).map(s => s.supplier.id);
-
-                return notices.filter(n => n.sdNotice?.creatorId === currentUser.id || managedSupplierIds.includes(n.assignedSupplierId));
+                return notices.filter(n =>
+                    // 条件1：如果是“已完成”的通知单，则所有SD都可见
+                    n.status === '已完成' ||
+                    // 条件2：如果通知单是由当前SD创建的
+                    n.creatorId === currentUser.id ||
+                    // 条件3：如果通知单被指派给了当前SD负责的供应商
+                    managedSupplierIds.includes(n.assignedSupplierId)
+                );
 
             case 'Supplier':
                 // 从当前用户对象中获取其所属的公司IDconcon
@@ -118,8 +140,6 @@ const NoticePage = () => {
                 return [];
         }
     }, [notices, currentUser]);
-
-
 
     const searchedNotices = useMemo(() => {
         let data = userVisibleNotices;
@@ -338,7 +358,6 @@ const NoticePage = () => {
         };
 
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        console.log('[handlePlanApprove] updating', notice.id, '-> 待供应商上传证据');
         await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
 
         // 发送传统提醒
@@ -360,7 +379,6 @@ const NoticePage = () => {
         const newHistory = { type: 'sd_plan_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[计划被驳回] ${values.rejectionReason}` };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         try {
-            console.log('[handlePlanReject] updating', notice.id, '-> 待供应商处理');
             await updateNotice(notice.id, { status: '待供应商处理', history: [...currentHistory, newHistory] });
             sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被驳回，请根据意见修改并重新提交。`, `/notices?open=${notice.id}`);
             messageApi.warning('计划已驳回！');
@@ -378,60 +396,74 @@ const NoticePage = () => {
         const notice = selectedNotice;
         if (!notice) return;
 
-        messageApi.loading({ content: '正在处理图片...', key: 'processing' });
+        // 1. --- 开始加载，显示“处理中”---
+        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
 
-        const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'sd_plan_approval');
-        const originalPlans = lastPlanSubmission?.actionPlans || [];
+        try {
+            // 2. --- 查找需要附上证据的原始行动计划 ---
+            // 我们应该查找最新的'plan_submission'记录来获取完整的计划列表
+            const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
+            const originalPlans = lastPlanSubmission?.actionPlans || [];
 
-        console.log('[handleEvidenceSubmit] Debug info:', {
-            noticeId: notice.id,
-            lastPlanSubmission: lastPlanSubmission,
-            originalPlans: originalPlans,
-            evidenceValues: values.evidence
-        });
+            // 3. --- 异步处理所有图片文件，确保它们有可用的高清 Base64 URL ---
+            const plansWithEvidence = await Promise.all(
+                originalPlans.map(async (plan, index) => {
+                    const evidenceItem = values.evidence?.[index];
+                    const imageList = evidenceItem?.images || [];
 
-        // --- 核心修改：异步处理所有图片文件，确保它们有可用的 base64 URL ---
-        const plansWithEvidence = await Promise.all(
-            originalPlans.map(async (plan, index) => {
-                // 处理所有行动项的证据，不再限制状态
-                const evidenceItem = values.evidence?.[index];
-                const imageList = evidenceItem?.images || [];
+                    const processedImages = await Promise.all(
+                        imageList.map(async (file) => {
+                            if (file.originFileObj && !file.url) {
+                                const base64Url = await getBase64(file.originFileObj);
+                                return { ...file, url: base64Url, thumbUrl: base64Url };
+                            }
+                            return file;
+                        })
+                    );
 
-                const processedImages = await Promise.all(
-                    imageList.map(async (file) => {
-                        // 如果文件是新上传的 (有 originFileObj) 并且还没有 url，就转换它
-                        if (file.originFileObj && !file.url) {
-                            const base64Url = await getBase64(file.originFileObj);
-                            return { ...file, url: base64Url, thumbUrl: base64Url };
-                        }
-                        // 如果文件已经有 url (可能是之前上传的)，则直接返回
-                        return file;
-                    })
-                );
+                    // 将证据信息合并回每个行动计划中
+                    return {
+                        ...plan,
+                        evidenceDescription: evidenceItem?.description || '',
+                        evidenceImages: processedImages,
+                    };
+                })
+            );
 
-                return {
-                    ...plan,
-                    evidenceDescription: evidenceItem?.description || '',
-                    evidenceImages: processedImages, // 使用处理过的图片列表
-                    status: 'pending_approval',
-                };
-            })
-        );
+            // 4. --- 创建新的历史记录 ---
+            const newHistory = {
+                type: 'supplier_evidence_submission',
+                submitter: currentUser.name,
+                time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                description: '供应商已上传完成证据。',
+                // 在历史记录中保存带有证据的完整行动计划
+                actionPlans: plansWithEvidence
+            };
+            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
-        const newHistory = { type: 'supplier_evidence_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已上传完成证据。', actionPlans: plansWithEvidence };
-        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+            // 5. --- 更新数据库中的通知单 ---
+            await updateNotice(notice.id, {
+                status: '待SD关闭',
+                history: [...currentHistory, newHistory]
+            });
 
-        await updateNotice(notice.id, { status: '待SD关闭', history: [...currentHistory, newHistory] });
+            // 6. --- 发送实时提醒 ---
+            addAlert(
+                currentUser.id,
+                notice.creatorId,
+                `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`,
+                `/notices?open=${notice.id}`
+            );
 
-        messageApi.success({ content: '完成证据提交成功！', key: 'processing' });
+            // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
+            messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
+            handleDetailModalCancel();
 
-        // 发送传统提醒
-        sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`, `/notices?open=${notice.id}`);
-
-        // 发送新的结构化提醒
-        await alertService.notifyEvidenceSubmitted(notice, currentUser.name);
-
-        handleDetailModalCancel();
+        } catch (error) {
+            // 8. --- 如果中间任何一步出错，显示失败消息 ---
+            console.error("证据提交失败:", error);
+            messageApi.error({ content: `提交失败: ${error.message}`, key: 'evidenceSubmit', duration: 3 });
+        }
     };
 
     // 5. SD 批准并关闭（支持从弹窗或列表快捷操作触发）
@@ -440,7 +472,6 @@ const NoticePage = () => {
         if (!notice) return;
         const newHistory = { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '审核通过，问题关闭。' };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        console.log('[handleClosureApprove] updating', notice.id, '-> 已完成');
         await updateNotice(notice.id, { status: '已完成', history: [...currentHistory, newHistory] });
         sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改已被批准关闭。`, `/notices?open=${notice.id}`);
         messageApi.success('通知单已关闭！');
@@ -455,7 +486,6 @@ const NoticePage = () => {
         if (!notice) return;
         const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回] ${values.rejectionReason}` };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        console.log('[handleEvidenceReject] updating', notice.id, '-> 待供应商上传证据');
         await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
         sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改证据已被驳回，原因: ${values.rejectionReason}`, `/notices?open=${notice.id}`);
         messageApi.warning('证据已驳回！');
@@ -549,27 +579,34 @@ const NoticePage = () => {
             return;
         }
 
+        // --- 在这里找到新旧供应商对应的用户ID ---
+        const oldSupplierUser = allUsers.find(u => u.supplier_id === notice.assignedSupplierId);
+        const newSupplierUser = allUsers.find(u => u.supplier_id === newSupplier.id);
+
         const newHistory = {
             type: 'manager_reassignment',
             submitter: currentUser.name,
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            description: `[管理修正] 通知单已重分配给新的供应商: ${newSupplier.name}。原因: ${values.reason || '未提供原因'}`,
+            description: `[管理修正] 通知单已从 ${notice.assignedSupplierName} 重分配给 ${newSupplier.name}。原因: ${values.reason || '未提供原因'}`,
         };
 
-        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         await updateNotice(notice.id, {
-            assignedSupplierId: newSupplier.id,
-            assignedSupplierName: newSupplier.name,
-            history: [...currentHistory, newHistory],
+            assigned_supplier_id: newSupplier.id,
+            assigned_supplier_name: newSupplier.name,
+            history: [...(notice.history || []), newHistory],
         });
 
-        // 为相关方创建提醒
-        addAlert(currentUser.id, notice.assignedSupplierId, `"${notice.title}" 已被重分配，您无需再处理。`, `/notices`);
-        addAlert(currentUser.id, newSupplier.id, `您有一个新的通知单被分配: "${notice.title}"。`, `/notices?open=${notice.id}`);
+        // --- 使用正确的用户ID发送提醒 ---
+        if (oldSupplierUser) {
+            addAlert(currentUser.id, oldSupplierUser.id, `您的通知单 "${notice.title}" 已被重分配，无需再处理。`, `/notices`);
+        }
+        if (newSupplierUser) {
+            addAlert(currentUser.id, newSupplierUser.id, `您有一个新的通知单被分配: "${notice.title}"。`, `/notices?open=${notice.id}`);
+        }
         addAlert(currentUser.id, notice.creatorId, `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.name}。`, `/notices?open=${notice.id}`);
 
         messageApi.success('通知单已成功重分配！');
-        setCorrectionModal({ visible: false, notice: null }); // 关闭修正弹窗
+        setCorrectionModal({ visible: false, notice: null });
         reassignForm.resetFields();
     };
 

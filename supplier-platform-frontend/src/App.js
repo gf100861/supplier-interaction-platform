@@ -28,6 +28,8 @@ import BatchNoticeCreationPage from './Pages/BatchNoticeCreationPage';
 import ProblemAnalysisPage from './Pages/ProblemAnalysisPage';
 import ConsolidatedReportPage from './Pages/ConsolidatedReportPage';
 import AdminPage from './Pages/AdminPage';
+import ForgotPasswordPage from './Pages/ForgotPasswordPage';
+import ResetPasswordPage from './Pages/ResetPasswordPage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -57,6 +59,8 @@ const ThemedApp = () => {
                                                     <BrowserRouter>
                                                         <Routes>
                                                             <Route path="/login" element={<LoginPage />} />
+                                                            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                                                            <Route path="/reset-password" element={<ResetPasswordPage />} />
                                                             <Route element={<ProtectedRoute />}>
                                                                 <Route path="/" element={<MainLayout />}>
                                                                     <Route index element={<DashboardPage />} />

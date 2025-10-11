@@ -1,0 +1,21 @@
+/* Defines the blinking animation for the cursor */
+@keyframes blink {
+    50% {
+      opacity: 0;
+    }
+}
+
+/* Styles the container for the typed text to prevent layout shifts */
+.typing-text {
+    min-height: 50px; /* Adjust as needed based on your text length */
+    display: inline;
+}
+
+/* Styles the cursor itself and applies the animation */
+.typing-cursor {
+    display: inline-block;
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+    color: #1890ff; /* Ant Design primary color, change if you like */
+    font-weight: bold;
+}

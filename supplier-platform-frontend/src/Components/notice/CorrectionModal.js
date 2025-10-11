@@ -22,7 +22,7 @@ export const CorrectionModal = ({ visible, notice, onCancel, onReassign, onVoid,
                     <Select placeholder="选择一个新的供应商">
                         {suppliers
                             .filter(s => s.id !== notice?.assignedSupplierId)
-                            .map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)
+                            .map(s => <Option key={s.id} value={s.id}>{s.short_code}</Option>)
                         }
                     </Select>
                 </Form.Item>

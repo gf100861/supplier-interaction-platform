@@ -21,16 +21,16 @@ const DashboardPage = () => {
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
     // --- 使用 useEffect 在组件加载时，独立获取所有用户的数据 ---
-   useEffect(() => {
+ useEffect(() => {
         const fetchUsers = async () => {
             try {
-                // 我们只需要 id 和 name 用于显示
+                // ✨ 核心修正：确保获取的是 username 字段
                 const { data, error } = await supabase
                     .from('users')
-                    .select('id, username'); // 确保您的 users 表中有 'name' 字段
+                    .select('id, username');
                 
                 if (error) throw error;
-                setAllUsers(data);
+                setAllUsers(data || []);
             } catch (error) {
                 console.error("仪表盘获取用户列表失败:", error);
             } finally {
@@ -40,13 +40,13 @@ const DashboardPage = () => {
         fetchUsers();
     }, []);
 
-    // --- 4. 核心修正：userLookup 现在基于从数据库获取的 allUsers ---
     const userLookup = useMemo(() => {
         return allUsers.reduce((acc, user) => {
-            acc[user.id] = user; // 使用数据库的 uuid 作为 key
+            acc[user.id] = user;
             return acc;
         }, {});
     }, [allUsers]);
+
     // --- 核心：在这里计算所有仪表盘需要的数据 ---
     const dashboardData = useMemo(() => {
         if (noticesLoading || usersLoading) return null;

@@ -11,7 +11,6 @@ import {
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
-import { AlertBell } from './AlertBell';
 import { ProductionAlertBell } from './ProductionAlertBell';
 import { CrownOutlined } from '@ant-design/icons'; 
 const { Header, Content, Footer, Sider } = Layout;
@@ -33,7 +32,7 @@ const allMenuItems = [
     },
     { key: '/analysis', icon: <LineChartOutlined />, label: '历史问题分析', roles: ['SD', 'Manager'] },
     { key: '/reports', icon: <PrinterOutlined />, label: '综合报告', roles: ['SD', 'Manager', 'Supplier'] },
-    { key: '/settings', icon: <UserOutlined />, label: '系统设置', roles: ['SD', 'Manager', 'Supplier'] },
+    { key: '/settings', icon: <UserOutlined />, label: '系统设置和建议', roles: ['SD', 'Manager', 'Supplier'] },
       { 
       key: '/admin', 
       icon: <CrownOutlined />, 
