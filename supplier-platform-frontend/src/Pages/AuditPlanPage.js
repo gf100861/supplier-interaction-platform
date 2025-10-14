@@ -14,15 +14,22 @@ const { Option } = Select;
 
 const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
 
-// --- 样式 (保持不变) ---
+// --- ✨ 核心修正 1：统一定义列宽以确保对齐 ---
+const stickyColumnWidths = {
+    parma: 100,
+    cmt: 100,
+    supplier: 160,
+};
+
+// --- 样式 (使用上面定义的列宽) ---
 const matrixStyles = {
     scrollContainer: { overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: '8px' },
     table: { display: 'inline-block', minWidth: '100%' },
     headerRow: { display: 'flex', position: 'sticky', top: 0, zIndex: 2, backgroundColor: '#fafafa' },
     bodyRow: { display: 'flex' },
     stickyCell: { padding: '8px 12px', borderRight: '1px solid #f0f0f0', backgroundColor: '#fff', position: 'sticky', zIndex: 1 },
-    headerCell: { flex: '0 0 180px', padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center' },
-    cell: { flex: '0 0 180px', padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
+    headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' }, // position: relative for resize handle
+    cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
 };
 
 
@@ -36,6 +43,8 @@ const AuditPlanPage = () => {
     const [currentYear, setCurrentYear] = useState(dayjs().year());
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState([]);
+    // --- ✨ 核心修正：为月份列宽添加状态管理 ---
+    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(250));
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
@@ -43,12 +52,11 @@ const AuditPlanPage = () => {
     const navigate = useNavigate();
 
 
-  if (currentUser.role === 'Supplier') {
-      navigate('/'); // 跳转到初始页面
+    if (currentUser.role === 'Supplier') {
+        navigate('/'); // 跳转到初始页面
     }
 
-    // --- 核心修改：从 Supabase 获取数据 ---
-   const fetchData = async () => {
+    const fetchData = async () => {
         setLoading(true);
         try {
             const { data: eventsData, error: eventsError } = await supabase
@@ -63,17 +71,13 @@ const AuditPlanPage = () => {
                 .select('id, name');
             if (categoriesError) throw categoriesError;
 
-            // --- 核心修正：在这里对获取到的 categoriesData 进行排序 ---
             const sortedCategories = (categoriesData || []).sort((a, b) => {
                 const order = { "Process Audit": 1, "SEM": 2 };
-                // a 的优先级 - b 的优先级
-                // 如果 a 在 order 中，它会得到一个低数字（例如1），排在前面
-                // 如果 a 不在 order 中，它会得到 Infinity，排在后面
                 const aOrder = order[a.name] || Infinity;
                 const bOrder = order[b.name] || Infinity;
                 return aOrder - bOrder;
             });
-            
+
             setCategories(sortedCategories);
 
         } catch (error) {
@@ -83,12 +87,10 @@ const AuditPlanPage = () => {
         }
     };
 
-    // --- 在年份变化时重新获取数据 ---
     useEffect(() => {
         fetchData();
-    }, [currentYear]); // 依赖项为 currentYear
+    }, [currentYear]);
 
-    // 放在 AuditPlanPage 组件的顶部
     useEffect(() => {
         if (suppliers && suppliers.length > 0) {
             console.log("从 Context 获取到的 Suppliers 数据:", suppliers);
@@ -98,24 +100,20 @@ const AuditPlanPage = () => {
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-            return suppliers; // Manager/Admin看到所有供应商
+            return suppliers;
         }
         if (currentUser.role === 'SD') {
-            // 假设 currentUser 对象在登录时已包含 managed_suppliers 及其嵌套的 supplier 对象
             const managed = currentUser.managed_suppliers || [];
-            return managed.map(assignment => assignment.supplier).filter(Boolean); // filter(Boolean) 移除可能存在的 null/undefined
+            return managed.map(assignment => assignment.supplier).filter(Boolean);
         }
-        return []; // 其他角色看不到
+        return [];
     }, [currentUser, suppliers]);
 
-    // --- 过滤事件的逻辑 (修复了角色判断的 bug) ---
     const filteredEvents = useMemo(() => {
         if (!currentUser) return [];
-        // 管理员和SD能看到所有
         if (currentUser.role === 'Manager' || currentUser.role === 'SD' || currentUser.role === 'Admin') {
             return events;
         }
-        // 供应商只能看到和自己相关的
         if (currentUser.role === 'Supplier') {
             return events.filter(e => e.supplier_id === currentUser.supplier_id);
         }
@@ -138,9 +136,8 @@ const AuditPlanPage = () => {
             }
         }
         return stats;
-    }, [filteredEvents]); // 当过滤后的事件列表变化时，重新计算
+    }, [filteredEvents]);
 
-    // --- 数据分组逻辑 (保持不变) ---
     const matrixData = useMemo(() => {
         const grouped = {};
         filteredEvents.forEach(event => {
@@ -152,7 +149,6 @@ const AuditPlanPage = () => {
         return grouped;
     }, [filteredEvents]);
 
-    // --- 核心修改：标记完成事件 ---
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
         const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
@@ -166,11 +162,10 @@ const AuditPlanPage = () => {
             messageApi.error(`更新状态失败: ${error.message}`);
         } else {
             messageApi.success('状态更新成功！');
-            fetchData(); // 重新获取数据以刷新UI
+            fetchData();
         }
     };
 
-    // --- 核心修改：删除事件 ---
     const handleDeleteEvent = async (id) => {
         const { error } = await supabase
             .from('audit_plans')
@@ -181,34 +176,25 @@ const AuditPlanPage = () => {
             messageApi.error(`删除失败: ${error.message}`);
         } else {
             messageApi.success('事件已删除！');
-            fetchData(); // 重新获取数据以刷新UI
+            fetchData();
         }
     };
 
     const showAddModal = (type) => {
         setEventType(type);
-
-        // --- 核心修改 ---
-        // 1. 先调用 resetFields()，不带任何参数，清空整个表单
         form.resetFields();
-
-        // 2. 然后使用 setFieldsValue() 为特定字段设置值
         form.setFieldsValue({
-            auditor: currentUser?.username || '' // 负责人自动填充为当前用户
+            auditor: currentUser?.username || ''
         });
-
         setIsModalVisible(true);
     };
 
     const handleCancel = () => setIsModalVisible(false);
 
-    // --- 核心修改：提交新事件到数据库 ---
     const handleFormSubmit = async (values) => {
-        // 修正行：在用于生成下拉框的“已筛选供应商”列表中查找
         const selectedSupplier = managedSuppliers.find(s => s.id === values.supplierId);
 
         if (!selectedSupplier) {
-            // 这条错误现在几乎不可能触发了，但作为保障依然保留
             messageApi.error("未找到供应商信息，无法提交。");
             return;
         }
@@ -220,7 +206,6 @@ const AuditPlanPage = () => {
             planned_month: values.plannedMonth,
             supplier_id: selectedSupplier.id,
             supplier_name: selectedSupplier.name,
-            audit_project: values.auditProject,
             auditor: values.auditor,
             status: 'pending',
         };
@@ -232,36 +217,120 @@ const AuditPlanPage = () => {
         } else {
             messageApi.success(`${eventType === 'audit' ? '审计计划' : 'QRM会议'} 添加成功！`);
             setIsModalVisible(false);
-            fetchData(); // 重新获取数据
+            fetchData();
         }
     };
 
-    // 年份切换函数 (保持不变)
     const prevYear = () => setCurrentYear(currentYear - 1);
     const nextYear = () => setCurrentYear(currentYear + 1);
     const handleYearChange = (year) => setCurrentYear(year);
     const generateYearOptions = () => {
-
         const current = dayjs().year();
-
         const years = [];
-
         for (let i = current - 2; i <= current + 2; i++) {
-
             years.push(<Option key={i} value={i}>{i}</Option>);
-
         }
-
         return years;
-
     };
 
-    //根据SD的需要设计表头和添加数据
-    const handleExportExcel = async () => { /* ... */ };
+    // --- ✨ 核心修正：处理列宽拖拽的函数 ---
+    const handleResizeMouseDown = (index) => (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = monthColumnWidths[index];
+
+        const handleMouseMove = (moveEvent) => {
+            const newWidth = startWidth + (moveEvent.clientX - startX);
+            if (newWidth > 80) { // 设置最小宽度
+                setMonthColumnWidths(prevWidths => {
+                    const newWidths = [...prevWidths];
+                    newWidths[index] = newWidth;
+                    return newWidths;
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
+
+
+    const handleExportExcel = async () => {
+        if (managedSuppliers.length === 0) {
+            messageApi.warning('没有可供导出的数据。');
+            return;
+        }
+        messageApi.loading({ content: '正在生成Excel文件...', key: 'exporting' });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet(`${currentYear}年规划`);
+
+        const columns = [
+            { header: "Parma号", key: "parmaId", width: 15 },
+            { header: "CMT", key: "cmt", width: 15 },
+            { header: "供应商", key: "supplierName", width: 30 },
+            ...months.map((m, i) => ({ header: m, key: `month_${i + 1}`, width: 30 }))
+        ];
+        worksheet.columns = columns;
+
+        worksheet.getRow(1).eachCell(cell => {
+            cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: "4F81BD" } };
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        });
+
+        managedSuppliers.forEach(supplier => {
+            const rowData = {
+                parmaId: supplier.parma_id,
+                cmt: supplier.cmt,
+                supplierName: supplier.name
+            };
+
+            months.forEach((_, monthIndex) => {
+                const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
+                
+                if (itemsInCell.length > 0) {
+                    const richTextValue = itemsInCell.flatMap((item, index) => {
+                        const statusText = item.status === 'completed' ? '[已完成] ' : '[待办] ';
+                        const statusColor = item.status === 'completed' ? 'FF008000' : 'FFFFC000'; // Green : Orange
+                        const mainText = `[${item.type === 'audit' ? '审计' : 'QRM'}] ${item.category} (负责人: ${item.auditor || 'N/A'})`;
+                        
+                        const textParts = [
+                            { font: { bold: true, color: { argb: statusColor } }, text: statusText },
+                            { font: { color: { argb: 'FF000000' } }, text: mainText }
+                        ];
+                        
+                        if (index < itemsInCell.length - 1) {
+                           textParts.push({ font: { color: { argb: 'FF000000' } }, text: '\n' });
+                        }
+                        return textParts;
+                    });
+                    rowData[`month_${monthIndex + 1}`] = { richText: richTextValue };
+                } else {
+                    rowData[`month_${monthIndex + 1}`] = '';
+                }
+            });
+
+            const row = worksheet.addRow(rowData);
+            row.eachCell(cell => {
+                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+            });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), `${currentYear}年度战略规划报告.xlsx`);
+        messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
+    };
 
     return (
         <div style={{ padding: '0 24px 24px 24px' }}>
-            {/* 顶部控制栏 (保持不变) */}
             <Card style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -280,18 +349,11 @@ const AuditPlanPage = () => {
                 <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计与QRM会议的整体进度。</Paragraph>
                 <Divider style={{ margin: '16px 0' }} />
                 <Row gutter={16}>
-                    <Col span={8}>
-                        <Statistic title="总计事项" value={planStats.total} />
-                    </Col>
-                    <Col span={8}>
-                        <Statistic title="已完成" value={planStats.completed} valueStyle={{ color: '#52c41a' }} suffix={`/ ${planStats.total}`} />
-                    </Col>
-                    <Col span={8}>
-                        <Statistic title="待办" value={planStats.pending} valueStyle={{ color: '#faad14' }} />
-                    </Col>
+                    <Col span={8}><Statistic title="总计事项" value={planStats.total} /></Col>
+                    <Col span={8}><Statistic title="已完成" value={planStats.completed} valueStyle={{ color: '#52c41a' }} suffix={`/ ${planStats.total}`} /></Col>
+                    <Col span={8}><Statistic title="待办" value={planStats.pending} valueStyle={{ color: '#faad14' }} /></Col>
                 </Row>
             </Card>
-
 
             <Card
                 title={`${currentYear} 年度规划矩阵`}
@@ -301,34 +363,47 @@ const AuditPlanPage = () => {
                     <div style={matrixStyles.scrollContainer}>
                         <div style={matrixStyles.table}>
                             <div style={matrixStyles.headerRow}>
-                                {/* --- 核心修改：修复字段名 parma_id 和 cmt --- */}
-                                <div style={{ ...matrixStyles.stickyCell, flex: '0 0 100px', left: 0, fontWeight: 'bold' }}>Parma号</div>
-                                <div style={{ ...matrixStyles.stickyCell, flex: '0 0 100px', left: 100, fontWeight: 'bold' }}>CMT</div>
-                                <div style={{ ...matrixStyles.stickyCell, flex: '0 0 160px', left: 200, fontWeight: 'bold' }}>供应商</div>
-                                {months.map(month => <div key={month} style={matrixStyles.headerCell}>{month}</div>)}
+                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>
+                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma, fontWeight: 'bold' }}>CMT</div>
+                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>供应商</div>
+                                {/* --- ✨ 核心修正：渲染可拖拽调整的表头 --- */}
+                                {months.map((month, index) => (
+                                    <div key={month} style={{ ...matrixStyles.headerCell, flex: `0 0 ${monthColumnWidths[index]}px`}}>
+                                        {month}
+                                        <div
+                                            onMouseDown={handleResizeMouseDown(index)}
+                                            style={{
+                                                position: 'absolute',
+                                                right: 0,
+                                                top: 0,
+                                                height: '100%',
+                                                width: '10px',
+                                                cursor: 'col-resize',
+                                                userSelect: 'none',
+                                            }}
+                                        />
+                                    </div>
+                                ))}
                             </div>
-
 
                             {suppliers.map(supplier => (
                                 <div key={supplier.id} style={matrixStyles.bodyRow}>
-                                    {/* ✨ 核心修正：将 parmaId 更正为 parma_id 以匹配您的数据库表 */}
-                                    <div style={{ ...matrixStyles.stickyCell, flex: '0 0 100px', left: 0 }}>
+                                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
                                         <Text type="secondary">{supplier.parma_id}</Text>
                                     </div>
-                                    <div style={{ ...matrixStyles.stickyCell, flex: '0 0 100px', left: 100 }}>
+                                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma }}>
                                         <Tag>{supplier.cmt}</Tag>
                                     </div>
-                                    <div style={{ ...matrixStyles.stickyCell, flex: '0 0 160px', left: 200, fontWeight: 'bold' }}>
+                                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>
                                         {supplier.short_code}
                                     </div>
 
-                                    {/* 月份单元格的渲染逻辑保持不变 */}
                                     {Array.from({ length: 12 }).map((_, monthIndex) => {
                                         const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
                                         return (
-                                            <div key={monthIndex} style={matrixStyles.cell}>
+                                            // --- ✨ 核心修正：应用动态的列宽 ---
+                                            <div key={monthIndex} style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}>
                                                 {itemsInCell.map(item => (
-                                                    // --- ✨ 核心修改：全新的单行事件 UI ---
                                                     <div
                                                         key={item.id}
                                                         style={{
@@ -343,28 +418,20 @@ const AuditPlanPage = () => {
                                                             border: '1px solid #d9d9d9'
                                                         }}
                                                     >
-                                                        {/* 左侧：文字内容，可伸缩并截断 */}
-                                                        <Tooltip title={<><div><b>项目:</b> {item.audit_project}</div><div><b>负责人:</b> {item.auditor}</div></>}>
+                                                        <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div></>}>
                                                             <Text
-                                                                style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap' }}
-                                                                ellipsis={{ tooltip: false }} // Tooltip由外层提供，此处禁用默认的
+                                                                style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                                                             >
-                                                                <Tag color={item.type === 'audit' ? 'blue' : 'orange'}>{item.category}</Tag>
-                                                                {
-                                                                    item.audit_project.length > 5
-                                                                        ? `${item.audit_project.substring(0, 5)}...`
-                                                                        : item.audit_project
-                                                                }
+                                                                <Tag color={item.type === 'audit' ? 'blue' : 'orange'}>{item.type === 'audit' ? '审计' : 'QRM'}</Tag>
+                                                                {item.category}
                                                             </Text>
                                                         </Tooltip>
-
-                                                        {/* 右侧：操作按钮，固定宽度 */}
                                                         <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
                                                             <Popconfirm
                                                                 title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`}
                                                                 onConfirm={() => handleMarkAsComplete(item.id, item.status)}
                                                             >
-                                                                <Button type="text" size="small" style={{ padding: '0 4px', color: item.status === 'pending' ? '#1890ff' : '#8c8c8c' }}>
+                                                                <Button type="text" size="small" style={{ padding: '0 10px', color: item.status === 'pending' ? '#1890ff' : '#8c8c8c' }}>
                                                                     {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
                                                                 </Button>
                                                             </Popconfirm>
@@ -389,11 +456,11 @@ const AuditPlanPage = () => {
                 open={isModalVisible}
                 onCancel={handleCancel}
                 footer={null}
-                destroyOnClose // 确保每次打开模态框时表单都重置
+                destroyOnClose
             >
                 <Form form={form} layout="vertical" onFinish={handleFormSubmit} style={{ marginTop: 24 }}>
                     <Form.Item name="supplierId" label="供应商" rules={[{ required: true, message: '请选择供应商' }]}>
-                        <Select showSearch placeholder="请选择您负责的供应商" filterOption={(input, option) => option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0}>
+                        <Select showSearch placeholder="请选择您负责的供应商" filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}>
                             {managedSuppliers.map(s => <Option key={s.id} value={s.id}>{s.short_code}</Option>)}
                         </Select>
                     </Form.Item>
@@ -405,9 +472,6 @@ const AuditPlanPage = () => {
                             {categories.map(cat => <Option key={cat.id} value={cat.name}>{cat.name}</Option>)}
                         </Select>
                     </Form.Item>
-                    <Form.Item name="auditProject" label={eventType === 'audit' ? '审计项目' : '会议主题'} rules={[{ required: true, message: '请输入项目/主题' }]}>
-                        <Input />
-                    </Form.Item>
                     <Form.Item name="auditor" label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
                         <Input readOnly />
                     </Form.Item>
@@ -418,7 +482,5 @@ const AuditPlanPage = () => {
     );
 };
 
-
-const handleExportExcel = async () => { /* ... (此函数逻辑无需修改) ... */ };
-
 export default AuditPlanPage;
+

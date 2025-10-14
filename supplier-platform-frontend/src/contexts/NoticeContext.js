@@ -58,9 +58,9 @@ export const NoticeProvider = ({ children }) => {
         };
         fetchNotices();
 
-         const channel = supabase.channel('public:notices')
+        const channel = supabase.channel('public:notices')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, (payload) => {
-
+                // 对实时推送的数据也进行“翻译”，这部分逻辑是正确的
                 if (payload.eventType === 'INSERT') {
                     setNotices(prev => [convertKeysToCamelCase(payload.new), ...prev]);
                 }

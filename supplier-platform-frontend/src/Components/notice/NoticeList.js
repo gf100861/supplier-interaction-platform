@@ -17,6 +17,7 @@ const getStatusTag = (status) => {
             color = 'warning'; // 橙色
             break;
         case '待SD审核':
+             color = 'red'; 
         case '待SD关闭':
             color = 'purple'; // 紫色
             break;
@@ -64,7 +65,7 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
                     </Space>
                 }
-                description={`编号: ${item.noticeCode || item.id} | 指派给: ${item.supplier.shortCode}`}
+                // description={`编号: ${item.noticeCode || item.id}`}
 
             />
             <Space size="middle">
@@ -79,9 +80,9 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
 const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
 
     const [sortOrder, setSortOrder] = useState('default');
-
+    // console.log('打印batch',batch.representative.supplier.shortCode)
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
-    const supplierName = batch.representative?.assignedSupplierName || '未知供应商';
+    const supplierName = batch.representative.supplier.shortCode || '未知供应商';
     const category = batch.representative?.category || '未知类型';
     const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
     // --- 核心修正：在这里智能地判断并生成标题 ---

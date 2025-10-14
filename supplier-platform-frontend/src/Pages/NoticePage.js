@@ -24,7 +24,7 @@ const { TabPane } = Tabs;
 
 const NoticePage = () => {
     // --- 状态管理 (已清理) ---
-    const { notices, updateNotice, loading: noticesLoading } = useNotices();
+   const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
     const { suppliers } = useSuppliers();
     const { messageApi, notificationApi } = useNotification();
     const { token } = theme.useToken();
@@ -148,7 +148,7 @@ const NoticePage = () => {
             data = data.filter(n => selectedCategories.includes(n.category));
         }
 
-        const keywords = searchTerm.toLowerCase().split(/[；;@]/).map(k => k.trim()).filter(Boolean);
+        const keywords = searchTerm.toLowerCase().split(/[；;@,，]/).map(k => k.trim()).filter(Boolean);
         if (keywords.length > 0) {
             data = data.filter(notice => {
                 // --- 核心修改：在此数组中加入 notice.status ---
@@ -158,6 +158,7 @@ const NoticePage = () => {
                     notice.assignedSupplierName,
                     notice.category,
                     notice.status, // 将 status 添加到可搜索的文本中
+                    notice?.noticeCode
                 ].join(' ').toLowerCase();
 
                 console.log(notice.status)
@@ -714,7 +715,9 @@ const NoticePage = () => {
         if (!currentUser) return <p>请先登录</p>;
         if (configLoading || noticesLoading) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}><Spin size="large" /></div>; }
 
-        // 在 NoticePage.js > renderTabs 函数中...
+         if (noticesLoading && notices.length === 0) {
+            return <div><Spin size="large" /></div>;
+        }
 
         const tabsConfig = {
             Supplier: [
@@ -766,7 +769,7 @@ const NoticePage = () => {
         <div style={{ padding: '24px' }}>
             <Card style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                    <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>{/* ... */}</Paragraph></div>
+                    <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单</Paragraph></div>
                     <Space wrap>
                         <Select mode="multiple" allowClear style={{ width: 250 }} placeholder="按问题类型筛选" onChange={setSelectedCategories} options={sortedNoticeCategories.map(c => ({ label: c, value: c }))} />
                         <Select
@@ -778,7 +781,7 @@ const NoticePage = () => {
                             options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
                         />
                         <Search
-                            placeholder="搜索内容 (可用;；@分隔多关键词)"
+                            placeholder="搜索内容 (可用;；@,，分隔多关键词)"
                             allowClear
                             onSearch={setSearchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
@@ -802,6 +805,19 @@ const NoticePage = () => {
                 </div>
             </Card>
             <Card>{renderTabs()}</Card>
+
+               <div style={{ textAlign: 'center', marginTop: 24 }}>
+                {hasMore ? (
+                    <Button 
+                        onClick={loadMoreNotices} 
+                        loading={noticesLoading && notices.length > 0}
+                    >
+                        加载更多
+                    </Button>
+                ) : (
+                    <Text type="secondary">已经到底啦</Text>
+                )}
+            </div>
 
             <NoticeDetailModal
                 open={!!selectedNotice}

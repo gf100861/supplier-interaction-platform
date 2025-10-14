@@ -576,7 +576,7 @@ const BatchNoticeCreationPage = () => {
                         />
                     </Form.Item>
 
-                    <Form.Item name="category" label="问题类型" rules={[{ required: true }]}>
+                    <Form.Item name="category" label="问题类型" rules={[{ required: true }]} initialValues={{ createTime: dayjs() }}>
                         <Select style={{ width: 180 }} placeholder="选择问题类型" disabled={!!globalSettings} loading={categoriesLoading} onChange={(value) => {
                             if (dataSource.length > 0) {
                                 messageApi.warning('切换类型将清空现有数据！');
@@ -587,7 +587,7 @@ const BatchNoticeCreationPage = () => {
                         </Select>
                     </Form.Item>
                     <Form.Item name="createTime" label="创建时间" rules={[{ required: true }]}>
-                        <DatePicker disabled={!!globalSettings} />
+                        <DatePicker disabled={!!globalSettings}/>
                     </Form.Item>
                     <Form.Item>
                         {/* 3. --- 核心修正：为确认按钮也添加 loading 状态 --- */}

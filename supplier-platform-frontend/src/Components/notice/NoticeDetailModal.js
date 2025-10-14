@@ -400,8 +400,8 @@ export const NoticeDetailModal = ({
             manager_reassignment: "管理员重分配了供应商",
             manager_void: "管理员作废了通知单",
             // --- 核心修正：在这里新增对 like 和 unlike 的处理 ---
-            like: "点赞了此改善",
-            unlike: "取消了点赞"
+            // like: "点赞了此改善",
+            // unlike: "取消了点赞"
         };
 
         const colorMap = {
@@ -426,7 +426,7 @@ export const NoticeDetailModal = ({
 
     return (
         // 修正 #1: 将 open={visible} 修改为 open={open}
-        <Modal title={`通知单详情: ${safeTitle}`} open={open} onCancel={onCancel} footer={null} width={800}>
+        <Modal title={`通知单详情: ${safeTitle} - ${notice?.noticeCode || ''}`} open={open} onCancel={onCancel} footer={null} width={800}>
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
             <Card size="small" type="inner">
                 {/* 修正 #2: 将富文本数组转换为纯文本 */}
@@ -435,7 +435,7 @@ export const NoticeDetailModal = ({
                 <ImageScroller images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
                 <Divider style={{ margin: '12px 0' }} />
-                <Text type="secondary">由 {notice?.sdNotice?.creator} 于 {notice?.sdNotice?.createTime} 发起</Text>
+                <Text type="secondary">由 {notice?.creator?.username|| 'SD'} 于 {notice?.sdNotice?.createTime} 发起</Text>
             </Card>
             <Divider />
 

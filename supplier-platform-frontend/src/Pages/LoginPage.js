@@ -41,21 +41,21 @@ const LoginCarousel = () => {
 
     const carouselItems = useMemo(() => [
         {
-            src: 'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?w=800',
+            src: '/images/Carousel 1.jpg',
             title: '协同 · 无界',
             description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
             bgColor: '#e0f2fe', // Light sky blue
             cardBgColor: 'rgba(240, 249, 255, 0.7)',
         },
         {
-            src: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=800',
+            src: '/images/Carousel 2.jpg',
             title: '数据 · 驱动',
             description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
             bgColor: '#f0fdf4', // Light mint green
             cardBgColor: 'rgba(240, 253, 244, 0.7)',
         },
         {
-            src: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800',
+            src: '/images/Carousel 3.jpg',
             title: '效率 · 提升',
             description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
             bgColor: '#f5f3ff', // Light lavender

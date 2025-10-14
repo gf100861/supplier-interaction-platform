@@ -30,6 +30,7 @@ import ConsolidatedReportPage from './Pages/ConsolidatedReportPage';
 import AdminPage from './Pages/AdminPage';
 import ForgotPasswordPage from './Pages/ForgotPasswordPage';
 import ResetPasswordPage from './Pages/ResetPasswordPage';
+import NotFoundPage from './Pages/NotFoundPage'
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -72,6 +73,7 @@ const ThemedApp = () => {
                                                                     <Route path="analysis" element={<ProblemAnalysisPage />} />
                                                                     <Route path="reports" element={<ConsolidatedReportPage />} />
                                                                     <Route path="admin" element={<AdminPage />} />
+                                                                     <Route path="*" element={< NotFoundPage />} />
                                                                 </Route>
                                                             </Route>
                                                         </Routes>
