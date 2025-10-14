@@ -1,15 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 // 引入 Row, Col 和 DatePicker
-import { Form, Input, Button, Upload, Typography, Divider, Modal, Select, InputNumber, Card, Row, Col, DatePicker } from 'antd';
+import { Form, Input, Button, Upload, Typography, Divider, Modal, Select, InputNumber, Card, Row, Col, DatePicker, Radio, Empty } from 'antd';
 import { UploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNotices } from '../contexts/NoticeContext';
+import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 
 const { Dragger } = Upload;
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
 
@@ -34,6 +35,12 @@ const FileUploadPage = () => {
   const [previewImage, setPreviewImage] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedSupplier, setSelectedSupplier] = useState(null)
+
+
+  const [historicalTags, setHistoricalTags] = useState({});
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedSource, setSelectedSource] = useState(null);
 
   const { suppliers, loading: suppliersLoading } = useSuppliers();
   const { categories, loading: categoriesLoading } = useCategories();
@@ -76,90 +83,163 @@ const FileUploadPage = () => {
     setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
   };
 
-const renderDynamicFields = () => {
+
+  const handleSupplierChange = async (supplierId) => {
+    if (!supplierId) {
+      setHistoricalTags({});
+      return;
+    }
+    setLoadingHistory(true);
+    try {
+      const selectedSupplier = suppliers.find(s => s.id === supplierId);
+      if (!selectedSupplier) return;
+
+      const { data, error } = await supabase
+        .from('knowledge_base')
+        .select('problem_source, cause')
+        .eq('supplier_parma_id', selectedSupplier.parma_id);
+
+      if (error) throw error;
+
+      const tags = data.reduce((acc, { problem_source, cause }) => {
+        if (!acc[problem_source]) acc[problem_source] = new Set();
+        acc[problem_source].add(cause);
+        return acc;
+      }, {});
+
+      Object.keys(tags).forEach(key => { tags[key] = Array.from(tags[key]); });
+      setHistoricalTags(tags);
+    } catch (error) {
+      messageApi.error(`加载历史标签失败: ${error.message}`);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+
+
+
+  const renderDynamicFields = () => {
     if (!selectedCategory) return null;
 
     if (selectedCategory === 'SEM') {
-        return (
-            <>
-                <Form.Item key="criteria" name={['details', 'criteria']} label="Criteria n°" rules={[{ required: true, message: '请输入 Criteria n°！' }]} >
-                    <Input placeholder="请输入 Criteria n°" />
-                </Form.Item>
-                
-                {/* --- 核心修改：使用 autoSize 替换 rows --- */}
-                <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true, message: '请输入 SEM Parameter！' }]} >
-                    <TextArea 
-                        autoSize={{ minRows: 3, maxRows: 5 }} // 高度将在3行到5行之间自动调整
-                        placeholder="请输入 SEM Parameter" 
-                    />
-                </Form.Item>
-                
-                {/* --- 核心修改：使用 autoSize 替换 rows --- */}
-                <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true, message: '请输入 Gap description！' }]} >
-                    <TextArea 
-                        autoSize={{ minRows: 3, maxRows: 6 }} // 高度将在3行到6行之间自动调整
-                        placeholder="请输入 Gap description" 
-                    />
-                </Form.Item>
-                
-                <Form.Item key="score" name={['details', 'score']} label="Actual SEM points" rules={[{ required: true, message: '请输入 Actual SEM points！' }]} >
-                    <InputNumber min={1} max={5} style={{ width: '100%' }} placeholder="请输入1到5之间的分数" />
-                </Form.Item>
-            </>
-        );
+      return (
+        <>
+          <Form.Item key="criteria" name={['details', 'criteria']} label="Criteria n°" rules={[{ required: true, message: '请输入 Criteria n°！' }]} >
+            <Input placeholder="请输入 Criteria n°" />
+          </Form.Item>
+
+          {/* --- 核心修改：使用 autoSize 替换 rows --- */}
+          <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true, message: '请输入 SEM Parameter！' }]} >
+            <TextArea
+              autoSize={{ minRows: 3, maxRows: 5 }} // 高度将在3行到5行之间自动调整
+              placeholder="请输入 SEM Parameter"
+            />
+          </Form.Item>
+
+          {/* --- 核心修改：使用 autoSize 替换 rows --- */}
+          <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true, message: '请输入 Gap description！' }]} >
+            <TextArea
+              autoSize={{ minRows: 3, maxRows: 6 }} // 高度将在3行到6行之间自动调整
+              placeholder="请输入 Gap description"
+            />
+          </Form.Item>
+
+          <Form.Item key="score" name={['details', 'score']} label="Actual SEM points" rules={[{ required: true, message: '请输入 Actual SEM points！' }]} >
+            <InputNumber min={1} max={5} style={{ width: '100%' }} placeholder="请输入1到5之间的分数" />
+          </Form.Item>
+        </>
+      );
     }
 
     if (selectedCategory === 'Process Audit') {
-        return (
-            <>
-                <Form.Item
-                    key="Process"
-                    name={['details', 'process']}
-                    label="PROCESS/QUESTIONS"
-                    rules={[{ required: true, message: '请输入Process/Questions' }]}
-                >
-                    <Input placeholder="请输入Process/Questions" />
-                </Form.Item>
-                
-                {/* --- 核心修改：使用 autoSize 替换 rows --- */}
-                <Form.Item
-                    key="Findings"
-                    name={['details', 'finding']}
-                    label="FINDINGS/DEVIATIONS"
-                    rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}
-                >
-                    <TextArea 
-                        autoSize={{ minRows: 3, maxRows: 8 }} // 高度将在3行到8行之间自动调整
-                        placeholder="请输入FINDINGS/DEVIATIONS" 
-                    />
-                </Form.Item>
-            </>
-        )
+      return (
+        <>
+          <Form.Item
+            key="Process"
+            name={['details', 'process']}
+            label="PROCESS/QUESTIONS"
+            rules={[{ required: true, message: '请输入Process/Questions' }]}
+          >
+            <Input placeholder="请输入Process/Questions" />
+          </Form.Item>
+
+          {/* --- 核心修改：使用 autoSize 替换 rows --- */}
+          <Form.Item
+            key="Findings"
+            name={['details', 'finding']}
+            label="FINDINGS/DEVIATIONS"
+            rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}
+          >
+            <TextArea
+              autoSize={{ minRows: 3, maxRows: 8 }} // 高度将在3行到8行之间自动调整
+              placeholder="请输入FINDINGS/DEVIATIONS"
+            />
+          </Form.Item>
+        </>
+      )
     }
 
     return null;
-};
+  };
+
 
   const onFinish = async (values) => {
     setLoading(true);
     messageApi.loading({ content: '正在处理数据...', key: 'submitting' });
 
-    const processFiles = async (fileList = []) => {
-      return Promise.all((fileList || []).map(async file => {
-        if (file.originFileObj && !file.url) {
-          const base64Url = await getBase64(file.originFileObj);
-          return { uid: file.uid, name: file.name, status: 'done', url: base64Url, thumbUrl: base64Url };
-        }
-        return file;
-      }));
+    const processFiles = async (fileList) => {
+      console.log('filelist', fileList)
+      if (!fileList || fileList.length === 0) return [];
+
+      const processed = await Promise.all(
+        fileList.map(async (file) => {
+          // 如果文件有 originFileObj，说明它是新上传的，需要处理
+          if (file.originFileObj) {
+            try {
+              const base64Url = await getBase64(file.originFileObj);
+              // 返回一个干净、可序列化的对象
+              return {
+                uid: file.uid,
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                url: base64Url,
+              };
+            } catch (error) {
+              console.error("文件转换为 Base64 失败:", file.name, error);
+              messageApi.error(`文件 ${file.name} 处理失败！`);
+              return null; // 如果转换失败，则返回 null
+            }
+          }
+
+          // 如果文件已经有 url (例如，来自一个已保存的记录)，只需确保它是一个干净的对象
+          if (file.url) {
+            return {
+              uid: file.uid,
+              name: file.name,
+              url: file.url,
+            };
+          }
+
+          // 忽略无法处理的文件
+          return null;
+        })
+      );
+
+      // 过滤掉所有处理失败的 (null) 文件
+      return processed.filter(Boolean);
     };
+
 
     const processedImages = await processFiles(values.images);
     const processedAttachments = await processFiles(values.attachments);
 
     const selectedSupplierInfo = suppliers.find(s => s.id === values.supplierId);
     const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    console.log(values)
+    console.log('attachement', processedAttachments)
+
+    console.log('image', values.images)
     const newNoticeToInsert = {
       notice_code: noticeCode,
       category: values.category,
@@ -177,36 +257,42 @@ const renderDynamicFields = () => {
         images: processedImages,
         attachments: processedAttachments,
         details: values.details,
+        // --- 核心修正：在这里将选择的标签写入数据库 ---
+        problem_source: values.problem_source || null,
+        cause: values.cause || null,
       },
       history: [],
     };
 
     try {
       await addNotices([newNoticeToInsert]);
-      messageApi.success({ content: `提报成功！编号为：${noticeCode}`, key: 'submitting', duration: 3 });
 
-      // --- ✨ 核心修改：智能重置表单 ✨ ---
-      // 1. 获取需要保留的字段的当前值
+      // --- ✨ 核心修正 1：在显示成功消息后，延迟一段时间再停止加载动画 ---
+      messageApi.success({ content: `提报成功！编号为：${noticeCode}`, key: 'submitting', duration: 2.5 });
+
       const headerValues = {
         category: form.getFieldValue('category'),
         supplierId: form.getFieldValue('supplierId'),
         date: form.getFieldValue('date'),
       };
-
-      // 2. 完全重置表单
       form.resetFields();
-
-      // 3. 将刚才保存的值重新设置回去
       form.setFieldsValue(headerValues);
-
-      // 4. 保持问题类型选择器的状态同步
       setSelectedCategory(headerValues.category);
+      setSelectedSource(null);
+      setHistoricalTags({});
+
+      setTimeout(() => {
+        setLoading(false);
+      }, 1500); // 延迟1.5秒，确保用户看到成功提示
 
     } catch (error) {
+      // --- ✨ 核心修正 2：在显示失败消息后，也延迟停止加载动画 ---
       messageApi.error({ content: `提交失败: ${error.message}`, key: 'submitting', duration: 3 });
-    } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setLoading(false);
+      }, 1500);
     }
+    // --- 核心修正 3：移除 finally 块，手动控制 setLoading ---
   };
 
   return (
@@ -236,6 +322,7 @@ const renderDynamicFields = () => {
                   loading={suppliersLoading}
                   filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
                   options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code} (${s.name})` }))}
+                  onChange={handleSupplierChange}
                 />
               </Form.Item>
             </Col>
@@ -245,6 +332,54 @@ const renderDynamicFields = () => {
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+            <Col span={24}>
+            <Card type="inner" title="历史经验标签 (可选)" loading={loadingHistory} style={{marginBottom: 24}}>
+                        <Row gutter={16}>
+                            <Col span={12}>
+                                <Form.Item name="problem_source" label="问题来源">
+                                    <Select 
+                                        placeholder="选择来源或选择'其他'" 
+                                        allowClear 
+                                        onChange={value => {
+                                            setSelectedSource(value);
+                                            // 如果从“其他”切换回来，清空原因
+                                            if (value !== '其他') {
+                                                form.setFieldsValue({ cause: null });
+                                            }
+                                        }}
+                                    >
+                                        {/* --- 核心修正 1：动态渲染来源，并始终包含“其他” --- */}
+                                        {Object.keys(historicalTags).map(source => (
+                                            <Option key={source} value={source}>{source}</Option>
+                                        ))}
+                                        <Option key="其他" value="其他">其他 (手动输入)</Option>
+                                    </Select>
+                                </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                                {/* --- 核心修正 2：根据选择的来源，条件渲染“原因”的输入方式 --- */}
+                                {selectedSource === '其他' ? (
+                                    <Form.Item
+                                        name="cause"
+                                        label="造成原因 (手动输入)"
+                                        rules={[{ required: true, message: '请手动输入造成原因' }]}
+                                    >
+                                        <Input placeholder="请输入具体原因" />
+                                    </Form.Item>
+                                ) : (
+                                    <Form.Item name="cause" label="造成原因 (根据历史推荐)">
+                                        <Select placeholder="选择原因" allowClear disabled={!selectedSource}>
+                                            {(historicalTags[selectedSource] || []).map(cause => (
+                                                <Option key={cause} value={cause}>{cause}</Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+                                )}
+                            </Col>
+                        </Row>
+                    </Card>
+            </Col>
+
           </Row>
 
           {/* --- 动态字段渲染区域 --- */}
@@ -261,10 +396,12 @@ const renderDynamicFields = () => {
             </Form.Item>
           </Form.Item>
 
-          <Form.Item name="attachments" label="补充附件 (可选)" valuePropName="fileList" getValueFromEvent={normFile}>
-            <Upload beforeUpload={() => false} multiple>
-              <Button icon={<UploadOutlined />}>点击上传附件</Button>
-            </Upload>
+          <Form.Item label="补充附件 (可选)">
+            <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
+              <Upload beforeUpload={() => false} multiple>
+                <Button icon={<UploadOutlined />}>点击上传附件</Button>
+              </Upload>
+            </Form.Item>
             <Paragraph type="secondary" style={{ marginTop: '8px' }}>
               提示：目前附件上传暂不支持 .txt 格式的文件，请打包为 .zip 或使用其他格式。
             </Paragraph>

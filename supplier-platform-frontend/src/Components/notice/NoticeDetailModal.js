@@ -20,7 +20,6 @@ const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList
 const DynamicDetailsDisplay = ({ notice }) => {
     // 修正 #2: 使用可选链 ?. 来安全地访问深层属性
     if (!notice?.category || !notice?.sdNotice?.details) return null;
-    console.log('notice',notice.creator.username)
 
     const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(

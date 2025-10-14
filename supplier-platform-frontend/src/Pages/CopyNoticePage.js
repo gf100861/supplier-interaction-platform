@@ -1,251 +1,152 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Form, Input, Button, Select, Card, Layout, Row, Col, Typography, Avatar, Carousel, Image } from 'antd';
-import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Form, Input, Button, Upload, Typography, Divider, Modal, theme, Select, InputNumber, Card, Space, Radio } from 'antd';
+import { UserOutlined, InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+
+// 导入所有需要的 Contexts 和配置
 import { useNotification } from '../contexts/NotificationContext';
+import { useSuppliers } from '../contexts/SupplierContext';
+import { useNotices } from '../contexts/NoticeContext';
+import { useCategories } from '../contexts/CategoryContext';
 import { supabase } from '../supabaseClient';
-import './LoginPage.css'; // 1. 我们将需要一点自定义CSS
+import { categoryColumnConfig } from '../data/_mockData';
 
+const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
-const { Title, Text, Link, Paragraph } = Typography;
+const { TextArea } = Input;
+const { Dragger } = Upload;
+
+// ... (辅助函数 normFile, getBase64 保持不变)
+
+const FileUploadPage = () => {
+    const [form] = Form.useForm();
+    const [loading, setLoading] = useState(false);
+    
+    const [selectedCategory, setSelectedCategory] = useState(null);
+   const [historicalTags, setHistoricalTags] = useState({});
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [selectedSource, setSelectedSource] = useState(null);
 
 
-// Revised useTypingEffect hook
-const useTypingEffect = (textToType, speed = 80) => {
-    const [typedText, setTypedText] = useState('');
-    const currentIndex = useRef(0);
-    const typingRef = useRef(null);
 
-    useEffect(() => {
-        // 每次 textToType 变化时，都执行清理和重新开始
-        // 清理旧的定时器
-        if (typingRef.current) {
-            clearInterval(typingRef.current);
-        }
+    const { suppliers, loading: suppliersLoading } = useSuppliers();
+    const { categories, loading: categoriesLoading } = useCategories();
+    const { addNotices } = useNotices();
+    const { messageApi } = useNotification();
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
-        // 重置状态
-        setTypedText('');
-        currentIndex.current = 0;
+    const managedSuppliers = useMemo(() => { /* ... (逻辑不变) ... */ }, [currentUser, suppliers]);
 
-        if (textToType) {
-            typingRef.current = setInterval(() => {
-                setTypedText(prev => {
-                    // 使用局部变量确保快照
-                    const currentIdx = currentIndex.current;
-                    if (currentIdx < textToType.length) {
-                        currentIndex.current = currentIdx + 1;
-                        return prev + textToType.charAt(currentIdx);
-                    } else {
-                        clearInterval(typingRef.current);
-                        return prev;
-                    }
-                });
-            }, speed);
-        }
+    // --- 核心功能 1：当问题类型变化时，从数据库获取对应的知识库 ---
+    const handleSupplierChange = async (supplierId) => {
+        if (!supplierId) {
+            setHistoricalTags({});
+            return;
+        }
+        setLoadingHistory(true);
+        try {
+            const { data, error } = await supabase
+                .from('notices')
+                .select('problem_source, cause')
+                .eq('assigned_supplier_id', supplierId)
+                .not('problem_source', 'is', null) // 只选择有标签的历史记录
+                .not('cause', 'is', null);
+            
+            if (error) throw error;
+            
+            // 将返回的数据处理成级联选择器需要的格式: { '来源1': ['原因A', '原因B'], ... }
+            const tags = data.reduce((acc, { problem_source, cause }) => {
+                if (!acc[problem_source]) {
+                    acc[problem_source] = new Set();
+                }
+                acc[problem_source].add(cause);
+                return acc;
+            }, {});
+            
+            // 将 Set 转换为数组
+            Object.keys(tags).forEach(key => {
+                tags[key] = Array.from(tags[key]);
+            });
 
-        // useEffect 的清理函数，在组件卸载或依赖项改变前执行
-        return () => {
-            if (typingRef.current) {
-                clearInterval(typingRef.current);
-            }
-        };
-    }, [textToType, speed]); // 依赖项数组确保当 textToType 变化时重新运行
+            setHistoricalTags(tags);
+        } catch (error) {
+            messageApi.error(`加载历史标签失败: ${error.message}`);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+    // ... (其他 handler 函数，如 onFinish, handlePreview 等)
 
-    return typedText;
-};
-
-
-// --- 3. 核心：全新的、动态的图片轮播组件 ---
-const LoginCarousel = () => {
-    const [currentIndex, setCurrentIndex] = useState(0);
-
-    const carouselItems = useMemo(() => [
-        {
-            src: 'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?w=800',
-            title: '协同 · 无界',
-            description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
-        },
-        {
-            src: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=800',
-            title: '数据 · 驱动',
-            description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
-        },
-        {
-            src: 'https://images.unsplash.com/photo-1587560699334-cc4262406a19?w=800',
-            title: '效率 · 提升',
-            description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
-        },
-    ], []);
-    const currentItem = carouselItems[currentIndex];
-    const typedDescription = useTypingEffect(currentItem.description);
+    // --- 核心功能 2：当用户选择一个原因时，自动填充对应的方法 ---
+    // const handleCauseChange = (e) => {
+    //     const cause = e.target.value;
+    //     const selectedKnowledge = knowledgeBase.find(item => item.cause === cause);
+    //     if (selectedKnowledge) {
+    //         setSelectedCause(selectedKnowledge);
+    //         form.setFieldsValue({ process_tag: selectedKnowledge.method });
+    //     }
+    // };
+    
+    // const onFinish = async (values) => {
+    //     // ... (提交逻辑，确保包含了 values.cause_tag 和 values.process_tag)
+    // };
 
     return (
-        <div
-            style={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                padding: '40px',
-                // 动态背景色
-                backgroundColor: currentItem.bgColor,
-                transition: 'background-color 0.5s ease-in-out'
-            }}
-        >
-            <Carousel
-                autoplay
-                dots={false}
-                fade
-                style={{ width: '100%', maxWidth: '500px' }}
-                afterChange={(current) => setCurrentIndex(current)} // ✅ 保留
-            >
+        <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
+            <Card>
+                <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                    <Title level={4}>创建新的整改通知单</Title>
+                </div>
+                
+                <Form form={form} layout="vertical" onFinish={onFinish}>
+                    <Form.Item name="category" label="问题类型" rules={[{ required: true }]}>
+                        <Select placeholder="请选择问题类型" loading={categoriesLoading} onChange={value => setSelectedCategory(value)}>
+                            {categories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
+                        </Select>
+                    </Form.Item>
+                    <Form.Item name="supplierId" label="选择供应商" rules={[{ required: true }]}>
+                        {/* ... (供应商选择) */}
+                    </Form.Item>
+                    
+                    {/* --- 核心功能 3：动态渲染“历史原因”选择区域 --- */}
+                      <Card type="inner" title="历史经验标签 (可选)" loading={loadingHistory} style={{marginBottom: 24}}>
+                        {Object.keys(historicalTags).length > 0 ? (
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Form.Item name="problem_source" label="问题来源 (根据历史推荐)">
+                                        <Select placeholder="选择来源" allowClear onChange={value => setSelectedSource(value)}>
+                                            {Object.keys(historicalTags).map(source => (
+                                                <Option key={source} value={source}>{source}</Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item name="cause" label="造成原因 (根据来源推荐)">
+                                        <Select placeholder="选择原因" allowClear disabled={!selectedSource}>
+                                            {(historicalTags[selectedSource] || []).map(cause => (
+                                                <Option key={cause} value={cause}>{cause}</Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        ) : (
+                            <Text type="secondary">暂无该供应商的历史标签数据，本次提交将作为新经验记录。</Text>
+                        )}
+                    </Card>
+                    
+                    {/* ... (原有的动态字段、图片上传、附件上传等部分保持不变) ... */}
 
-                {carouselItems.map((item, index) => (
-                    <div key={index}>
-                        <Image
-                            src={item.src}
-                            preview={false}
-                            style={{
-                                width: '100%',
-                                aspectRatio: '16 / 10',
-                                objectFit: 'cover',
-                                borderRadius: '12px',
-                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)'
-                            }}
-                        />
-                    </div>
-                ))}
-            </Carousel>
-            <Card
-                style={{
-                    marginTop: '-60px',
-                    width: '90%',
-                    maxWidth: '450px',
-                    zIndex: 10,
-                    backdropFilter: 'blur(10px)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)'
-                }}
-            >
-                <Title level={3}>{currentItem.title}</Title>
-                <Paragraph type="secondary" className="typing-text">
-                    {typedDescription}
-                    <span className="typing-cursor">|</span>
-                </Paragraph>
+                    <Form.Item style={{ marginTop: 24, textAlign: 'right' }}>
+                        <Button type="primary" htmlType="submit" loading={loading} size="large">
+                            确认提交
+                        </Button>
+                    </Form.Item>
+                </Form>
             </Card>
         </div>
     );
 };
 
-const LoginPage = () => {
-    const navigate = useNavigate();
-    const { messageApi } = useNotification();
-    const [loading, setLoading] = useState(false);
-
-    const onFinish = async (values) => {
-        setLoading(true);
-        try {
-            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-                email: values.email,
-                password: values.password,
-            });
-
-            if (authError) throw authError;
-
-            // --- 核心修改：登录成功后，直接从数据库获取包括角色在内的所有信息 ---
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select(`
-                    *,
-                    managed_suppliers:sd_supplier_assignments (
-                        supplier:suppliers (*)
-                    )
-                `)
-                .eq('id', authData.user.id)
-                .single();
-
-            if (userError) throw userError;
-
-            messageApi.success('登录成功!');
-            // 将从数据库获取的、包含正确角色的完整用户信息存入 localStorage
-            localStorage.setItem('user', JSON.stringify(userData));
-            navigate('/');
-
-        } catch (error) {
-            messageApi.error(error.message || '登录失败，请检查您的凭证。');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Layout style={{ minHeight: '100vh' }}>
-            <Row justify="center" align="middle" style={{ minHeight: '100vh', background: '#f0f2f5' }}>
-
-                {/* 左侧插图区域，仅在大屏幕上显示 */}
-                <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ maxWidth: '500px', width: '100%' }}>
-                        <LoginCarousel />
-                    </div>
-                </Col>
-
-                {/* 右侧登录表单区域 */}
-                <Col xs={22} sm={16} md={12} lg={10} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    <Card
-                        style={{
-                            width: '100%',
-                            maxWidth: 400,
-                            boxShadow: '0 4px 20px 0 rgba(0, 0, 0, 0.1)',
-                            borderRadius: '12px',
-                        }}
-                    >
-                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                            <Avatar size={64} icon={<ApartmentOutlined />} style={{ backgroundColor: '#1890ff' }} />
-                            <Title level={3} style={{ marginTop: '16px' }}>供应商与SD信息交换平台</Title>
-                            <Text type="secondary">欢迎回来，请登录您的账户</Text>
-                        </div>
-
-                        <Form name="login_form" onFinish={onFinish} initialValues={{ role: 'Supplier' }} layout="vertical">
-                            <Form.Item
-                                name="email"
-                                label="登录邮箱"
-                                rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}
-                            >
-                                <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" size="large" />
-                            </Form.Item>
-
-                            <Form.Item
-                                name="password"
-                                label="密码"
-                                rules={[{ required: true, message: '请输入密码!' }]}
-                            >
-                                <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
-                            </Form.Item>
-
-                            <Form.Item>
-                                <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">
-                                    登 录
-                                </Button>
-                            </Form.Item>
-
-                            {/* --- 新增的联系信息 --- */}
-                            <div style={{ textAlign: 'center', marginTop: '16px' }}>
-                                <Text type="secondary" style={{ fontSize: '12px' }}>
-                                    如遇登录、密码等问题，请联系：
-                                    <Link href="mailto:louis.xin@volvo.com" style={{ fontSize: '12px', marginLeft: '4px' }}>
-                                        louis.xin@volvo.com
-                                    </Link>
-                                </Text>
-                            </div>
-
-                        </Form>
-                    </Card>
-                </Col>
-            </Row>
-        </Layout>
-    );
-};
-
-export default LoginPage;
+export default FileUploadPage;
