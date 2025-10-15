@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Popconfirm } from 'antd';
 import {
     PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
-    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled,
+    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
     InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
@@ -433,8 +433,20 @@ export const NoticeDetailModal = ({
                 <DynamicDetailsDisplay notice={notice} />
                 <ImageScroller images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
-                <Divider style={{ margin: '12px 0' }} />
-                <Text type="secondary">由 {notice?.creator?.username|| 'SD'} 于 {notice?.sdNotice?.createTime} 发起</Text>
+
+                {/* --- 2. 核心修正：在这里添加标签显示区域 --- */}
+                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
+                    <div style={{ marginTop: '12px' }}>
+                        <Space wrap>
+                            <Text strong><TagsOutlined /> 历史经验标签:</Text>
+                            {notice.sdNotice?.problemSource && <Tag color="geekblue">{notice?.sdNotice?.problemSource}</Tag>}
+                            {notice?.sdNotice?.cause && <Tag color="purple">{notice?.sdNotice?.cause}</Tag>}
+                        </Space>
+                    </div>
+                )}
+                <Divider style={{ margin: '8px 0' }} />
+                <Text type="secondary">由 {notice?.creator?.username || 'SD'} 于 {notice?.sdNotice?.createTime} 发起给 {notice?.supplier?.shortCode}</Text>
+
             </Card>
             <Divider />
 
@@ -442,14 +454,15 @@ export const NoticeDetailModal = ({
             <Timeline>
                 <Timeline.Item color="green">
                     <p><b>{notice?.creator?.username || '发起人'}</b> 在 {dayjs(notice.createdAt).format('YYYY-MM-DD HH:mm')} 发起了通知</p>
+
                 </Timeline.Item>
 
                 {(notice.history || []).map((h, index) => {
                     const label = getHistoryItemLabel(h);
-                    console.log('h是什么',h)
+                    console.log('h是什么', h)
                     return (
                         <Timeline.Item key={index} color={label.color}>
-                            <p><b>{h.submitter||'发起人'}</b> 在 {h.time} {label.text}</p>
+                            <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
 
                             {/* 如果历史记录中有描述，则显示 */}
                             {h.description && h.description.startsWith('[') && <Text type="danger">{h.description}</Text>}

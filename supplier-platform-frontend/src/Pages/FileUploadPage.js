@@ -35,7 +35,7 @@ const FileUploadPage = () => {
   const [previewImage, setPreviewImage] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedSupplier, setSelectedSupplier] = useState(null)
+  const [selectedSupplierId, setSelectedSupplierId] = useState(null);
 
 
   const [historicalTags, setHistoricalTags] = useState({});
@@ -85,10 +85,16 @@ const FileUploadPage = () => {
 
 
   const handleSupplierChange = async (supplierId) => {
+    setSelectedSupplierId(supplierId); // 更新供应商选择状态
+
+    // 当清空选择时，重置所有相关状态
     if (!supplierId) {
       setHistoricalTags({});
+      form.setFieldsValue({ problem_source: null, cause: null });
+      setSelectedSource(null);
       return;
     }
+
     setLoadingHistory(true);
     try {
       const selectedSupplier = suppliers.find(s => s.id === supplierId);
@@ -333,51 +339,54 @@ const FileUploadPage = () => {
               </Form.Item>
             </Col>
             <Col span={24}>
-            <Card type="inner" title="历史经验标签 (可选)" loading={loadingHistory} style={{marginBottom: 24}}>
-                        <Row gutter={16}>
-                            <Col span={12}>
-                                <Form.Item name="problem_source" label="问题来源">
-                                    <Select 
-                                        placeholder="选择来源或选择'其他'" 
-                                        allowClear 
-                                        onChange={value => {
-                                            setSelectedSource(value);
-                                            // 如果从“其他”切换回来，清空原因
-                                            if (value !== '其他') {
-                                                form.setFieldsValue({ cause: null });
-                                            }
-                                        }}
-                                    >
-                                        {/* --- 核心修正 1：动态渲染来源，并始终包含“其他” --- */}
-                                        {Object.keys(historicalTags).map(source => (
-                                            <Option key={source} value={source}>{source}</Option>
-                                        ))}
-                                        <Option key="其他" value="其他">其他 (手动输入)</Option>
-                                    </Select>
-                                </Form.Item>
-                            </Col>
-                            <Col span={12}>
-                                {/* --- 核心修正 2：根据选择的来源，条件渲染“原因”的输入方式 --- */}
-                                {selectedSource === '其他' ? (
-                                    <Form.Item
-                                        name="cause"
-                                        label="造成原因 (手动输入)"
-                                        rules={[{ required: true, message: '请手动输入造成原因' }]}
-                                    >
-                                        <Input placeholder="请输入具体原因" />
-                                    </Form.Item>
-                                ) : (
-                                    <Form.Item name="cause" label="造成原因 (根据历史推荐)">
-                                        <Select placeholder="选择原因" allowClear disabled={!selectedSource}>
-                                            {(historicalTags[selectedSource] || []).map(cause => (
-                                                <Option key={cause} value={cause}>{cause}</Option>
-                                            ))}
-                                        </Select>
-                                    </Form.Item>
-                                )}
-                            </Col>
-                        </Row>
-                    </Card>
+              <Card
+                type="inner"
+                title="历史经验标签 (可选) -请先选择供应商"
+                loading={loadingHistory}
+                style={{
+                  marginBottom: 24,
+                  opacity: !selectedSupplierId ? 0.5 : 1,
+                  pointerEvents: !selectedSupplierId ? 'none' : 'auto'
+                }}
+              >
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item name="problem_source" label="问题来源">
+                      <Select
+                        placeholder={!selectedSupplierId ? "请先选择供应商" : "选择来源或'其他'"}
+                        allowClear
+                        onChange={value => {
+                          setSelectedSource(value);
+                          if (value !== '其他') form.setFieldsValue({ cause: null });
+                        }}
+                      >
+                        {Object.keys(historicalTags).map(source => (
+                          <Option key={source} value={source}>{source}</Option>
+                        ))}
+                        <Option key="其他" value="其他">其他 (手动输入)</Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    {selectedSource === '其他' ? (
+                      <Form.Item name="cause" label="造成原因 (手动输入)" rules={[{ required: true, message: '请手动输入造成原因' }]}>
+                        <Input placeholder="请输入具体原因" />
+                      </Form.Item>
+                    ) : (
+                      <Form.Item name="cause" label="造成原因 (根据历史推荐)">
+                        <Select placeholder="选择原因" allowClear disabled={!selectedSource}>
+                          {(historicalTags[selectedSource] || []).map(cause => (
+                            <Option key={cause} value={cause}>{cause}</Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    )}
+                  </Col>
+                </Row>
+                {!loadingHistory && Object.keys(historicalTags).length === 0 && (
+                  <Text type="secondary">暂无该供应商的历史标签数据，本次提交将作为新经验记录。</Text>
+                )}
+              </Card>
             </Col>
 
           </Row>

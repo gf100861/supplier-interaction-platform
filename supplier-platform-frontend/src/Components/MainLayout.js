@@ -6,7 +6,7 @@ import {
     SolutionOutlined,
     LogoutOutlined,
     AuditOutlined,
-    LineChartOutlined,
+    BookOutlined,
     PrinterOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
@@ -30,7 +30,7 @@ const allMenuItems = [
             { key: '/batch-create', label: '批量创建 (Excel)', roles: ['SD', 'Manager'] },
         ]
     },
-    { key: '/analysis', icon: <LineChartOutlined />, label: '历史问题分析', roles: ['SD', 'Manager'] },
+      { key: '/analysis', icon: <BookOutlined />, label: '经验使用', roles: ['SD', 'Manager', 'Admin'] },
     { key: '/reports', icon: <PrinterOutlined />, label: '综合报告', roles: ['SD', 'Manager', 'Supplier'] },
     { key: '/settings', icon: <UserOutlined />, label: '系统设置和建议', roles: ['SD', 'Manager', 'Supplier'] },
       { 

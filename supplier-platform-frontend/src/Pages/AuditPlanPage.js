@@ -18,7 +18,7 @@ const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
 const stickyColumnWidths = {
     parma: 100,
     cmt: 100,
-    supplier: 160,
+    supplier: 100,
 };
 
 // --- 样式 (使用上面定义的列宽) ---
@@ -44,7 +44,7 @@ const AuditPlanPage = () => {
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState([]);
     // --- ✨ 核心修正：为月份列宽添加状态管理 ---
-    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(250));
+    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(150));
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
@@ -423,7 +423,7 @@ const AuditPlanPage = () => {
                                                                 style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                                                             >
                                                                 <Tag color={item.type === 'audit' ? 'blue' : 'orange'}>{item.type === 'audit' ? '审计' : 'QRM'}</Tag>
-                                                                {item.category}
+                                                                {/* {item.category} */}
                                                             </Text>
                                                         </Tooltip>
                                                         <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
@@ -431,7 +431,7 @@ const AuditPlanPage = () => {
                                                                 title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`}
                                                                 onConfirm={() => handleMarkAsComplete(item.id, item.status)}
                                                             >
-                                                                <Button type="text" size="small" style={{ padding: '0 10px', color: item.status === 'pending' ? '#1890ff' : '#8c8c8c' }}>
+                                                                <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#1890ff' : '#8c8c8c' }}>
                                                                     {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
                                                                 </Button>
                                                             </Popconfirm>

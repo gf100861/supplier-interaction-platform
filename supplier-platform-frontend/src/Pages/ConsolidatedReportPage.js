@@ -1,5 +1,5 @@
 import  { useMemo, useState } from 'react';
-import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin,List } from 'antd';
+import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin,List,Tooltip } from 'antd';
 import { DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined,LeftOutlined, RightOutlined} from '@ant-design/icons';
 import { categoryColumnConfig, allPossibleStatuses } from '../data/_mockData';
 import { useSuppliers } from '../contexts/SupplierContext';
@@ -8,8 +8,10 @@ import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
 import { useConfig } from '../contexts/ConfigContext';
 import { useNotification } from '../contexts/NotificationContext';
-
 import './ConsolidatedReport.css';
+import minMax from 'dayjs/plugin/minMax';
+dayjs.extend(minMax);
+
 
 const { Title, Paragraph, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -30,16 +32,26 @@ const getHistoryItemDetails = (historyItem) => {
         default: return { color: 'grey', text: '执行了未知操作' };
     }
 };
-
 const getSummaryFromHistory = (history) => {
-    const planSubmission = history.find(h => h.type === 'supplier_plan_submission');
-    const lastApproval = [...history].reverse().find(h => h.type.includes('_approval') || h.type.includes('_rejection'));
+    const latestPlanSubmission = [...(history || [])].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
+    
+    let latestDeadline = 'N/A';
+    if (latestPlanSubmission) {
+        const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
+        if (deadlines.length > 0) {
+            // dayjs.max() 现在是有效的函数
+            latestDeadline = dayjs.max(deadlines).format('YYYY-MM-DD');
+        }
+    }
+
+    const lastApproval = [...(history || [])].reverse().find(h => h.type.includes('_approval') || h.type.includes('_rejection'));
 
     return {
-        deadline: planSubmission?.deadline || 'N/A',
+        deadline: latestDeadline,
         lastApprover: lastApproval?.submitter || 'N/A',
     };
 };
+
 
 const AttachmentsDisplay = ({ attachments }) => {
     if (!attachments || attachments.length === 0) return null;
@@ -60,10 +72,14 @@ const getStatusColor = (status) => {
     if (!status) return 'default';
     if (status.includes('完成')) return 'success'; // 绿色
     if (status.includes('作废')) return 'default'; // 灰色
-    if (status.includes('审核')) return 'warning'; // 橙色
+    if (status.includes('审核')) return 'purple'; // 橙色
     if (status.includes('提交') || status.includes('上传')) return 'processing'; // 蓝色
+    if (status.includes('关闭')) return 'orange'
+    if(status.includes('处理')) return 'blue'
     return 'default';
 };
+
+
 
 const ConsolidatedReportPage = () => {
     const { suppliers } = useSuppliers();
@@ -78,6 +94,8 @@ const ConsolidatedReportPage = () => {
     
     // --- 核心修正 1：初始化时，使用供应商用户的 supplier_id ---
     const initialSelectedSuppliers = currentUser?.role === 'Supplier' ? [currentUser.supplier_id] : [];
+
+    console.log(initialSelectedSuppliers)
     const [selectedSuppliers, setSelectedSuppliers] = useState(initialSelectedSuppliers);
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -171,23 +189,43 @@ const ConsolidatedReportPage = () => {
 
     const categories = Object.keys(groupedData);
 
+    // const supplier_shotcode=assignedSupplierName.short_code
+
     const showDetailsModal = (notice) => setDetailsModal({ visible: true, notice });
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
     // 5. --- 升级列生成函数，加入“操作”列 ---
     //在dataIndex处修改Value值
+    //这是一个 Ant Design Table 的高级用法，它告诉表格：“请不要在顶层的 notice 对象里找数据，而是进入它嵌套的 supplier 对象，然后找到里面的 parmaId 属性来显示”。
     const generateColumnsForCategory = (category) => {
         const baseColumns = [
-            { title: 'ID', dataIndex: 'id', key: 'id', width: 180 },
-            { title: '供应商', dataIndex: 'assignedSupplierName', key: 'assignedSupplierName', width: 150 },
+            { title: 'ID', dataIndex: ['supplier', 'parmaId'], key: 'id', width: 50 },
+            { 
+                title: '供应商', 
+                dataIndex: ['supplier', 'shortCode'], 
+                key: 'supplier', 
+                width: 80,
+                render: (shortCode, record) => (
+                    <Tooltip title={record.assignedSupplierName}>
+                        {shortCode || 'N/A'}
+                    </Tooltip>
+                )
+            },
              { 
                 title: '状态', 
                 dataIndex: 'status', 
                 key: 'status', 
-                width: 150, 
+                width: 100, 
                 render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag> 
             },
             { title: '创建时间', dataIndex: ['sdNotice', 'createTime'], key: 'createTime', width: 120, render: (time) => dayjs(time).format('YYYY-MM-DD') },
-             { title: '预计完成日期', dataIndex: 'time', key: 'deadline', width: 120,render: (time) => dayjs(time).format('YYYY-MM-DD') }, // 新增
+            //
+              // --- 核心修正 2：确保 dataIndex 正确指向我们新计算出的 'deadline' ---
+            { 
+                title: '预计完成日期', 
+                dataIndex: 'deadline', // 直接使用顶层的 deadline 属性
+                key: 'deadline', 
+                width: 120 
+            },
             
         ];
         const dynamicColumns = (categoryColumnConfig[category] || []).map(configCol => ({
@@ -308,7 +346,7 @@ const ConsolidatedReportPage = () => {
                         onChange={setSelectedSuppliers}
                         value={selectedSuppliers}
                         disabled={currentUser?.role === 'Supplier'} // 如果是供应商，则禁用
-                         options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code} (${s.name})` }))}
+                         options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code}` }))}
                     />
 
                     <Select

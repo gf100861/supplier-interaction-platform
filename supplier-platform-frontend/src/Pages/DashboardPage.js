@@ -21,14 +21,14 @@ const DashboardPage = () => {
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
     // --- 使用 useEffect 在组件加载时，独立获取所有用户的数据 ---
- useEffect(() => {
+    useEffect(() => {
         const fetchUsers = async () => {
             try {
                 // ✨ 核心修正：确保获取的是 username 字段
                 const { data, error } = await supabase
                     .from('users')
                     .select('id, username');
-                
+
                 if (error) throw error;
                 setAllUsers(data || []);
             } catch (error) {
@@ -83,10 +83,10 @@ const DashboardPage = () => {
         const allOpenIssues = baseData.filter(n => n.status !== '已完成' && n.status !== '已作废').length;
 
         const pendingForSupplier = baseData.filter(n =>
-            (n.status === '待SD关闭' || n.status === '待SD审核'||n.status === '待供应商处理'|| n.status === '待供应商上传证据') &&
+            (n.status === '待SD关闭' || n.status === '待SD审核' || n.status === '待供应商处理' || n.status === '待供应商上传证据') &&
             dayjs(n.createdAt).isAfter(thirtyDaysAgo)
         );
-            const supplierActionRequired = Object.entries(
+        const supplierActionRequired = Object.entries(
             pendingForSupplier.reduce((acc, notice) => {
                 const name = notice.supplier.shortCode;
                 if (name) { // 安全检查
@@ -97,7 +97,7 @@ const DashboardPage = () => {
             }, {})
         ).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 
-       
+
 
         // SD点赞最多的改善 (这个是全局的，所以用 notices)
         const topImprovement = notices
@@ -113,7 +113,7 @@ const DashboardPage = () => {
         return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
     }
 
-     if (currentUser.role === 'Supplier') {
+    if (currentUser.role === 'Supplier') {
         return (
             <div>
                 <Card style={{ marginBottom: 24 }} bordered={false}>
@@ -128,7 +128,7 @@ const DashboardPage = () => {
                         <Card bordered={false}><Statistic title="当前所有未关闭问题" value={dashboardData.allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card>
                     </Col>
                 </Row>
-                 <Card style={{ marginTop: 24 }} bordered={false}>
+                <Card style={{ marginTop: 24 }} bordered={false}>
                     <Empty description={
                         <Space direction="vertical">
                             <Text>所有待办事项，请前往“整改通知单”页面处理。</Text>
@@ -171,8 +171,8 @@ const DashboardPage = () => {
                                         title={<Text strong>{item.name}</Text>}
                                         description={`${item.count} 项待处理`}
                                     />
-                                    <Button 
-                                        type="link" 
+                                    <Button
+                                        type="link"
                                         onClick={() => navigate('/notices', { state: { preSelectedSupplier: item.id } })}
                                     >
                                         去处理
@@ -194,13 +194,15 @@ const DashboardPage = () => {
                                 <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
                                 <Paragraph type="secondary" ellipsis={{ rows: 3 }}>
                                     {topImprovement.sdNotice?.description}
+                                    <Tag color="geekblue">{topImprovement?.sdNotice?.problemSource || '暂无'}</Tag>
+                                    <Tag color="purple">{topImprovement?.sdNotice?.cause || '暂无'}</Tag>
                                 </Paragraph>
                                 <Divider />
                                 <Space>
                                     <StarOutlined style={{ color: '#ffc53d' }} />
                                     <Text strong>{topImprovement.likes.length} 个赞</Text>
                                 </Space>
-                                <Avatar.Group maxCount={4} style={{ marginLeft: 16 }}>
+                                <Avatar.Group style={{ marginLeft: 16 }}>
                                     {(topImprovement.likes).map(userId => (
                                         <Tooltip key={userId} title={userLookup[userId]?.username || '未知用户'}>
                                             <Avatar style={{ backgroundColor: '#1890ff' }}>

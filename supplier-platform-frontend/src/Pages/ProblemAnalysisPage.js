@@ -1,129 +1,256 @@
 import React, { useState, useMemo } from 'react';
-import { Card, Row, Col, Typography, DatePicker, Select, Space, Empty } from 'antd';
-import { Bar, Pie, Column, Line } from '@ant-design/charts'; // Import Line chart
-import { useSuppliers } from '../contexts/SupplierContext';
-import { mockNoticesData, noticeCategories } from '../data/_mockData';
-import dayjs from 'dayjs';
+import { Card, Typography, Input, Select, List, Empty, Spin, Tag, Button, Divider, Space, Row, Col } from 'antd';
+import { BookOutlined, CheckSquareOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icons'; // 1. 引入新图标
+import { useNavigate } from 'react-router-dom';
+import { useNotices } from '../contexts/NoticeContext';
+import { useNotification } from '../contexts/NotificationContext';
+import * as ExcelJS from 'exceljs'; // 2. 引入 ExcelJS
+import { saveAs } from 'file-saver'; // 3. 引入 file-saver
 
-const { Title, Paragraph } = Typography;
-const { RangePicker } = DatePicker;
-const { Option } = Select;
+const { Title, Paragraph, Text } = Typography;
 
 const ProblemAnalysisPage = () => {
-    const { suppliers } = useSuppliers();
+    const currentUser = JSON.parse(localStorage.getItem('user'));
+    const { notices, loading } = useNotices();
+    const [filters, setFilters] = useState({
+        productionSource: [],
+        productionKeyword: '',
+        checklistSource: [],
+        checklistCause: [],
+        checklistKeyword: '',
+    });
+    const navigate = useNavigate();
+      const { messageApi } = useNotification(); // 获取 messageApi
 
-    const [dateRange, setDateRange] = useState([dayjs().startOf('year'), dayjs().endOf('year')]);
-    const [selectedSuppliers, setSelectedSuppliers] = useState([]);
-    const [selectedCategories, setSelectedCategories] = useState([]);
+    if (currentUser.role === 'Supplier') {
+      navigate('/'); // 跳转到初始页面
+    }
 
-    const filteredData = useMemo(() => {
-        const cleanData = mockNoticesData.map(n => ({ ...n, category: n.category || '未分类' }));
+    // --- 1. 核心：将所有通知单“拉平”，提取出 Actions 和 Findings ---
+    const { allActions, allFindings, uniqueSources, uniqueCauses } = useMemo(() => {
+        const actions = [];
+        const findings = [];
+        const sources = new Set();
+        const causes = new Set();
 
-        return cleanData.filter(notice => {
-            const createTime = dayjs(notice.sdNotice.createTime);
-            const [start, end] = dateRange || [];
-            const isDateMatch = !start || (createTime.isAfter(start) && createTime.isBefore(end));
-            const isSupplierMatch = selectedSuppliers.length === 0 || selectedSuppliers.includes(notice.assignedSupplierId);
-            const isCategoryMatch = selectedCategories.length === 0 || selectedCategories.includes(notice.category);
-            return isDateMatch && isSupplierMatch && isCategoryMatch;
+        notices.forEach(notice => {
+        
+              notice.history?.forEach(h => {
+                if (h.type === 'supplier_evidence_submission' && h.actionPlans) {
+                    h.actionPlans.forEach((plan, index) => {
+                        findings.push({
+                            id: `${notice.id}-evidence-${index}`,
+                            finding: plan?.evidenceDescription || '暂无',
+                            notice: notice,
+                        });
+                    });
+                }
+            });
+
+
+            // 提取 Actions (行动计划)
+            notice.history?.forEach(h => {
+                if (h.type === 'supplier_plan_submission' && h.actionPlans) {
+                    h.actionPlans.forEach((plan, index) => {
+                        actions.push({
+                            id: `${notice.id}-action-${index}`,
+                            action: plan.plan,
+                            notice: notice,
+                        });
+                    });
+                }
+            });
+            
+            // 收集所有唯一的来源和原因标签
+            if (notice.sdNotice.problemSource) sources.add(notice.sdNotice.problemSource);
+            if (notice.sdNotice.cause) causes.add(notice.sdNotice.cause);
+
+            // console.log('检查source',notice.sdNotice.cause)
         });
-    }, [dateRange, selectedSuppliers, selectedCategories]);
 
-    // Data for Bar Chart (Supplier Problems) - Stays the same
-    const supplierProblemData = useMemo(() => {
-        const counts = filteredData.reduce((acc, notice) => {
-            acc[notice.assignedSupplierName] = (acc[notice.assignedSupplierName] || 0) + 1;
-            return acc;
-        }, {});
-        return Object.entries(counts)
-            .map(([name, count]) => ({ supplier: name, count }))
-            .sort((a, b) => a.count - b.count);
-    }, [filteredData]);
+        return { 
+            allActions: actions, 
+            allFindings: findings,
+            uniqueSources: Array.from(sources), 
+            uniqueCauses: Array.from(causes) 
+        };
+    }, [notices]);
 
-    // --- NEW: Data processing specifically for the Line Chart ---
-    const monthlyTrendData = useMemo(() => {
-        const monthlyCounts = filteredData.reduce((acc, notice) => {
-            const month = dayjs(notice.sdNotice.createTime).format('YYYY-MM');
-            acc[month] = (acc[month] || 0) + 1;
-            return acc;
-        }, {});
-
-        return Object.entries(monthlyCounts)
-            .map(([month, count]) => ({ month, count }))
-            .sort((a, b) => a.month.localeCompare(b.month)); // Sort by month
-    }, [filteredData]);
-
-
-
-    // --- Chart Configurations ---
-    const barConfig = {
-        data: supplierProblemData,
-        xField: 'count',
-        yField: 'supplier',
-        seriesField: 'supplier',
-        legend: false,
+    const handleFilterChange = (key, value) => {
+        setFilters(prev => ({ ...prev, [key]: value }));
     };
 
-    // --- NEW: Configuration for the Line Chart ---
-    const lineConfig = {
-        data: monthlyTrendData,
-        xField: 'month',
-        yField: 'count',
-        point: { shapeField: 'square', sizeField: 4 },
-        interaction: { tooltip: { marker: false } },
-        style: { lineWidth: 2 },
-        tooltip: { formatter: (datum) => ({ name: '问题数量', value: datum.count }) }
+      const hasActiveFilters = useMemo(() => {
+        // 检查 filters 对象的所有值，只要有一个不是空的，就返回 true
+        return Object.values(filters).some(value => 
+            Array.isArray(value) ? value.length > 0 : !!value
+        );
+    }, [filters]);
+
+    // --- 2. 核心：根据筛选条件，动态计算两个列表的数据 ---
+  const filteredProductionData = useMemo(() => {
+        return allActions.filter(item => {
+            const notice = item.notice;
+            if (!notice) return false;
+            const sourceMatch = filters.productionSource.length === 0 || filters.productionSource.includes(notice.sdNotice?.problemSource);
+            const keywordMatch = !filters.productionKeyword || 
+                item.action?.toLowerCase().includes(filters.productionKeyword.toLowerCase()) ||
+                notice.title?.toLowerCase().includes(filters.productionKeyword.toLowerCase());
+            return sourceMatch && keywordMatch;
+        });
+    }, [allActions, filters.productionSource, filters.productionKeyword]);
+   
+     
+    const filteredChecklistData = useMemo(() => {
+        return allFindings.filter(item => {
+            const notice = item.notice;
+            if (!notice) return false;
+            const sourceMatch = filters.checklistSource.length === 0 || filters.checklistSource.includes(notice.sdNotice?.problemSource);
+            const causeMatch = filters.checklistCause.length === 0 || filters.checklistCause.includes(notice.sdNotice?.cause);
+            const keywordMatch = !filters.checklistKeyword || 
+                item.finding?.toLowerCase().includes(filters.checklistKeyword.toLowerCase()) ||
+                notice.title?.toLowerCase().includes(filters.checklistKeyword.toLowerCase());
+            return sourceMatch && causeMatch && keywordMatch;
+        });
+    }, [allFindings, filters.checklistSource, filters.checklistCause, filters.checklistKeyword]);
+
+     const handleExportActions = async () => {
+        if (filteredProductionData.length === 0) {
+            messageApi.warning('没有可导出的生产经验数据。');
+            return;
+        }
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('生产经验');
+        worksheet.columns = [
+            { header: '问题来源', key: 'source', width: 20 },
+            { header: '行动方案', key: 'action', width: 50 },
+            { header: '完成证据', key: 'evidence', width: 50 },
+            { header: '关联案例编号', key: 'caseCode', width: 20 },
+            { header: '关联案例标题', key: 'caseTitle', width: 40 },
+        ];
+        worksheet.getRow(1).font = { bold: true };
+        
+        filteredProductionData.forEach(item => {
+            worksheet.addRow({
+                source: item.notice.sdNotice?.problemSource || 'N/A',
+                action: item.action,
+                evidence: item.evidence || 'N/A',
+                caseCode: item.notice.noticeCode,
+                caseTitle: item.notice.title
+            });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), '生产经验库.xlsx');
     };
-    
-    // Other chart configs...
+
+    const handleExportChecklist = async () => {
+        if (filteredChecklistData.length === 0) {
+            messageApi.warning('没有可导出的Checklist数据。');
+            return;
+        }
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('审核Checklist');
+        worksheet.columns = [
+            { header: '问题来源', key: 'source', width: 20 },
+            { header: '造成原因', key: 'cause', width: 20 },
+            { header: '问题发现 (Finding)', key: 'finding', width: 60 },
+            { header: '关联案例编号', key: 'caseCode', width: 20 },
+            { header: '关联案例标题', key: 'caseTitle', width: 40 },
+        ];
+        worksheet.getRow(1).font = { bold: true };
+
+        filteredChecklistData.forEach(item => {
+            worksheet.addRow({
+                source: item.notice.sdNotice?.problemSource || 'N/A',
+                cause: item.notice.sdNotice?.cause || 'N/A',
+                finding: item.finding,
+                caseCode: item.notice.noticeCode,
+                caseTitle: item.notice.title
+            });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), '审核Checklist.xlsx');
+    };
+
+    if (loading) {
+        return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
+    }
 
     return (
         <div>
-            <Card style={{ marginBottom: 16 }}>
-                <Title level={4}>历史问题追踪与分析</Title>
-                <Paragraph type="secondary">通过筛选供应商、问题类型和时间范围，洞察问题趋势与分布。</Paragraph>
-                <Space wrap>
-                    <RangePicker value={dateRange} onChange={setDateRange} />
-                    <Select
-                        mode="multiple"
-                        allowClear
-                        style={{ width: 250 }}
-                        placeholder="筛选供应商 (默认全部)"
-                        onChange={setSelectedSuppliers}
-                        options={suppliers.map(s => ({ label: s.name, value: s.id }))}
-                    />
-                    <Select
-                        mode="multiple"
-                        allowClear
-                        style={{ width: 250 }}
-                        placeholder="筛选问题类型 (默认全部)"
-                        onChange={setSelectedCategories}
-                        options={noticeCategories.map(c => ({ label: c, value: c }))}
-                    />
-                </Space>
+            <Card style={{ marginBottom: 24 }} bordered={false}>
+                <Title level={4} style={{ margin: 0 }}>经验使用中心</Title>
+                <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>从历史数据中学习，生成生产经验和审核清单。</Paragraph>
+                
             </Card>
 
-            {filteredData.length > 0 ? (
-                <Row gutter={[16, 16]}>
-                    <Col span={24}>
-                        <Card title="各供应商问题数量统计">
-                            <Bar {...barConfig} height={Math.max(200, supplierProblemData.length * 40)} />
-                        </Card>
-                    </Col>
-                    
-                    {/* --- Corrected Line Chart Section --- */}
-                    <Col span={24}>
-                        <Card title="月度问题趋势">
-                            <Line {...lineConfig} height={300} />
-                        </Card>
-                    </Col>
-                    
-                    {/* Pie charts and Stacked Bar charts would go here... */}
+            <Row gutter={[24, 24]}>
+                {/* --- 生产经验 --- */}
+                <Col xs={24} lg={12}>
+                    <Card title={<Space><BookOutlined />生产经验 (行动方案库)</Space>} bordered={false}   extra={<Button icon={<DownloadOutlined />} onClick={handleExportActions}>导出</Button>}>
+                        <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+                            <Select mode="multiple" allowClear placeholder="按问题来源筛选..." style={{ width: '100%' }} onChange={v => handleFilterChange('productionSource', v)} options={uniqueSources.map(s => ({label: s, value: s}))} />
+                            <Input placeholder="搜索问题标题或行动方案..." prefix={<SearchOutlined />} onChange={e => handleFilterChange('productionKeyword', e.target.value)} />
+                        </Space>
+                        <List
+                            dataSource={filteredProductionData}
+                            pagination={{
+                                pageSize: 5, // 每页显示5条
+                                simple: true, // 使用更简洁的分页样式
+                            }}
+                            renderItem={item => (
+                                <List.Item>
+                                    <List.Item.Meta
+                                        title={<Text strong>{item.action}</Text>}
+                                        description={
+                                            <>
+                                                <Tag color="blue">{item?.notice?.sdNotice?.problemSource || '暂无'}</Tag>
+                                                来自案例: <Button type="link" size="small" onClick={() => navigate(`/notices?open=${item.notice.id}`)}>{item.notice.noticeCode}</Button>
+                                            </>
+                                        }
+                                    />
+                                </List.Item>
+                            )}
+                            locale={{ emptyText: <Empty description="未找到匹配的生产经验" />}}
+                        />
+                    </Card>
+                </Col>
 
-                </Row>
-            ) : (
-                <Card><Empty description="根据当前筛选条件，暂无数据可供分析。" /></Card>
-            )}
+                {/* --- 生成Checklist --- */}
+                <Col xs={24} lg={12}>
+                    <Card title={<Space><CheckSquareOutlined />生成Checklist (问题发现库)</Space>} bordered={false}   extra={<Button icon={<DownloadOutlined />} onClick={handleExportChecklist}>导出</Button>}>
+                        <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+                            <Select mode="multiple" allowClear placeholder="按问题来源筛选..." style={{ width: '100%' }} onChange={v => handleFilterChange('checklistSource', v)} options={uniqueSources.map(s => ({label: s, value: s}))} />
+                            <Select mode="multiple" allowClear placeholder="按造成原因筛选..." style={{ width: '100%' }} onChange={v => handleFilterChange('checklistCause', v)} options={uniqueCauses.map(c => ({label: c, value: c}))} />
+                            <Input placeholder="搜索问题标题或Finding关键词..." prefix={<SearchOutlined />} onChange={e => handleFilterChange('checklistKeyword', e.target.value)} />
+                        </Space>
+                        <List
+                            dataSource={filteredChecklistData}
+                             pagination={{
+                                pageSize: 5, // 每页显示5条
+                                simple: true,
+                            }}
+                            renderItem={item => (
+                                <List.Item>
+                                    <List.Item.Meta
+                                        title={<Text strong>{item.finding}</Text>}
+                                        description={
+                                            <>
+                                                <Tag color="geekblue">{item?.notice?.sdNotice?.problemSource || '暂无'}</Tag>
+                                                <Tag color="purple">{item?.notice?.sdNotice?.cause || '暂无'}</Tag>
+                                                来自案例: <Button type="link" size="small" onClick={() => navigate(`/notices?open=${item.notice.id}`)}>{item.notice.noticeCode}</Button>
+                                            </>
+                                        }
+                                    />
+                                </List.Item>
+                            )}
+                            locale={{ emptyText: <Empty description="未找到匹配的Checklist项目" />}}
+                        />
+                    </Card>
+                </Col>
+            </Row>
         </div>
     );
 };
