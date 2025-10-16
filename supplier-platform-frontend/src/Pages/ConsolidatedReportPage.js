@@ -1,6 +1,6 @@
-import  { useMemo, useState } from 'react';
-import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin,List,Tooltip } from 'antd';
-import { DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined,LeftOutlined, RightOutlined} from '@ant-design/icons';
+import { useMemo, useState } from 'react';
+import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin, List, Tooltip } from 'antd';
+import { DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { categoryColumnConfig, allPossibleStatuses } from '../data/_mockData';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
@@ -34,7 +34,7 @@ const getHistoryItemDetails = (historyItem) => {
 };
 const getSummaryFromHistory = (history) => {
     const latestPlanSubmission = [...(history || [])].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
-    
+
     let latestDeadline = 'N/A';
     if (latestPlanSubmission) {
         const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
@@ -55,7 +55,7 @@ const getSummaryFromHistory = (history) => {
 
 const AttachmentsDisplay = ({ attachments }) => {
     if (!attachments || attachments.length === 0) return null;
-    return ( <div style={{ marginTop: 12 }}><Text strong><PaperClipOutlined /> 附件:</Text><div style={{ marginTop: 8 }}><Space wrap>{attachments.map((file, i) => (<Button key={i} type="dashed" href={file.url} size="small" target="_blank" icon={<PaperClipOutlined />}>{file.name}</Button>))}</Space></div></div> );
+    return (<div style={{ marginTop: 12 }}><Text strong><PaperClipOutlined /> 附件:</Text><div style={{ marginTop: 8 }}><Space wrap>{attachments.map((file, i) => (<Button key={i} type="dashed" href={file.url} size="small" target="_blank" icon={<PaperClipOutlined />}>{file.name}</Button>))}</Space></div></div>);
 };
 
 const ImageScroller = ({ images, title }) => {
@@ -63,7 +63,7 @@ const ImageScroller = ({ images, title }) => {
     if (!images || images.length === 0) return null;
     const goToPrevious = () => setCurrentIndex(currentIndex === 0 ? images.length - 1 : currentIndex - 1);
     const goToNext = () => setCurrentIndex(currentIndex === images.length - 1 ? 0 : currentIndex + 1);
-    return ( <div style={{ marginTop: 12 }}><Text strong><PictureOutlined /> {title}:</Text><div style={{ position: 'relative', marginTop: 8 }}><Image height={250} style={{ objectFit: 'contain', width: '100%', backgroundColor: '#f0f2f5', borderRadius: '8px' }} src={images[currentIndex].url || images[currentIndex].thumbUrl} />{images.length > 1 && (<><Button shape="circle" icon={<LeftOutlined />} onClick={goToPrevious} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)' }} /><Button shape="circle" icon={<RightOutlined />} onClick={goToNext} style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }} /><Tag style={{ position: 'absolute', bottom: 16, right: 16 }}>{currentIndex + 1} / {images.length}</Tag></>)}</div></div> );
+    return (<div style={{ marginTop: 12 }}><Text strong><PictureOutlined /> {title}:</Text><div style={{ position: 'relative', marginTop: 8 }}><Image height={250} style={{ objectFit: 'contain', width: '100%', backgroundColor: '#f0f2f5', borderRadius: '8px' }} src={images[currentIndex].url || images[currentIndex].thumbUrl} />{images.length > 1 && (<><Button shape="circle" icon={<LeftOutlined />} onClick={goToPrevious} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)' }} /><Button shape="circle" icon={<RightOutlined />} onClick={goToNext} style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }} /><Tag style={{ position: 'absolute', bottom: 16, right: 16 }}>{currentIndex + 1} / {images.length}</Tag></>)}</div></div>);
 };
 
 
@@ -75,7 +75,7 @@ const getStatusColor = (status) => {
     if (status.includes('审核')) return 'purple'; // 橙色
     if (status.includes('提交') || status.includes('上传')) return 'processing'; // 蓝色
     if (status.includes('关闭')) return 'orange'
-    if(status.includes('处理')) return 'blue'
+    if (status.includes('处理')) return 'blue'
     return 'default';
 };
 
@@ -83,15 +83,15 @@ const getStatusColor = (status) => {
 
 const ConsolidatedReportPage = () => {
     const { suppliers } = useSuppliers();
-      const { notices, loading: noticesLoading } = useNotices();
+    const { notices, loading: noticesLoading } = useNotices();
     const { messageApi } = useNotification();
-    
+
     const [dateRange, setDateRange] = useState([dayjs().startOf('year'), dayjs().endOf('year')]);
     const [selectedCategories, setSelectedCategories] = useState([]);
     const [selectedStatuses, setSelectedStatuses] = useState([]);
     const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-    
+
     // --- 核心修正 1：初始化时，使用供应商用户的 supplier_id ---
     const initialSelectedSuppliers = currentUser?.role === 'Supplier' ? [currentUser.supplier_id] : [];
 
@@ -102,37 +102,90 @@ const ConsolidatedReportPage = () => {
 
     const { noticeCategories } = useConfig();
 
-    const sortedNoticeCategories = useMemo(() => {
-            if (!noticeCategories || noticeCategories.length === 0) {
-                return [];
-            }
-            const target = "Process Audit"; // 您想要置顶的项
-            // 如果目标项存在于数组中，则将其置顶
-            if (noticeCategories.includes(target)) {
-                return [target, ...noticeCategories.filter(item => item !== target)];
-            }
-            // 如果不存在，则返回原始顺序
-            return noticeCategories;
-        }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+    //获取所有的actions和evidence
+    const { allActions, allFindings, uniqueSources, uniqueCauses } = useMemo(() => {
+        const actions = [];
+        const findings = [];
+        const sources = new Set();
+        const causes = new Set();
 
-      const managedSuppliers = useMemo(() => {
+        notices.forEach(notice => {
+
+            notice.history?.forEach(h => {
+                if (h.type === 'supplier_evidence_submission' && h.actionPlans) {
+                    h.actionPlans.forEach((plan, index) => {
+                        findings.push({
+                            id: `${notice.id}-evidence-${index}`,
+                            finding: plan?.evidenceDescription || '暂无',
+                            notice: notice,
+                        });
+                    });
+                }
+            });
+
+
+            // 提取 Actions (行动计划)
+            notice.history?.forEach(h => {
+                if (h.type === 'supplier_plan_submission' && h.actionPlans) {
+                    h.actionPlans.forEach((plan, index) => {
+                        actions.push({
+                            id: `${notice.id}-action-${index}`,
+                            action: plan.plan,
+                            notice: notice,
+                        });
+                    });
+                }
+            });
+
+            // 收集所有唯一的来源和原因标签
+            if (notice.sdNotice.problemSource) sources.add(notice.sdNotice.problemSource);
+            if (notice.sdNotice.cause) causes.add(notice.sdNotice.cause);
+
+            // console.log('检查source',notice.sdNotice.cause)
+        });
+
+        return {
+            allActions: actions,
+            allFindings: findings,
+            uniqueSources: Array.from(sources),
+            uniqueCauses: Array.from(causes)
+        };
+    }, [notices]);
+
+
+    console.log('Findings',allFindings)
+
+    const sortedNoticeCategories = useMemo(() => {
+        if (!noticeCategories || noticeCategories.length === 0) {
+            return [];
+        }
+        const target = "Process Audit"; // 您想要置顶的项
+        // 如果目标项存在于数组中，则将其置顶
+        if (noticeCategories.includes(target)) {
+            return [target, ...noticeCategories.filter(item => item !== target)];
+        }
+        // 如果不存在，则返回原始顺序
+        return noticeCategories;
+    }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+
+    const managedSuppliers = useMemo(() => {
         if (!currentUser) return [];
         if (currentUser.role === 'Manager') return suppliers;
         if (currentUser.role === 'SD') {
-          const managed = currentUser.managed_suppliers || [];
-          return managed.map(assignment => assignment.supplier);
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier);
         }
         return [];
-      }, [currentUser, suppliers]);
+    }, [currentUser, suppliers]);
 
     console.log(managedSuppliers)
 
-        const groupedData = useMemo(() => {
-       
+    const groupedData = useMemo(() => {
+
         let accessibleData = [];
         if (currentUser?.role === 'Supplier') {
             const supplierCompanyId = currentUser.supplier_id;
-          
+
             if (!supplierCompanyId) {
 
                 return {};
@@ -144,7 +197,7 @@ const ConsolidatedReportPage = () => {
             accessibleData = notices;
         }
 
-           const finalFilteredData = accessibleData.filter(notice => {
+        const finalFilteredData = accessibleData.filter(notice => {
             // 关键字搜索
             const lowerCaseSearchTerm = searchTerm.toLowerCase().trim();
             if (lowerCaseSearchTerm) {
@@ -152,10 +205,10 @@ const ConsolidatedReportPage = () => {
                 const parmaId = supplier ? supplier.parmaId.toLowerCase() : '';
 
                 const searchMatch = notice.id.toLowerCase().includes(lowerCaseSearchTerm) ||
-                                  notice.title.toLowerCase().includes(lowerCaseSearchTerm) ||
-                                  notice.assignedSupplierName.toLowerCase().includes(lowerCaseSearchTerm) ||
-                                  parmaId.includes(lowerCaseSearchTerm);
-                
+                    notice.title.toLowerCase().includes(lowerCaseSearchTerm) ||
+                    notice.assignedSupplierName.toLowerCase().includes(lowerCaseSearchTerm) ||
+                    parmaId.includes(lowerCaseSearchTerm);
+
                 if (!searchMatch) return false;
             }
 
@@ -166,7 +219,7 @@ const ConsolidatedReportPage = () => {
             const isSupplierMatch = selectedSuppliers.length === 0 || selectedSuppliers.includes(notice.assignedSupplierId);
             const isCategoryMatch = selectedCategories.length === 0 || selectedCategories.includes(notice.category);
             const isStatusMatch = selectedStatuses.length === 0 || selectedStatuses.includes(notice.status);
-            
+
             return isDateMatch && isSupplierMatch && isCategoryMatch && isStatusMatch;
         });
 
@@ -175,7 +228,7 @@ const ConsolidatedReportPage = () => {
             ...getSummaryFromHistory(notice.history || []),
         }));
 
-        
+
 
         return dataWithSummary.reduce((acc, notice) => {
             const category = notice.category || '未分类';
@@ -183,9 +236,9 @@ const ConsolidatedReportPage = () => {
             acc[category].push(notice);
             return acc;
         }, {});
-    // 2. 将 suppliers 添加到依赖项数组
-    
-  }, [dateRange, selectedSuppliers, selectedCategories, selectedStatuses, currentUser, notices, searchTerm, suppliers]);
+        // 2. 将 suppliers 添加到依赖项数组
+
+    }, [dateRange, selectedSuppliers, selectedCategories, selectedStatuses, currentUser, notices, searchTerm, suppliers]);
 
     const categories = Object.keys(groupedData);
 
@@ -199,10 +252,10 @@ const ConsolidatedReportPage = () => {
     const generateColumnsForCategory = (category) => {
         const baseColumns = [
             { title: 'ID', dataIndex: ['supplier', 'parmaId'], key: 'id', width: 50 },
-            { 
-                title: '供应商', 
-                dataIndex: ['supplier', 'shortCode'], 
-                key: 'supplier', 
+            {
+                title: '供应商',
+                dataIndex: ['supplier', 'shortCode'],
+                key: 'supplier',
                 width: 80,
                 render: (shortCode, record) => (
                     <Tooltip title={record.assignedSupplierName}>
@@ -210,23 +263,23 @@ const ConsolidatedReportPage = () => {
                     </Tooltip>
                 )
             },
-             { 
-                title: '状态', 
-                dataIndex: 'status', 
-                key: 'status', 
-                width: 100, 
-                render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag> 
+            {
+                title: '状态',
+                dataIndex: 'status',
+                key: 'status',
+                width: 100,
+                render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>
             },
             { title: '创建时间', dataIndex: ['sdNotice', 'createTime'], key: 'createTime', width: 120, render: (time) => dayjs(time).format('YYYY-MM-DD') },
             //
-              // --- 核心修正 2：确保 dataIndex 正确指向我们新计算出的 'deadline' ---
-            { 
-                title: '预计完成日期', 
+            // --- 核心修正 2：确保 dataIndex 正确指向我们新计算出的 'deadline' ---
+            {
+                title: '预计完成日期',
                 dataIndex: 'deadline', // 直接使用顶层的 deadline 属性
-                key: 'deadline', 
-                width: 120 
+                key: 'deadline',
+                width: 120
             },
-            
+
         ];
         const dynamicColumns = (categoryColumnConfig[category] || []).map(configCol => ({
             title: configCol.title,
@@ -321,7 +374,7 @@ const ConsolidatedReportPage = () => {
         messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
     };
 
-     if (noticesLoading) {
+    if (noticesLoading) {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 200px)' }}>
                 <Spin size="large" />
@@ -346,7 +399,7 @@ const ConsolidatedReportPage = () => {
                         onChange={setSelectedSuppliers}
                         value={selectedSuppliers}
                         disabled={currentUser?.role === 'Supplier'} // 如果是供应商，则禁用
-                         options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code}` }))}
+                        options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code}` }))}
                     />
 
                     <Select
@@ -357,7 +410,7 @@ const ConsolidatedReportPage = () => {
                         onChange={setSelectedCategories}
                         options={sortedNoticeCategories.map(c => ({ label: c, value: c }))}
                     />
-                     <Select
+                    <Select
                         mode="multiple"
                         allowClear
                         style={{ width: 250 }}
@@ -366,7 +419,7 @@ const ConsolidatedReportPage = () => {
                         // options 来自我们新导入的 allPossibleStatuses
                         options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
                     />
-                     <Search
+                    <Search
                         placeholder="搜索ID, 标题, 供应商..."
                         allowClear
                         onSearch={setSearchTerm}
@@ -406,7 +459,7 @@ const ConsolidatedReportPage = () => {
                     );
                 }) : <Empty description="根据您的筛选条件，没有找到任何数据。" />}
             </div>
-             <Modal
+            <Modal
                 title={`详情: ${detailsModal.notice?.title || ''}`}
                 open={detailsModal.visible}
                 onCancel={handleDetailsCancel}
@@ -421,10 +474,10 @@ const ConsolidatedReportPage = () => {
                             <Paragraph><strong>问题描述:</strong> {detailsModal.notice.sdNotice.description}</Paragraph>
                             <ImageScroller images={detailsModal.notice.sdNotice.images} title="初始图片" />
                             <AttachmentsDisplay attachments={detailsModal.notice.sdNotice.attachments} />
-                            <Divider style={{margin: '16px 0'}} />
+                            <Divider style={{ margin: '16px 0' }} />
                             <Text type="secondary">由 {detailsModal.notice.sdNotice.creator} 于 {detailsModal.notice.sdNotice.createTime} 发起</Text>
                         </Card>
-                        
+
                         <Divider />
                         <Title level={5}>处理历史</Title>
                         <Timeline>
@@ -438,7 +491,7 @@ const ConsolidatedReportPage = () => {
                                     <Timeline.Item key={index} color={details.color}>
                                         <div style={{ width: '100%' }}>
                                             <p><b>{h.submitter}</b> {details.text}</p>
-                                            
+
                                             {/* 如果是行动计划提交，则渲染行动计划列表 */}
                                             {h.type === 'supplier_submission' && h.actionPlans ? (
                                                 <Card size="small" type="inner" style={{ marginTop: 8 }}>
@@ -450,8 +503,8 @@ const ConsolidatedReportPage = () => {
                                                         renderItem={(planItem, idx) => (
                                                             <List.Item>
                                                                 <div>
-                                                                    <Text strong>{idx + 1}. {planItem.plan}</Text><br/>
-                                                                    <Text type="secondary" style={{marginLeft: '18px'}}>
+                                                                    <Text strong>{idx + 1}. {planItem.plan}</Text><br />
+                                                                    <Text type="secondary" style={{ marginLeft: '18px' }}>
                                                                         <PersonIcon style={{ marginRight: 8 }} />{planItem.responsible}
                                                                         <Divider type="vertical" />
                                                                         <CalendarOutlined style={{ marginRight: 8 }} />{planItem.deadline}
@@ -469,7 +522,7 @@ const ConsolidatedReportPage = () => {
                                                     </Card>
                                                 )
                                             )}
-                                            
+
                                             <ImageScroller images={h.images} title="提交的图片" />
                                             <AttachmentsDisplay attachments={h.attachments} />
                                             <small>{h.time}</small>
@@ -478,7 +531,7 @@ const ConsolidatedReportPage = () => {
                                 );
                             })}
                         </Timeline>
-    
+
                     </>
                 )}
             </Modal>

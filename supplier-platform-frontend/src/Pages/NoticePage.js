@@ -9,6 +9,9 @@ import { NoticeList } from '../Components/notice/NoticeList';
 import { RejectionModal } from '../Components/notice/RejectionModal';
 import { CorrectionModal } from '../Components/notice/CorrectionModal';
 import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
+
+
+//导入所有需要的所有的Context
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
@@ -336,29 +339,32 @@ const NoticePage = () => {
 
     // 2. SD 批准行动计划（支持从弹窗或列表快捷操作触发）
     const handlePlanApprove = async (targetNotice) => {
-        const notice = targetNotice || selectedNotice;
+
+        //selectedNotice 这个 state 中已经存储了我们正在操作的、完整的通知单对象
+        const notice = selectedNotice;
         if (!notice) return;
 
-        // ✅ 核心修正：找到供应商提交的最新一份行动计划
-        const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
+        // 使用 (notice.history || []) 来确保我们总是在操作一个数组
+        const lastPlanSubmission = [...(notice.history || [])].reverse().find(h => h.type === 'supplier_plan_submission');
+
+        console.log(notice.history)
         if (!lastPlanSubmission) {
             messageApi.error("无法找到供应商提交的行动计划，操作失败！");
             return;
         }
 
-        // 为每个action plan添加初始状态
-        const plansWithStatus = lastPlanSubmission.actionPlans.map(p => ({ ...p, status: 'pending_evidence' }));
+        const plansWithStatus = (lastPlanSubmission.actionPlans || []).map(p => ({ ...p, status: 'pending_evidence' }));
 
         const newHistory = {
             type: 'sd_plan_approval',
             submitter: currentUser.name,
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
             description: '行动计划已批准，等待供应商上传完成证据。',
-            // ✅ 核心修正：将找到的行动计划 '接力' 保存到这条历史记录中
             actionPlans: plansWithStatus,
         };
 
-        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        // 再次使用 (notice.history || []) 来确保安全
+        const currentHistory = notice.history || [];
         await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
 
         // 发送传统提醒
@@ -368,6 +374,7 @@ const NoticePage = () => {
         await alertService.notifyPlanApproved(notice, currentUser.name);
 
         messageApi.success('计划已批准！');
+        handleDetailModalCancel();
         if (!targetNotice) {
             handleDetailModalCancel();
         }
@@ -394,79 +401,78 @@ const NoticePage = () => {
 
     // 4. 供应商提交完成证据
     const handleEvidenceSubmit = async (values) => {
-        const notice = selectedNotice;
-        if (!notice) return;
+        const notice = selectedNotice;
+        if (!notice) return;
 
-        // 1. --- 开始加载，显示“处理中”---
-        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
+        // 1. --- 开始加载，显示“处理中”，并持续到整个函数结束 ---
+        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
 
-        try {
-            // 2. --- 查找需要附上证据的原始行动计划 ---
-            // 我们应该查找最新的'plan_submission'记录来获取完整的计划列表
-            const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
-            const originalPlans = lastPlanSubmission?.actionPlans || [];
+        try {
+            // 2. --- 查找需要附上证据的原始行动计划 ---
+            const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
+            const originalPlans = lastPlanSubmission?.actionPlans || [];
 
-            // 3. --- 异步处理所有图片文件，确保它们有可用的高清 Base64 URL ---
-            const plansWithEvidence = await Promise.all(
-                originalPlans.map(async (plan, index) => {
-                    const evidenceItem = values.evidence?.[index];
-                    const imageList = evidenceItem?.images || [];
+            // 3. --- 异步处理所有图片和附件文件 ---
+            const processFiles = async (fileList = []) => {
+                return Promise.all((fileList || []).map(async (file) => {
+                    if (file.originFileObj && !file.url) {
+                        const base64Url = await getBase64(file.originFileObj);
+                        return { ...file, url: base64Url, thumbUrl: base64Url };
+                    }
+                    return file;
+                }));
+            };
 
-                    const processedImages = await Promise.all(
-                        imageList.map(async (file) => {
-                            if (file.originFileObj && !file.url) {
-                                const base64Url = await getBase64(file.originFileObj);
-                                return { ...file, url: base64Url, thumbUrl: base64Url };
-                            }
-                            return file;
-                        })
-                    );
+            const plansWithEvidence = await Promise.all(
+                originalPlans.map(async (plan, index) => {
+                    const evidenceItem = values.evidence?.[index];
+                    const processedImages = await processFiles(evidenceItem?.images);
+                    const processedAttachments = await processFiles(evidenceItem?.attachments);
 
-                    // 将证据信息合并回每个行动计划中
-                    return {
-                        ...plan,
-                        evidenceDescription: evidenceItem?.description || '',
-                        evidenceImages: processedImages,
-                    };
-                })
-            );
+                    // 将证据信息合并回每个行动计划中
+                    return {
+                        ...plan,
+                        evidenceDescription: evidenceItem?.description || '',
+                        evidenceImages: processedImages,
+                        evidenceAttachments: processedAttachments, // <-- 确保附件也被包含
+                    };
+                })
+            );
 
-            // 4. --- 创建新的历史记录 ---
-            const newHistory = {
-                type: 'supplier_evidence_submission',
-                submitter: currentUser.name,
-                time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-                description: '供应商已上传完成证据。',
-                // 在历史记录中保存带有证据的完整行动计划
-                actionPlans: plansWithEvidence
-            };
-            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+            // 4. --- 创建新的历史记录 ---
+            const newHistory = { 
+                type: 'supplier_evidence_submission', 
+                submitter: currentUser.name, 
+                time: dayjs().format('YYYY-MM-DD HH:mm:ss'), 
+                description: '供应商已上传完成证据。', 
+                actionPlans: plansWithEvidence 
+            };
+            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+            
+            // 5. --- 更新数据库中的通知单 ---
+            await updateNotice(notice.id, { 
+                status: '待SD关闭', 
+                history: [...currentHistory, newHistory] 
+            });
+            
+            // 6. --- 发送实时提醒 ---
+            await addAlert( // 使用 await 确保提醒发送完成
+                currentUser.id, 
+                notice.creatorId, 
+                `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`, 
+                `/notices?open=${notice.id}`
+            );
 
-            // 5. --- 更新数据库中的通知单 ---
-            await updateNotice(notice.id, {
-                status: '待SD关闭',
-                history: [...currentHistory, newHistory]
-            });
+            // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
+            messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
+            handleDetailModalCancel();
 
-            // 6. --- 发送实时提醒 ---
-            addAlert(
-                currentUser.id,
-                notice.creatorId,
-                `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`,
-                `/notices?open=${notice.id}`
-            );
-
-            // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
-            messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
-            handleDetailModalCancel();
-
-        } catch (error) {
-            // 8. --- 如果中间任何一步出错，显示失败消息 ---
-            console.error("证据提交失败:", error);
-            messageApi.error({ content: `提交失败: ${error.message}`, key: 'evidenceSubmit', duration: 3 });
-        }
-    };
-
+        } catch (error) {
+            // 8. --- 如果中间任何一步出错，显示失败消息 ---
+            console.error("证据提交失败:", error);
+            messageApi.error({ content: `提交失败: ${error.message}`, key: 'evidenceSubmit', duration: 3 });
+        }
+    };
     // 5. SD 批准并关闭（支持从弹窗或列表快捷操作触发）
     const handleClosureApprove = async (targetNotice) => {
         const notice = targetNotice || selectedNotice;

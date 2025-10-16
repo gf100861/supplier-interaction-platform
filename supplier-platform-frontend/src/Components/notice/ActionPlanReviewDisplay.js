@@ -1,10 +1,8 @@
 // src/Components/notice/ActionPlanReviewDisplay.js
-
-import React from 'react';
 import { Collapse, Typography, Space, Divider, Tag } from 'antd';
 import { UserOutlined, CalendarOutlined } from '@ant-design/icons';
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
-
+import { AttachmentsDisplay } from '../common/AttachmentsDisplay'
 const { Panel } = Collapse;
 const { Text, Paragraph } = Typography;
 
@@ -36,7 +34,7 @@ export const ActionPlanReviewDisplay = ({ historyItem }) => {
                         <Text type="secondary"><UserOutlined style={{ marginRight: 8 }} />负责人: {plan.responsible || '未指定'}</Text>
                         <Text type="secondary"><CalendarOutlined style={{ marginRight: 8 }} />截止日期: {plan.deadline || '未指定'}</Text>
                     </Space>
-                    
+
                     <Divider style={{ margin: '12px 0' }} />
 
                     {/* ===== 证据详情 (仅在有证据时显示) ===== */}
@@ -49,8 +47,15 @@ export const ActionPlanReviewDisplay = ({ historyItem }) => {
                             </Paragraph>
 
                             <EnhancedImageDisplay 
-                                images={plan.evidenceImages} 
-                                title="图片证据" 
+                                images={plan.evidenceImages}
+                                title="图片证据"
+                                size="large"
+                                showTitle={true}
+                            />
+                            {console.log('ces', plan.evidenceAttachments)}
+                            <AttachmentsDisplay 
+                                attachments={plan.evidenceAttachments}
+                                title="附件证据"
                                 size="large"
                                 showTitle={true}
                             />

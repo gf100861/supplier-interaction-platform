@@ -10,6 +10,7 @@ import {
 import dayjs from 'dayjs';
 import { categoryColumnConfig } from '../../data/_mockData';
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
+
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -167,11 +168,12 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
 
 // 仅用于提交证据的表单
 // 仅用于提交证据的表单
-const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => { // ✨ 注意：传入 handlePreview
+const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
     // 找到上一次提交并被批准的行动计划
     const lastApprovedPlans = useMemo(() => {
         const history = notice?.history || [];
-        const lastPlanSubmission = [...history].reverse().find(h => h.type === 'sd_plan_approval' || h.type === 'supplier_plan_submission');
+        // 确保查找的是包含 actionPlans 的正确历史记录
+        const lastPlanSubmission = [...history].reverse().find(h => h.actionPlans && h.actionPlans.length > 0);
         return lastPlanSubmission?.actionPlans || [];
     }, [notice]);
 
@@ -245,10 +247,26 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => { /
 const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, actionAreaStyle }) => (
     <div style={actionAreaStyle}>
         <Title level={5}>{title}</Title>
-        <Space direction="vertical" style={{ width: '100%' }}>
-            <Button type="primary" icon={<CheckCircleOutlined />} onClick={onApprove}>{approveText || '批准'}</Button>
-            <Button danger icon={<CloseCircleOutlined />} onClick={onReject}>{rejectText || '驳回'}</Button>
-        </Space>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+            <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                onClick={onApprove}
+                style={{ flex: 1 }} // 占据可用空间
+                size="middle" // 增大按钮尺寸
+            >
+                {approveText || '批准'}
+            </Button>
+            <Button
+                danger
+                icon={<CloseCircleOutlined />}
+                onClick={onReject}
+                style={{ flex: 1 }} // 占据可用空间
+                size="middle" // 增大按钮尺寸
+            >
+                {rejectText || '驳回'}
+            </Button>
+        </div>
     </div>
 );
 
@@ -367,6 +385,14 @@ export const NoticeDetailModal = ({
                                         size="xlarge"
                                         showTitle={false}
                                     />
+                                    <AttachmentsDisplay
+
+                                        attachments={plan.evidenceAttachments}
+                                        title=""
+                                        size="xlarge"
+                                        showTitle={false}
+
+                                    />
                                     <Space style={{ marginTop: 8 }}>
                                         <Button type="primary" icon={<CheckCircleOutlined />} disabled={approvedFlags[index]} onClick={() => onApproveEvidenceItem?.(index)}>
                                             {approvedFlags[index] ? '已批准' : '批准此证据'}
@@ -376,7 +402,8 @@ export const NoticeDetailModal = ({
                                 </Card>
                             ))}
                             <Divider />
-                            <Popconfirm title="确定所有证据均已审核通过并关闭吗？" onConfirm={onClosureApprove}>
+                            {/* 用一个箭头函数 () => yourFunction() 来包裹它。这个箭头函数就像一个“防火墙”，可以“吞掉”不想要的参数。 */}
+                            <Popconfirm title="确定所有证据均已审核通过并关闭吗？" onConfirm={() => onClosureApprove()}>
                                 <Button type="primary">全部批准并关闭</Button>
                             </Popconfirm>
                         </Space>
@@ -466,6 +493,7 @@ export const NoticeDetailModal = ({
 
                             {/* 如果历史记录中有描述，则显示 */}
                             {h.description && h.description.startsWith('[') && <Text type="danger">{h.description}</Text>}
+                            {/* <AttachmentsDisplay attachments={h.attachments} /> */}
 
                             {/* ✨ 在对应的历史节点，调用新组件来显示计划/证据详情 */}
                             {(h.type === 'supplier_plan_submission' || h.type === 'supplier_evidence_submission') && (
