@@ -194,10 +194,10 @@ const DashboardPage = () => {
                                 <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
                                 <Paragraph type="secondary" ellipsis={{ rows: 3 }}>
                                     {topImprovement.sdNotice?.description}
+                                    <Divider />
                                     <Tag color="geekblue">{topImprovement?.sdNotice?.problemSource || '暂无'}</Tag>
                                     <Tag color="purple">{topImprovement?.sdNotice?.cause || '暂无'}</Tag>
                                 </Paragraph>
-                                <Divider />
                                 <Space>
                                     <StarOutlined style={{ color: '#ffc53d' }} />
                                     <Text strong>{topImprovement.likes.length} 个赞</Text>

@@ -73,9 +73,10 @@ const getStatusColor = (status) => {
     if (status.includes('完成')) return 'success'; // 绿色
     if (status.includes('作废')) return 'default'; // 灰色
     if (status.includes('审核')) return 'purple'; // 橙色
-    if (status.includes('提交') || status.includes('上传')) return 'processing'; // 蓝色
+    if (status.includes('提交'))  return 'processing'; // 蓝色
     if (status.includes('关闭')) return 'orange'
     if (status.includes('处理')) return 'blue'
+    if (status.includes('证据')) return 'yellow'
     return 'default';
 };
 
