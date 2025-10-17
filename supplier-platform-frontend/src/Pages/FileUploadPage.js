@@ -305,7 +305,7 @@ const FileUploadPage = () => {
     <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
       <Card>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Title level={4}>输入新的审核结果</Title>
+          <Title level={4}>手工输入新的审核结果</Title>
           <Paragraph type="secondary">请填写问题详情、选择供应商并上传必要的证据文件。</Paragraph>
         </div>
 

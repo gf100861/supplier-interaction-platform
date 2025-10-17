@@ -26,8 +26,8 @@ const allMenuItems = [
         roles: ['SD', 'Manager', 'Supplier'],
         children: [
             { key: '/notices', label: '整改通知单列表', roles: ['SD', 'Manager', 'Supplier'] },
-            { key: '/upload', label: '输入新的审核结果', roles: ['SD', 'Manager'] },
-            { key: '/batch-create', label: '批量创建 (Excel)', roles: ['SD', 'Manager'] },
+            { key: '/upload', label: '手工导入任务', roles: ['SD', 'Manager'] },
+            { key: '/batch-create', label: '批量导入任务', roles: ['SD', 'Manager'] },
         ]
     },
       { key: '/analysis', icon: <BookOutlined />, label: '经验使用', roles: ['SD', 'Manager', 'Admin'] },

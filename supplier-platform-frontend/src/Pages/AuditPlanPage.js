@@ -33,8 +33,6 @@ const matrixStyles = {
 };
 
 
-
-
 const AuditPlanPage = () => {
     const [events, setEvents] = useState([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -97,28 +95,36 @@ const AuditPlanPage = () => {
         }
     }, [suppliers]);
 
-    const managedSuppliers = useMemo(() => {
-        if (!currentUser || !suppliers) return [];
-        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-            return suppliers;
-        }
-        if (currentUser.role === 'SD') {
-            const managed = currentUser.managed_suppliers || [];
-            return managed.map(assignment => assignment.supplier).filter(Boolean);
-        }
-        return [];
-    }, [currentUser, suppliers]);
-
-    const filteredEvents = useMemo(() => {
-        if (!currentUser) return [];
-        if (currentUser.role === 'Manager' || currentUser.role === 'SD' || currentUser.role === 'Admin') {
-            return events;
-        }
-        if (currentUser.role === 'Supplier') {
-            return events.filter(e => e.supplier_id === currentUser.supplier_id);
-        }
-        return [];
-    }, [events, currentUser]);
+  // --- `managedSuppliers` logic is correct and remains the same ---
+     const managedSuppliers = useMemo(() => {
+         if (!currentUser || !suppliers) return [];
+         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+             return suppliers;
+         }
+         if (currentUser.role === 'SD') {
+             const managed = currentUser.managed_suppliers || [];
+             return managed.map(assignment => assignment.supplier).filter(Boolean);
+         }
+         return [];
+     }, [currentUser, suppliers]);
+ 
+     // ## CORE MODIFICATION 1: Filter events based on the user's role ##
+     const filteredEvents = useMemo(() => {
+         if (!currentUser) return [];
+         
+         // Manager and Admin can see all events for the selected year
+         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+             return events;
+         }
+         
+         // SD can only see events related to their managed suppliers
+         if (currentUser.role === 'SD') {
+             const managedSupplierIds = managedSuppliers.map(s => s.id);
+             return events.filter(event => managedSupplierIds.includes(event.supplier_id));
+         }
+ 
+         return []; // Suppliers are redirected, but as a fallback, show nothing.
+     }, [events, currentUser, managedSuppliers]); // Add managedSuppliers as a dependency
 
 
 
@@ -386,7 +392,7 @@ const AuditPlanPage = () => {
                                 ))}
                             </div>
 
-                            {suppliers.map(supplier => (
+                            {managedSuppliers.map(supplier => (
                                 <div key={supplier.id} style={matrixStyles.bodyRow}>
                                     <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
                                         <Text type="secondary">{supplier.parma_id}</Text>
