@@ -253,7 +253,7 @@ const FileUploadPage = () => {
       title: values.details.process || values.details.parameter || values.details.criteria || 'New Notice',
       assigned_supplier_id: values.supplierId,
       assigned_supplier_name: selectedSupplierInfo?.name || '',
-      status: '待供应商处理',
+      status: '待提交Action Plan',
       creator_id: currentUser.id,
       sd_notice: {
         creatorId: currentUser.id,
@@ -341,7 +341,7 @@ const FileUploadPage = () => {
             <Col span={24}>
               <Card
                 type="inner"
-                title="历史经验标签 (可选) -请先选择供应商"
+                title="历史经验标签 (可选) - 请先选择供应商"
                 loading={loadingHistory}
                 style={{
                   marginBottom: 24,
@@ -351,9 +351,9 @@ const FileUploadPage = () => {
               >
                 <Row gutter={16}>
                   <Col span={12}>
-                    <Form.Item name="problem_source" label="问题来源">
+                    <Form.Item name="problem_source" label="产品">
                       <Select
-                        placeholder={!selectedSupplierId ? "请先选择供应商" : "选择来源或'其他'"}
+                        placeholder={!selectedSupplierId ? "请先选择供应商" : "选择产品或'其他'"}
                         allowClear
                         onChange={value => {
                           setSelectedSource(value);
@@ -373,8 +373,8 @@ const FileUploadPage = () => {
                         <Input placeholder="请输入具体原因" />
                       </Form.Item>
                     ) : (
-                      <Form.Item name="cause" label="造成原因 (根据历史推荐)">
-                        <Select placeholder="选择原因" allowClear disabled={!selectedSource}>
+                      <Form.Item name="cause" label="过程 (根据历史推荐)">
+                        <Select placeholder="选择过程" allowClear disabled={!selectedSource}>
                           {(historicalTags[selectedSource] || []).map(cause => (
                             <Option key={cause} value={cause}>{cause}</Option>
                           ))}

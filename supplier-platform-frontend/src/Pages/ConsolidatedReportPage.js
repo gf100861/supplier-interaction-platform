@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin, List, Tooltip, Row, Col, Collapse } from 'antd';
+import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin, Tooltip, Collapse } from 'antd';
 import { DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
-import { categoryColumnConfig, allPossibleStatuses } from '../data/_mockData';
+
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import dayjs from 'dayjs';
@@ -15,7 +15,6 @@ dayjs.extend(minMax);
 
 const { Title, Paragraph, Text } = Typography;
 const { RangePicker } = DatePicker;
-const { Option } = Select;
 const { Search } = Input;
 const { Panel } = Collapse;
 
@@ -31,6 +30,19 @@ const getHistoryItemDetails = (historyItem) => {
         default: return { color: 'grey', text: '执行了未知操作' };
     }
 };
+
+const allPossibleStatuses = [
+
+    '待提交Action Plan',
+    '待供应商关闭',
+    '待SD确认',
+    '待SD关闭',
+    '已完成',
+    '已作废'
+
+
+
+]
 
 const getSummaryFromHistory = (history) => {
     const latestPlanSubmission = [...(history || [])].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
@@ -139,7 +151,8 @@ const ConsolidatedReportPage = () => {
             if (!supplierCompanyId) return [];
             accessibleData = notices.filter(n => n.assignedSupplierId === supplierCompanyId);
         } else {
-            accessibleData = notices;
+            const supplierDevelopmentId = currentUser.id
+            accessibleData = notices.filter(n => n.creator?.id === supplierDevelopmentId);
         }
 
         return accessibleData.filter(notice => {
@@ -164,6 +177,7 @@ const ConsolidatedReportPage = () => {
             return isDateMatch && isSupplierMatch && isCategoryMatch && isStatusMatch;
         });
     }, [dateRange, selectedSuppliers, selectedCategories, selectedStatuses, currentUser, notices, searchTerm, suppliers]);
+
 
     const groupedData = useMemo(() => {
         const noticesWithDetails = filteredNotices.map(notice => {
@@ -281,7 +295,7 @@ const ConsolidatedReportPage = () => {
                 }
             },
         ];
-        const dynamicColumns = (categoryColumnConfig[category] || []).map(configCol => ({
+        const dynamicColumns = ([]).map(configCol => ({
             title: configCol.title,
             dataIndex: ['sdNotice', 'details', configCol.dataIndex],
             key: configCol.dataIndex,
@@ -307,7 +321,7 @@ const ConsolidatedReportPage = () => {
 
     const categories = Object.keys(groupedData);
 
-    
+
     const handleExportExcel = async () => {
         if (categories.length === 0) {
             messageApi.warning('没有可供导出的数据。');
@@ -336,13 +350,13 @@ const ConsolidatedReportPage = () => {
 
             // --- 动态生成表头 ---
             const baseColumns = [
-                { title: 'ParmaId', dataIndex: ['supplier','parmaId'] },
+                { title: 'ParmaId', dataIndex: ['supplier', 'parmaId'] },
                 { title: '供应商', dataIndex: 'assignedSupplierName' },
                 { title: '状态', dataIndex: 'status' },
                 { title: '创建时间', dataIndex: ['sdNotice', 'createTime'] },
                 { title: '预计时间', dataIndex: ['sdNotice', 'createTime'] },
             ];
-            const dynamicColumns = categoryColumnConfig[category] || [];
+            const dynamicColumns = [];
             const allHeaders = [...dynamicColumns, ...baseColumns];
 
             worksheet.columns = allHeaders.map(col => ({

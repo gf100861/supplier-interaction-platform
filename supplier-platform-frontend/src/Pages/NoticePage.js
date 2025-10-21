@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Tabs, Form, Modal, Popconfirm, theme, Spin, List, Button, Space, Select, Divider, Timeline, Collapse, Image, Checkbox, Tooltip } from 'antd';
+import { Card, Typography, Input, Tabs, Form,  theme, Spin, Button, Space, Select, Tooltip } from 'antd';
 import { StarOutlined, StarFilled } from '@ant-design/icons'; // 1. 引入新图标
 import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
+import { SortAscendingOutlined, SortDescendingOutlined,EditOutlined } from '@ant-design/icons';
 // 1. 导入所有需要的组件、Hooks 和数据
 import { NoticeList } from '../Components/notice/NoticeList';
 import { RejectionModal } from '../Components/notice/RejectionModal';
@@ -18,7 +18,7 @@ import { useNotices } from '../contexts/NoticeContext';
 import { useAlerts } from '../contexts/AlertContext';
 import { useAlertService } from '../services/AlertService';
 import { useConfig } from '../contexts/ConfigContext';
-import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
+// import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
 import { supabase } from '../supabaseClient'; // 确保导入 supabase
 
 const { Title, Paragraph, Text } = Typography;
@@ -27,12 +27,22 @@ const { TabPane } = Tabs;
 
 const NoticePage = () => {
     // --- 状态管理 (已清理) ---
-   const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
+    const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
     const { suppliers } = useSuppliers();
     const { messageApi, notificationApi } = useNotification();
     const { token } = theme.useToken();
     const { addAlert } = useAlerts();
     const alertService = useAlertService();
+
+
+    const allPossibleStatuses = [
+        '待提交Action Planzh',
+        '待供应商关闭',
+        '待SD确认',
+        '待SD关闭',
+        '已完成',
+        '已作废'
+    ]
 
     const sendAlert = async (senderId, recipientId, msg, link) => {
         try {
@@ -278,7 +288,7 @@ const NoticePage = () => {
         const lastHistory = history[history.length - 1];
 
         // 逻辑修正：检查 '计划被驳回' 的情况（兼容不同状态文案）
-        if (notice.status === '待供应商处理' && lastHistory?.type === 'sd_plan_rejection') {
+        if (notice.status === '待提交Action Plan' && lastHistory?.type === 'sd_plan_rejection') {
             const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission');
             if (lastSubmission) {
                 form.setFieldsValue({
@@ -287,7 +297,7 @@ const NoticePage = () => {
             }
         }
         // 逻辑补充：检查 '证据被驳回' 的情况
-        else if (notice.status === '待供应商上传证据' && lastHistory?.type === 'sd_evidence_rejection') {
+        else if (notice.status === '待供应商关闭' && lastHistory?.type === 'sd_evidence_rejection') {
             const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
             if (lastSubmission) {
                 // 注意：EvidencePerActionForm 的数据结构是 { evidence: [...] }
@@ -331,7 +341,7 @@ const NoticePage = () => {
         const formattedPlans = (values.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline).format('YYYY-MM-DD') : '' }));
         const newHistory = { type: 'supplier_plan_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已提交行动计划。', actionPlans: formattedPlans };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        await updateNotice(notice.id, { status: '待SD审核', history: [...currentHistory, newHistory] });
+        await updateNotice(notice.id, { status: '待SD确认', history: [...currentHistory, newHistory] });
         sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已提交 "${notice.title}" 的行动计划待审核。`, `/notices?open=${notice.id}`);
         messageApi.success('行动计划提交成功！');
         handleDetailModalCancel();
@@ -365,7 +375,7 @@ const NoticePage = () => {
 
         // 再次使用 (notice.history || []) 来确保安全
         const currentHistory = notice.history || [];
-        await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
+        await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
 
         // 发送传统提醒
         sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被批准。`, `/notices?open=${notice.id}`);
@@ -387,7 +397,7 @@ const NoticePage = () => {
         const newHistory = { type: 'sd_plan_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[计划被驳回] ${values.rejectionReason}` };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         try {
-            await updateNotice(notice.id, { status: '待供应商处理', history: [...currentHistory, newHistory] });
+            await updateNotice(notice.id, { status: '待提交Action Plan', history: [...currentHistory, newHistory] });
             sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被驳回，请根据意见修改并重新提交。`, `/notices?open=${notice.id}`);
             messageApi.warning('计划已驳回！');
         } catch (e) {
@@ -401,78 +411,78 @@ const NoticePage = () => {
 
     // 4. 供应商提交完成证据
     const handleEvidenceSubmit = async (values) => {
-        const notice = selectedNotice;
-        if (!notice) return;
+        const notice = selectedNotice;
+        if (!notice) return;
 
-        // 1. --- 开始加载，显示“处理中”，并持续到整个函数结束 ---
-        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
+        // 1. --- 开始加载，显示“处理中”，并持续到整个函数结束 ---
+        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
 
-        try {
-            // 2. --- 查找需要附上证据的原始行动计划 ---
-            const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
-            const originalPlans = lastPlanSubmission?.actionPlans || [];
+        try {
+            // 2. --- 查找需要附上证据的原始行动计划 ---
+            const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
+            const originalPlans = lastPlanSubmission?.actionPlans || [];
 
-            // 3. --- 异步处理所有图片和附件文件 ---
-            const processFiles = async (fileList = []) => {
-                return Promise.all((fileList || []).map(async (file) => {
-                    if (file.originFileObj && !file.url) {
-                        const base64Url = await getBase64(file.originFileObj);
-                        return { ...file, url: base64Url, thumbUrl: base64Url };
-                    }
-                    return file;
-                }));
-            };
+            // 3. --- 异步处理所有图片和附件文件 ---
+            const processFiles = async (fileList = []) => {
+                return Promise.all((fileList || []).map(async (file) => {
+                    if (file.originFileObj && !file.url) {
+                        const base64Url = await getBase64(file.originFileObj);
+                        return { ...file, url: base64Url, thumbUrl: base64Url };
+                    }
+                    return file;
+                }));
+            };
 
-            const plansWithEvidence = await Promise.all(
-                originalPlans.map(async (plan, index) => {
-                    const evidenceItem = values.evidence?.[index];
-                    const processedImages = await processFiles(evidenceItem?.images);
+            const plansWithEvidence = await Promise.all(
+                originalPlans.map(async (plan, index) => {
+                    const evidenceItem = values.evidence?.[index];
+                    const processedImages = await processFiles(evidenceItem?.images);
                     const processedAttachments = await processFiles(evidenceItem?.attachments);
 
-                    // 将证据信息合并回每个行动计划中
-                    return {
-                        ...plan,
-                        evidenceDescription: evidenceItem?.description || '',
-                        evidenceImages: processedImages,
+                    // 将证据信息合并回每个行动计划中
+                    return {
+                        ...plan,
+                        evidenceDescription: evidenceItem?.description || '',
+                        evidenceImages: processedImages,
                         evidenceAttachments: processedAttachments, // <-- 确保附件也被包含
-                    };
-                })
-            );
+                    };
+                })
+            );
 
-            // 4. --- 创建新的历史记录 ---
-            const newHistory = { 
-                type: 'supplier_evidence_submission', 
-                submitter: currentUser.name, 
-                time: dayjs().format('YYYY-MM-DD HH:mm:ss'), 
-                description: '供应商已上传完成证据。', 
-                actionPlans: plansWithEvidence 
-            };
-            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-            
-            // 5. --- 更新数据库中的通知单 ---
-            await updateNotice(notice.id, { 
-                status: '待SD关闭', 
-                history: [...currentHistory, newHistory] 
-            });
-            
-            // 6. --- 发送实时提醒 ---
-            await addAlert( // 使用 await 确保提醒发送完成
-                currentUser.id, 
-                notice.creatorId, 
-                `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`, 
-                `/notices?open=${notice.id}`
-            );
+            // 4. --- 创建新的历史记录 ---
+            const newHistory = {
+                type: 'supplier_evidence_submission',
+                submitter: currentUser.name,
+                time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                description: '供应商已上传完成证据。',
+                actionPlans: plansWithEvidence
+            };
+            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
-            // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
-            messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
-            handleDetailModalCancel();
+            // 5. --- 更新数据库中的通知单 ---
+            await updateNotice(notice.id, {
+                status: '待SD关闭',
+                history: [...currentHistory, newHistory]
+            });
 
-        } catch (error) {
-            // 8. --- 如果中间任何一步出错，显示失败消息 ---
-            console.error("证据提交失败:", error);
-            messageApi.error({ content: `提交失败: ${error.message}`, key: 'evidenceSubmit', duration: 3 });
-        }
-    };
+            // 6. --- 发送实时提醒 ---
+            await addAlert( // 使用 await 确保提醒发送完成
+                currentUser.id,
+                notice.creatorId,
+                `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`,
+                `/notices?open=${notice.id}`
+            );
+
+            // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
+            messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
+            handleDetailModalCancel();
+
+        } catch (error) {
+            // 8. --- 如果中间任何一步出错，显示失败消息 ---
+            console.error("证据提交失败:", error);
+            messageApi.error({ content: `提交失败: ${error.message}`, key: 'evidenceSubmit', duration: 3 });
+        }
+    };
     // 5. SD 批准并关闭（支持从弹窗或列表快捷操作触发）
     const handleClosureApprove = async (targetNotice) => {
         const notice = targetNotice || selectedNotice;
@@ -493,7 +503,7 @@ const NoticePage = () => {
         if (!notice) return;
         const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回] ${values.rejectionReason}` };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        await updateNotice(notice.id, { status: '待供应商上传证据', history: [...currentHistory, newHistory] });
+        await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
         sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改证据已被驳回，原因: ${values.rejectionReason}`, `/notices?open=${notice.id}`);
         messageApi.warning('证据已驳回！');
         handleRejectionCancel();
@@ -548,7 +558,7 @@ const NoticePage = () => {
 
         const rejectionHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回-第${index + 1}项] ${values.rejectionReason}`, evidenceIndex: index };
 
-        await updateNotice(notice.id, { status: '待供应商上传证据', history: [...newFullHistory, rejectionHistory] });
+        await updateNotice(notice.id, { status: '待供应商关闭', history: [...newFullHistory, rejectionHistory] });
 
         sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的第 ${index + 1} 条证据被驳回，请按要求补充并重新上传证据。`, `/notices?open=${notice.id}`);
         messageApi.warning('该条证据已驳回，单据退回到提交证据阶段');
@@ -677,13 +687,30 @@ const NoticePage = () => {
 
         const actions = [];
         const isSDOrManager = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager');
+        const isAllowedToEdit = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager' || currentUser.role === 'Admin');
+        const canEdit = item.status === '待提交Action Plan';
         const isManager = currentUser && currentUser.role === 'Manager';
         const stopPropagationAndRun = (e, func) => { e?.stopPropagation(); func(); };
+
+        if (isAllowedToEdit) {
+            // --- 核心修正：修改此按钮的 onClick ---
+            actions.push(
+                <Button 
+                    key="edit" 
+                    icon={<EditOutlined />} 
+                    type="link"
+                    disabled={!canEdit}
+                    onClick={(e) => stopPropagationAndRun(e, () => navigate(`/edit-notice/${item.id}`))} // <-- 指向新的路由
+                >
+                    修改
+                </Button>
+            );
+        }
 
         // SD 和 Manager 的快捷操作
         if (currentUser.role === 'SD' || currentUser.role === 'Manager') {
             // 审批计划阶段（兼容不同文案）
-            if (item.status === '待SD审核' || item.status === '待SD审核计划') {
+            if (item.status === '待SD确认' || item.status === '待SD确认计划') {
                 actions.push(<Button key="quick_approve_plan" type="link" onClick={(e) => stopPropagationAndRun(e, () => handlePlanApprove(item))}>批准计划</Button>);
                 actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
             }
@@ -691,6 +718,7 @@ const NoticePage = () => {
             // if (item.status === '待SD关闭') {
             //     actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
             // }
+            
             if (item.status === '已完成' && isSDOrManager) {
                 const isLiked = item.likes && item.likes.includes(currentUser.id);
                 actions.push(
@@ -721,26 +749,26 @@ const NoticePage = () => {
         if (!currentUser) return <p>请先登录</p>;
         if (configLoading || noticesLoading) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}><Spin size="large" /></div>; }
 
-         if (noticesLoading && notices.length === 0) {
+        if (noticesLoading && notices.length === 0) {
             return <div><Spin size="large" /></div>;
         }
 
         const tabsConfig = {
             Supplier: [
-                { key: 'pending', label: '待我处理', statuses: ['待供应商处理', '待供应商上传证据'] },
-                { key: 'review', label: '等待审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
+                { key: 'pending', label: '待我处理', statuses: ['待提交Action Plan', '待供应商关闭'] },
+                { key: 'review', label: '等待审核', statuses: ['待SD确认', '待SD确认计划', '待SD关闭'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ],
             SD: [
-                { key: 'pending', label: '待供应商处理', statuses: ['待供应商处理', '待供应商上传证据'] },
-                { key: 'review', label: '待我审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
+                { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan', '待供应商关闭'] },
+                { key: 'review', label: '待SD确认', statuses: ['待SD确认', '待SD确认计划', '待SD关闭'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
             ],
             Manager: [
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses },
-                { key: 'review', label: '待审核', statuses: ['待SD审核', '待SD审核计划', '待SD关闭'] },
-                { key: 'pending', label: '待供应商处理', statuses: ['待供应商处理', '待供应商上传证据'] },
+                { key: 'review', label: '待审核', statuses: ['待SD确认', '待SD确认计划', '待SD关闭'] },
+                { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan', '待供应商关闭'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ]
         };
@@ -812,10 +840,10 @@ const NoticePage = () => {
             </Card>
             <Card>{renderTabs()}</Card>
 
-               <div style={{ textAlign: 'center', marginTop: 24 }}>
+            <div style={{ textAlign: 'center', marginTop: 24 }}>
                 {hasMore ? (
-                    <Button 
-                        onClick={loadMoreNotices} 
+                    <Button
+                        onClick={loadMoreNotices}
                         loading={noticesLoading && notices.length > 0}
                     >
                         加载更多

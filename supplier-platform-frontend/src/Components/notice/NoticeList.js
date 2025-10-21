@@ -10,13 +10,13 @@ const { Text } = Typography;
 const getStatusTag = (status) => {
     let color;
     switch (status) {
-        case '待供应商处理':
+        case '待提交Action Plan':
             color = 'processing'; // 蓝色
             break;
-        case '待供应商上传证据':
+        case '待供应商关闭':
             color = 'warning'; // 橙色
             break;
-        case '待SD审核':
+        case '待SD确认':
              color = 'red'; 
         case '待SD关闭':
             color = 'purple'; // 紫色
@@ -44,7 +44,7 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
         ? noticeCategoryDetails[item.category]
         : { id: 'N/A', color: 'default' };
 
-    const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD审核证据';
+    const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据';
 
     return (
         <List.Item actions={getActionsForItem(item)}>

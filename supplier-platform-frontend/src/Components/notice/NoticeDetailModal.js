@@ -1,14 +1,14 @@
 // src/Components/notice/NoticeDetailModal.js
 import React, { useState, useMemo } from 'react';
-import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Tabs, Card, Image, theme, Popconfirm } from 'antd';
+import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm } from 'antd';
 import {
-    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
-    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
+    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined,  SolutionOutlined,
+     LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
     InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { categoryColumnConfig } from '../../data/_mockData';
+
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
@@ -22,7 +22,7 @@ const DynamicDetailsDisplay = ({ notice }) => {
     // 修正 #2: 使用可选链 ?. 来安全地访问深层属性
     if (!notice?.category || !notice?.sdNotice?.details) return null;
 
-    const config = categoryColumnConfig[notice.category] || [];
+    const config =  [];
     const dynamicFields = config.filter(
         col => col.dataIndex !== 'title' && col.dataIndex !== 'description'
     );
@@ -340,10 +340,10 @@ export const NoticeDetailModal = ({
         const isSDOrManager = currentUser?.role === 'SD' || currentUser?.role === 'Manager';
 
         switch (notice.status) {
-            case '待供应商处理':
+            case '待提交Action Plan':
                 return isAssignedSupplier && <PlanSubmissionForm form={form} onFinish={onPlanSubmit} />;
-            case '待SD审核':
-            case '待SD审核计划':
+            case '待SD确认':
+            case '待SD确认计划':
                 return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} />;
             case '待供应商上传证据':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;

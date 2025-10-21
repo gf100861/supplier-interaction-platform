@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import  { useState, useMemo, useEffect } from 'react';
 import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space } from 'antd';
-import { SolutionOutlined, ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined } from '@ant-design/icons';
+import {  ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
@@ -185,7 +185,7 @@ const DashboardPage = () => {
                 </Col>
 
                 <Col xs={24} lg={12}>
-                    <Card title="亮点展示：本月最佳改善" bordered={false} style={{ height: '100%' }}>
+                    <Card title="亮点展示：本月最受欢迎" bordered={false} style={{ height: '100%' }}>
                         {topImprovement ? (
 
                             <div>

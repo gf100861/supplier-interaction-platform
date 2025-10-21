@@ -388,7 +388,7 @@ const BatchNoticeCreationPage = () => {
                 title: details.title || details.parameter || 'New Notice',
                 assigned_supplier_id: globalSettings.supplierId, // 假设 suppliers context 里的 id 是 uuid
                 assigned_supplier_name: globalSettings.supplierName,
-                status: '待供应商处理', // 使用简化的新流程状态
+                status: '待提交Action Plan', // 使用简化的新流程状态
                 creator_id: currentUser.id, // 假设 currentUser.id 是 uuid
                 sd_notice: { // 将所有初始信息存入 jsonb 字段
                     creatorId: currentUser.id,
