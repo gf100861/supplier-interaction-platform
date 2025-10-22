@@ -8,9 +8,7 @@ import {
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
-
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -345,7 +343,7 @@ export const NoticeDetailModal = ({
             case '待SD确认':
             case '待SD确认计划':
                 return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} />;
-            case '待供应商上传证据':
+            case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
             case '待SD关闭': {
                 if (!isSDOrManager) return null;
