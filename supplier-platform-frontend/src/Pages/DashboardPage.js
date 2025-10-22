@@ -83,7 +83,7 @@ const DashboardPage = () => {
         const allOpenIssues = baseData.filter(n => n.status !== '已完成' && n.status !== '已作废').length;
 
         const pendingForSupplier = baseData.filter(n =>
-            (n.status === '待SD关闭' || n.status === '待SD审核' || n.status === '待供应商处理' || n.status === '待供应商上传证据') &&
+            (n.status === '待SD关闭' || n.status === '待SD确认' || n.status === '待提交Action Plan' || n.status === '待供应商关闭') &&
             dayjs(n.createdAt).isAfter(thirtyDaysAgo)
         );
         const supplierActionRequired = Object.entries(
@@ -96,8 +96,6 @@ const DashboardPage = () => {
                 return acc;
             }, {})
         ).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-
-
 
         // SD点赞最多的改善 (这个是全局的，所以用 notices)
         const topImprovement = notices

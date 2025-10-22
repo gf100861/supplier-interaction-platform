@@ -40,8 +40,6 @@ const allPossibleStatuses = [
     '已完成',
     '已作废'
 
-
-
 ]
 
 const getSummaryFromHistory = (history) => {
@@ -114,11 +112,10 @@ const getStatusColor = (status) => {
     if (!status) return 'default';
     if (status.includes('完成')) return 'success';
     if (status.includes('作废')) return 'default';
-    if (status.includes('审核')) return 'purple';
-    if (status.includes('提交')) return 'processing';
-    if (status.includes('关闭')) return 'orange';
-    if (status.includes('处理')) return 'blue';
-    if (status.includes('证据')) return 'yellow';
+    if (status.includes('待SD关闭')) return 'purple';
+    if (status.includes('待SD确认')) return 'green';
+    if (status.includes('待提交Action Plan')) return 'blue';
+    if (status.includes('待供应商关闭')) return 'yellow';
     return 'default';
 };
 
@@ -150,9 +147,16 @@ const ConsolidatedReportPage = () => {
             const supplierCompanyId = currentUser.supplier_id;
             if (!supplierCompanyId) return [];
             accessibleData = notices.filter(n => n.assignedSupplierId === supplierCompanyId);
-        } else {
-            const supplierDevelopmentId = currentUser.id
+        } else if (currentUser?.role === 'Manager' || currentUser?.role === 'Admin') {
+            // Manager 和 Admin 可以看到所有通知
+            accessibleData = notices;
+        } else if (currentUser?.role === 'SD') {
+            // SD 只能看到自己创建的通知 (如果需要看所有, 此处改为 accessibleData = notices;)
+            const supplierDevelopmentId = currentUser.id;
             accessibleData = notices.filter(n => n.creator?.id === supplierDevelopmentId);
+        } else {
+             // 其他未知角色看不到任何通知
+            accessibleData = [];
         }
 
         return accessibleData.filter(notice => {

@@ -15,8 +15,7 @@ import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
-import { useAlerts } from '../contexts/AlertContext';
-import { useAlertService } from '../services/AlertService';
+
 import { useConfig } from '../contexts/ConfigContext';
 // import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
 import { supabase } from '../supabaseClient'; // 确保导入 supabase
@@ -31,8 +30,8 @@ const NoticePage = () => {
     const { suppliers } = useSuppliers();
     const { messageApi, notificationApi } = useNotification();
     const { token } = theme.useToken();
-    const { addAlert } = useAlerts();
-    const alertService = useAlertService();
+
+  
 
 
     const allPossibleStatuses = [
@@ -44,14 +43,6 @@ const NoticePage = () => {
         '已作废'
     ]
 
-    const sendAlert = async (senderId, recipientId, msg, link) => {
-        try {
-            await addAlert(senderId, recipientId, msg, link);
-            notificationApi?.open({ message: '已发送提醒', description: msg, placement: 'bottomRight' });
-        } catch (e) {
-            console.error('发送提醒失败:', e);
-        }
-    };
     const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
     const [form] = Form.useForm();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
@@ -86,7 +77,7 @@ const NoticePage = () => {
     useEffect(() => {
         const fetchUsers = async () => {
             try {
-                const { data, error } = await supabase.from('users').select('id, name, supplier_id');
+                const { data, error } = await supabase.from('users').select('id,supplier_id');
                 if (error) throw error;
                 setAllUsers(data);
             } catch (error) {
@@ -342,7 +333,7 @@ const NoticePage = () => {
         const newHistory = { type: 'supplier_plan_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已提交行动计划。', actionPlans: formattedPlans };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         await updateNotice(notice.id, { status: '待SD确认', history: [...currentHistory, newHistory] });
-        sendAlert(currentUser.id, notice.creatorId, `供应商 ${currentUser.name} 已提交 "${notice.title}" 的行动计划待审核。`, `/notices?open=${notice.id}`);
+        // 发送提醒
         messageApi.success('行动计划提交成功！');
         handleDetailModalCancel();
     };
@@ -378,11 +369,10 @@ const NoticePage = () => {
         await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
 
         // 发送传统提醒
-        sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被批准。`, `/notices?open=${notice.id}`);
+      
 
         // 发送新的结构化提醒
-        await alertService.notifyPlanApproved(notice, currentUser.name);
-
+       
         messageApi.success('计划已批准！');
         handleDetailModalCancel();
         if (!targetNotice) {
@@ -398,7 +388,7 @@ const NoticePage = () => {
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         try {
             await updateNotice(notice.id, { status: '待提交Action Plan', history: [...currentHistory, newHistory] });
-            sendAlert(currentUser.id, notice.assignedSupplierId, `您为 "${notice.title}" 提交的行动计划已被驳回，请根据意见修改并重新提交。`, `/notices?open=${notice.id}`);
+            // 发送提醒
             messageApi.warning('计划已驳回！');
         } catch (e) {
             messageApi.error('退回失败：' + (e?.message || '未知错误'));
@@ -466,12 +456,7 @@ const NoticePage = () => {
             });
 
             // 6. --- 发送实时提醒 ---
-            await addAlert( // 使用 await 确保提醒发送完成
-                currentUser.id,
-                notice.creatorId,
-                `供应商 ${currentUser.name} 已上传 "${notice.title}" 的完成证据待关闭。`,
-                `/notices?open=${notice.id}`
-            );
+           
 
             // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
             messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
@@ -490,7 +475,7 @@ const NoticePage = () => {
         const newHistory = { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '审核通过，问题关闭。' };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         await updateNotice(notice.id, { status: '已完成', history: [...currentHistory, newHistory] });
-        sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改已被批准关闭。`, `/notices?open=${notice.id}`);
+        // 发送提醒
         messageApi.success('通知单已关闭！');
         if (!targetNotice) {
             handleDetailModalCancel();
@@ -504,7 +489,7 @@ const NoticePage = () => {
         const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回] ${values.rejectionReason}` };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
         await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
-        sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改证据已被驳回，原因: ${values.rejectionReason}`, `/notices?open=${notice.id}`);
+        // 发送提醒
         messageApi.warning('证据已驳回！');
         handleRejectionCancel();
         if (selectedNotice?.id === notice.id) handleDetailModalCancel();
@@ -529,12 +514,12 @@ const NoticePage = () => {
 
         if (allApproved) {
             await updateNotice(notice.id, { status: '已完成', history: [...newFullHistory, { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '所有证据均已批准，问题关闭。' }] });
-            sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的整改证据均已批准，单据已关闭。`, `/notices`);
+            // 发送提醒
             messageApi.success('该条证据已批准，所有证据均通过，单据已关闭！');
             handleDetailModalCancel();
         } else {
             await updateNotice(notice.id, { history: newFullHistory });
-            sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的第 ${index + 1} 条证据已被批准。`, `/notices?open=${notice.id}`);
+            // 发送提醒
             messageApi.success('该条证据已批准');
             // Refresh the modal with updated data
             setSelectedNotice({ ...notice, history: newFullHistory });
@@ -560,7 +545,7 @@ const NoticePage = () => {
 
         await updateNotice(notice.id, { status: '待供应商关闭', history: [...newFullHistory, rejectionHistory] });
 
-        sendAlert(currentUser.id, notice.assignedSupplierId, `您关于 "${notice.title}" 的第 ${index + 1} 条证据被驳回，请按要求补充并重新上传证据。`, `/notices?open=${notice.id}`);
+       //发送提醒
         messageApi.warning('该条证据已驳回，单据退回到提交证据阶段');
         handleRejectionCancel();
         handleDetailModalCancel();
@@ -614,13 +599,8 @@ const NoticePage = () => {
         });
 
         // --- 使用正确的用户ID发送提醒 ---
-        if (oldSupplierUser) {
-            addAlert(currentUser.id, oldSupplierUser.id, `您的通知单 "${notice.title}" 已被重分配，无需再处理。`, `/notices`);
-        }
-        if (newSupplierUser) {
-            addAlert(currentUser.id, newSupplierUser.id, `您有一个新的通知单被分配: "${notice.title}"。`, `/notices?open=${notice.id}`);
-        }
-        addAlert(currentUser.id, notice.creatorId, `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.name}。`, `/notices?open=${notice.id}`);
+        //提醒
+       
 
         messageApi.success('通知单已成功重分配！');
         setCorrectionModal({ visible: false, notice: null });
@@ -646,8 +626,7 @@ const NoticePage = () => {
         });
 
         // 为相关方创建提醒
-        addAlert(currentUser.id, notice.assignedSupplierId, `"${notice.title}" 已被作废，您无需再处理。`, `/notices`);
-        addAlert(currentUser.id, notice.creatorId, `您创建的 "${notice.title}" 已被作废。`, `/notices?open=${notice.id}`);
+      
 
         messageApi.warning('通知单已作废！');
         setCorrectionModal({ visible: false, notice: null }); // 关闭修正弹窗

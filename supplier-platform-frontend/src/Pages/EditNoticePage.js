@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Form, Input, Button, Upload, Typography, Divider, Modal, theme, Select, InputNumber, Card, Row, Col, Space, Spin, Empty, DatePicker, AutoComplete } from 'antd';
-import { UploadOutlined, InboxOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Upload, Typography, Divider, Modal, theme, Select, InputNumber, Card, Row, Col, Space, Spin, Empty, DatePicker, AutoComplete, Popconfirm } from 'antd'; // 1. Import Popconfirm
+import { UploadOutlined, InboxOutlined, PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'; // 2. Import DeleteOutlined
 import { useParams, useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
@@ -29,10 +29,12 @@ const EditNoticePage = () => {
     const [historicalTags, setHistoricalTags] = useState({});
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [selectedSource, setSelectedSource] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false); // 3. Add delete loading state
 
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const { categories, loading: categoriesLoading } = useCategories();
-    const { notices, updateNotice } = useNotices();
+    // 4. Destructure deleteNotice from useNotices
+    const { notices, updateNotice, deleteNotice } = useNotices();
     const { messageApi } = useNotification();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const navigate = useNavigate();
@@ -43,7 +45,7 @@ const EditNoticePage = () => {
         return notices.find(n => n.id === noticeId);
     }, [noticeId, notices]);
 
-     const sortedCategories = useMemo(() => {
+    const sortedCategories = useMemo(() => {
         if (!categories || categories.length === 0) return [];
         const desiredOrder = ['Process Audit', 'SEM'];
         return [...categories].sort((a, b) => {
@@ -169,8 +171,7 @@ const EditNoticePage = () => {
                 <>
                     <Form.Item
                         key="process"
-                        //这里代表之前历史的值进行修改，details=sdNotice,意味着把sdNotice中的title赋值上去
-                        name={['details', 'title']}
+                        name={['details', 'title']} // Use 'title' here to match onFinish
                         label="PROCESS/QUESTIONS"
                         rules={[{ required: true, message: '请输入Process/Questions' }]}
                     >
@@ -178,7 +179,7 @@ const EditNoticePage = () => {
                     </Form.Item>
                     <Form.Item
                         key="finding"
-                        name={['details', 'description']}
+                        name={['details', 'description']} // Use 'description' here to match onFinish
                         label="FINDINGS/DEVIATIONS"
                         rules={[{ required: true, message: '请输入FINDINGS/DEVIATIONS' }]}
                     >
@@ -208,11 +209,10 @@ const EditNoticePage = () => {
 
         const processFiles = async (fileList = []) => (
             Promise.all((fileList || []).map(async file => {
-                if (file.originFileObj) { // It's a new file
+                if (file.originFileObj) {
                     const base64Url = await getBase64(file.originFileObj);
                     return { uid: file.uid, name: file.name, status: 'done', url: base64Url, type: file.type, size: file.size };
                 }
-                // It's an existing file, just return the essential parts
                 return { uid: file.uid, name: file.name, url: file.url, status: file.status };
             }))
         );
@@ -230,7 +230,8 @@ const EditNoticePage = () => {
 
         const noticeUpdates = {
             category: values.category,
-            title: values.details?.process || values.details?.parameter || values.details?.criteria || editingNotice.title,
+            // Adjust title logic based on Process Audit fields
+            title: values.details?.title || values.details?.parameter || values.details?.criteria || editingNotice.title,
             assigned_supplier_id: values.supplierId,
             assigned_supplier_name: selectedSupplierInfo?.name || '',
             sd_notice: {
@@ -256,6 +257,22 @@ const EditNoticePage = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    // --- 5. Implement handleDelete function ---
+    const handleDelete = async () => {
+        if (!editingNotice) return;
+        setIsDeleting(true);
+        messageApi.loading({ content: '正在删除通知单...', key: 'deleting' });
+        try {
+            await deleteNotice(editingNotice.id);
+            messageApi.success({ content: `通知单 ${editingNotice.noticeCode} 已删除！`, key: 'deleting', duration: 2 });
+            navigate('/notices'); // Navigate back to the list after deletion
+        } catch (error) {
+            messageApi.error({ content: `删除失败: ${error.message}`, key: 'deleting', duration: 3 });
+            setIsDeleting(false);
+        }
+        // No finally block needed here as we navigate away on success
     };
 
     if (pageLoading || suppliersLoading || categoriesLoading) {
@@ -286,9 +303,7 @@ const EditNoticePage = () => {
                             <Col span={8}>
                                 <Form.Item name="category" label="问题类型" rules={[{ required: true }]}>
                                     <Select placeholder="请选择问题类型" loading={categoriesLoading} onChange={value => setSelectedCategory(value)}>
-
                                         {sortedCategories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
-
                                     </Select>
                                 </Form.Item>
                             </Col>
@@ -367,6 +382,19 @@ const EditNoticePage = () => {
                     <Form.Item style={{ marginTop: 32, textAlign: 'right' }}>
                         <Space>
                             <Button onClick={() => navigate('/notices')}>取消</Button>
+                            {/* --- 6. Add Delete Button with Popconfirm --- */}
+                            <Popconfirm
+                                title="确定要删除这个通知单吗？"
+                                description="此操作不可撤销。"
+                                onConfirm={handleDelete}
+                                okText="确认删除"
+                                cancelText="取消"
+                                okButtonProps={{ loading: isDeleting }}
+                            >
+                                <Button danger icon={<DeleteOutlined />} loading={isDeleting}>
+                                    删除通知单
+                                </Button>
+                            </Popconfirm>
                             <Button type="primary" htmlType="submit" loading={loading} size="large" icon={<SaveOutlined />}>
                                 保存修改
                             </Button>

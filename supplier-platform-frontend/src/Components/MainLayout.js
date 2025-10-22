@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
-import { ProductionAlertBell } from './ProductionAlertBell';
+
 import { CrownOutlined } from '@ant-design/icons'; 
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
@@ -130,7 +130,7 @@ const MainLayout = () => {
                 >
                     <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>供应商与SD信息交换平台</h2>
                     <Space size="large">
-                        <ProductionAlertBell />
+                    
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>欢迎您, <Text strong>{userName}</Text></Text>
                         <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>登出</Button>

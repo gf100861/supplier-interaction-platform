@@ -5,11 +5,11 @@ const NoticeContext = createContext();
 
 // --- 辅助函数：将 snake_case 转换为 camelCase (保持不变) ---
 const toCamel = (s) => {
-  return s.replace(/([-_][a-z])/ig, ($1) => {
-    return $1.toUpperCase()
-      .replace('-', '')
-      .replace('_', '');
-  });
+    return s.replace(/([-_][a-z])/ig, ($1) => {
+        return $1.toUpperCase()
+            .replace('-', '')
+            .replace('_', '');
+    });
 };
 const convertKeysToCamelCase = (obj) => {
     if (Array.isArray(obj)) {
@@ -27,7 +27,7 @@ export const NoticeProvider = ({ children }) => {
     const [notices, setNotices] = useState([]);
     const [loading, setLoading] = useState(true);
 
-     useEffect(() => {
+    useEffect(() => {
         const fetchNotices = async () => {
             try {
                 // --- 核心修改：在 select 语句中加入对 suppliers 表的关联查询 ---
@@ -43,7 +43,7 @@ export const NoticeProvider = ({ children }) => {
                         supplier:suppliers ( parma_id, short_code )
                     `)
                     .order('created_at', { ascending: false });
-                
+
                 if (error) throw error;
 
                 // 对所有返回的数据（包括嵌套的关联数据）进行“翻译”
@@ -97,7 +97,7 @@ export const NoticeProvider = ({ children }) => {
             throw err;
         }
     };
-    
+
     // --- 5. 重写 addNotices 函数，使用 Supabase API ---
     const addNotices = async (newNoticesArray) => {
         try {
@@ -111,7 +111,58 @@ export const NoticeProvider = ({ children }) => {
         }
     };
 
-    const value = { notices, loading, updateNotice, addNotices };
+    const deleteNotice = async (noticeId) => {
+        setLoading(true);
+        try {
+            const { error } = await supabase
+                .from('notices')
+                .delete()
+                .eq('id', noticeId);
+
+            if (error) {
+                throw error;
+            }
+
+            // Remove the notice from the local state
+            setNotices(prevNotices => prevNotices.filter(n => n.id !== noticeId));
+
+        } catch (error) {
+            console.error("Error deleting notice:", error);
+            // Rethrow the error so the component can catch it and show a message
+            throw error;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const deleteMultipleNotices = async (noticeIds) => {
+    if (!noticeIds || noticeIds.length === 0) {
+        throw new Error("没有选择任何通知单进行删除。");
+    }
+    setLoading(true); // 可以考虑为批量操作添加单独的 loading 状态
+    try {
+        const { error } = await supabase
+            .from('notices')
+            .delete()
+            .in('id', noticeIds); // <--- 使用 .in() 过滤器
+
+        if (error) {
+            throw error;
+        }
+
+        // 从本地状态中移除已删除的通知单
+        setNotices(prevNotices => prevNotices.filter(n => !noticeIds.includes(n.id)));
+
+    } catch (error) {
+        console.error("Error deleting multiple notices:", error);
+        // Rethrow the error so the component can catch it and show a message
+        throw error;
+    } finally {
+        setLoading(false);
+    }
+};
+
+    const value = { notices, loading, updateNotice, addNotices, deleteNotice,deleteMultipleNotices };
 
     return (
         <NoticeContext.Provider value={value}>

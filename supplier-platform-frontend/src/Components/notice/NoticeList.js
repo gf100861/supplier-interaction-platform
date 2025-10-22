@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, theme, Tooltip } from 'antd';
-// 1. 引入排序图标
-import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm,Tooltip} from 'antd'; // 1. Import message
+// 2. 引入删除图标
+import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-
+import { useNotices } from '../../contexts/NoticeContext';
+import { useNotification } from '../../contexts/NotificationContext';
 const { Text } = Typography;
 
 // --- 子组件：单个通知单 ---
@@ -17,7 +18,8 @@ const getStatusTag = (status) => {
             color = 'warning'; // 橙色
             break;
         case '待SD确认':
-             color = 'red'; 
+            color = 'red';
+            break; // Added break statement
         case '待SD关闭':
             color = 'purple'; // 紫色
             break;
@@ -34,9 +36,20 @@ const getStatusTag = (status) => {
 };
 
 
-const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleReviewToggle, token, currentUser, noticeCategoryDetails }) => {
+const SingleNoticeItem = ({
+    item,
+    getActionsForItem,
+    showDetailsModal,
+    handleReviewToggle,
+    token,
+    currentUser,
+    noticeCategoryDetails,
+    // --- 3. 添加批量选择相关 props ---
+    selectable = false,
+    selected = false,
+    onSelectChange = () => { }
+}) => {
 
-    // --- 核心修正：在使用前，进行一次安全检查，防止极端情况下的崩溃 ---
     const displayTitle = (item.title && typeof item.title === 'object')
         ? item.title.richText
         : item.title;
@@ -48,7 +61,17 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
 
     return (
         <List.Item actions={getActionsForItem(item)}>
-            {isReviewable && (
+            {/* --- 4. 添加用于批量选择的 Checkbox --- */}
+            {selectable && (
+                <Checkbox
+                    checked={selected}
+                    onChange={(e) => onSelectChange(item.id, e.target.checked)}
+                    onClick={(e) => e.stopPropagation()} // 防止点击 Checkbox 时触发 List.Item 的点击事件
+                    style={{ marginRight: '16px' }}
+                />
+            )}
+            {/* --- (可选) 为 SD/Manager 添加审阅 Checkbox --- */}
+            {isReviewable && !selectable && (
                 <Checkbox
                     checked={item.isReviewed}
                     onChange={(e) => handleReviewToggle(item, e)}
@@ -57,7 +80,7 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
                 />
             )}
             <List.Item.Meta
-                style={{ paddingLeft: '24px' }}
+                style={{ paddingLeft: selectable || isReviewable ? '0px' : '24px' }} // 根据是否有 Checkbox 调整内边距
                 avatar={<FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary }} />}
                 title={
                     <Space>
@@ -65,12 +88,9 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
                     </Space>
                 }
-                // description={`编号: ${item.noticeCode || item.id}`}
-
             />
             <Space size="middle">
                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
-                {/* ✨ 调用新函数来显示带颜色的状态 */}
                 {getStatusTag(item.status)}
             </Space>
         </List.Item>
@@ -80,17 +100,27 @@ const SingleNoticeItem = ({ item, getActionsForItem, showDetailsModal, handleRev
 const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
 
     const [sortOrder, setSortOrder] = useState('default');
-    // console.log('打印batch',batch.representative.supplier.shortCode)
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
-    const supplierName = batch.representative.supplier.shortCode || '未知供应商';
+    const supplierName = batch.representative.supplier?.name || '未知供应商'; // Corrected access
     const category = batch.representative?.category || '未知类型';
     const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
-    // --- 核心修正：在这里智能地判断并生成标题 ---
     const isRealBatch = batch.batchId.startsWith('BATCH-');
     const titleText = isRealBatch
         ? `批量任务: ${supplierShortCode} - ${category}`
         : `每日任务: ${supplierShortCode}- ${category}`;
 
+    // --- 5. 从 props 中获取 deleteMultipleNotices ---
+    const { notices, deleteMultipleNotices } = useNotices();
+    const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]); // 存储选中的子项 ID
+    const [isDeletingBatchItems, setIsDeletingBatchItems] = useState(false); // 删除加载状态
+
+    const { messageApi } = useNotification();
+
+    const allowBatchDelete = useMemo(() => {
+
+        return batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理'); // Also allow '待供应商处理' for flexibility
+
+    }, [batch.notices]);
 
     const sortedNotices = useMemo(() => {
         const noticesToSort = [...batch.notices];
@@ -106,6 +136,47 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     const handleSort = (order) => {
         setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
     };
+
+    // --- 6. 子项选择逻辑 ---
+    const handleSelectChange = (noticeId, checked) => {
+        setSelectedNoticeKeys(prevKeys =>
+            checked ? [...prevKeys, noticeId] : prevKeys.filter(key => key !== noticeId)
+        );
+    };
+
+    const handleSelectAll = (e) => {
+        const checked = e.target.checked;
+        if (checked) {
+            setSelectedNoticeKeys(sortedNotices.map(n => n.id));
+        } else {
+            setSelectedNoticeKeys([]);
+        }
+    };
+
+    // --- 7. 批量删除内部项的逻辑 ---
+    const handleBatchDeleteWithinBatch = async () => {
+        if (selectedNoticeKeys.length === 0) {
+            messageApi.warning('请至少选择一项进行删除。');
+            return;
+        }
+        setIsDeletingBatchItems(true);
+        try {
+            await deleteMultipleNotices(selectedNoticeKeys);
+            messageApi.success(`成功删除了 ${selectedNoticeKeys.length} 条通知单。`);
+            setSelectedNoticeKeys([]); // 清空选择
+            // 注意：这里需要父组件在删除后重新获取数据或更新状态，以反映列表变化
+
+        } catch (error) {
+            messageApi.error(`批量删除失败: ${error.message}`);
+
+        } finally {
+            setIsDeletingBatchItems(false);
+        }
+    };
+
+    const isAllSelected = sortedNotices.length > 0 && selectedNoticeKeys.length === sortedNotices.length;
+    const isIndeterminate = selectedNoticeKeys.length > 0 && selectedNoticeKeys.length < sortedNotices.length;
+
 
     return (
         <List.Item style={{ display: 'block', padding: 0 }}>
@@ -128,27 +199,13 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                                             {titleText}
                                         </Text>
                                     </Tooltip>
-
-                                    {/* --- 核心修正：只有当子项大于1时，才渲染排序按钮 --- */}
                                     {batch.notices.length > 1 && (
                                         <>
                                             <Tooltip title="按标题升序排列">
-                                                <Button
-                                                    type={sortOrder === 'asc' ? 'primary' : 'text'}
-                                                    size="small"
-                                                    shape="circle"
-                                                    icon={<SortAscendingOutlined />}
-                                                    onClick={(e) => { e.stopPropagation(); handleSort('asc'); }}
-                                                />
+                                                <Button type={sortOrder === 'asc' ? 'primary' : 'text'} size="small" shape="circle" icon={<SortAscendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('asc'); }} />
                                             </Tooltip>
                                             <Tooltip title="按标题降序排列">
-                                                <Button
-                                                    type={sortOrder === 'desc' ? 'primary' : 'text'}
-                                                    size="small"
-                                                    shape="circle"
-                                                    icon={<SortDescendingOutlined />}
-                                                    onClick={(e) => { e.stopPropagation(); handleSort('desc'); }}
-                                                />
+                                                <Button type={sortOrder === 'desc' ? 'primary' : 'text'} size="small" shape="circle" icon={<SortDescendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('desc'); }} />
                                             </Tooltip>
                                         </>
                                     )}
@@ -158,9 +215,51 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                         />
                     }
                 >
+                    {/* --- 8. 添加批量删除操作栏 --- */}
+
+                    {allowBatchDelete && (
+                        <div style={{ marginBottom: '16px', padding: '0 16px' }}>
+                            <Space>
+                                <Checkbox
+                                    indeterminate={isIndeterminate}
+                                    onChange={handleSelectAll}
+                                    checked={isAllSelected}
+                                >
+                                    全选
+                                </Checkbox>
+                                <Popconfirm
+                                    title={`确定要删除选中的 ${selectedNoticeKeys.length} 项吗？`}
+                                    onConfirm={handleBatchDeleteWithinBatch}
+                                    okText="确认删除"
+                                    cancelText="取消"
+                                    disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
+                                >
+                                    <Button
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
+                                        loading={isDeletingBatchItems}
+                                    >
+                                        删除选中项
+                                    </Button>
+                                </Popconfirm>
+                                {selectedNoticeKeys.length > 0 && <Text type="secondary">已选择 {selectedNoticeKeys.length} 项</Text>}
+                            </Space>
+                        </div>
+                    )}
+
                     <List
                         dataSource={sortedNotices}
-                        renderItem={notice => <SingleNoticeItem item={notice} {...props} />}
+                        renderItem={notice => (
+                            <SingleNoticeItem
+                                item={notice}
+                                {...props}
+                                // --- 9. 传递选择相关的 props ---
+                                selectable={allowBatchDelete}
+                                selected={selectedNoticeKeys.includes(notice.id)}
+                                onSelectChange={handleSelectChange}
+                            />
+                        )}
                     />
                 </Collapse.Panel>
             </Collapse>
@@ -174,10 +273,10 @@ export const NoticeList = (props) => {
         <List
             dataSource={props.data}
             renderItem={item => (
-                // 2. Pass all props down to the child components
                 item.isBatch
+                    // --- 10. 确保将所有 props (包括 deleteMultipleNotices) 传递给 NoticeBatchItem ---
                     ? <NoticeBatchItem batch={item} {...props} />
-                    : <SingleNoticeItem item={item} {...props} />
+                    : <SingleNoticeItem item={item} selectable={false} {...props} />
             )}
             locale={{ emptyText: '暂无相关通知单' }}
         />
