@@ -18,6 +18,7 @@ const { Dragger } = Upload;
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 const getBase64 = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = (error) => reject(error); });
 
+
 const EditNoticePage = () => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
@@ -39,6 +40,8 @@ const EditNoticePage = () => {
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const navigate = useNavigate();
     const { id: noticeId } = useParams();
+
+    console.log(currentUser)
 
     const editingNotice = useMemo(() => {
         if (!noticeId || notices.length === 0) return null;
@@ -223,7 +226,7 @@ const EditNoticePage = () => {
 
         const newHistoryEntry = {
             type: 'sd_notice_edit',
-            submitter: currentUser.name || currentUser.email,
+            submitter: currentUser.username || currentUser.email,
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
             description: 'SD 修改了初始通知内容。',
         };
@@ -237,7 +240,7 @@ const EditNoticePage = () => {
             sd_notice: {
                 ...editingNotice.sdNotice,
                 creatorId: currentUser.id,
-                creator: currentUser.name,
+                creator: currentUser.username,
                 createTime: values.date.format('YYYY-MM-DD HH:mm:ss'),
                 images: processedImages,
                 attachments: processedAttachments,
@@ -247,6 +250,7 @@ const EditNoticePage = () => {
             },
             history: [...(editingNotice.history || []), newHistoryEntry],
         };
+
 
         try {
             await updateNotice(editingNotice.id, noticeUpdates);

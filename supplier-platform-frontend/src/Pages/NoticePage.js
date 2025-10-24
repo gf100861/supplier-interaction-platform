@@ -35,7 +35,7 @@ const NoticePage = () => {
 
 
     const allPossibleStatuses = [
-        '待提交Action Planzh',
+        '待提交Action Plan',
         '待供应商关闭',
         '待SD确认',
         '待SD关闭',

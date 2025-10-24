@@ -29,6 +29,7 @@ import ForgotPasswordPage from './Pages/ForgotPasswordPage';
 import ResetPasswordPage from './Pages/ResetPasswordPage';
 import NotFoundPage from './Pages/NotFoundPage'
 import EditNoticePage from './Pages/EditNoticePage'; // <-- 1. 导入新页面
+import IntelligentSearchPage from './Pages/IntelligentSearchPage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -66,6 +67,7 @@ const ThemedApp = () => {
                                                 <Route path="reports" element={<ConsolidatedReportPage />} />
                                                 <Route path="admin" element={<AdminPage />} />
                                                 <Route path="edit-notice/:id" element={<EditNoticePage />} /> {/* <-- 2. 添加新路由 */}
+                                                <Route path="intelligence-search" element={<IntelligentSearchPage/>}></Route>
                                                 <Route path="*" element={< NotFoundPage />} />
                                             </Route>
                                         </Route>

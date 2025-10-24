@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carousel, Image, Divider,Spin } from 'antd';
+import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carousel, Image, Divider, Spin } from 'antd';
 import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
@@ -13,13 +13,11 @@ const useTypingEffect = (textToType, speed = 50) => {
     const [displayedText, setDisplayedText] = useState("");
     const [index, setIndex] = useState(0);
 
-    // Effect to reset the animation when the text prop changes
     useEffect(() => {
         setDisplayedText("");
         setIndex(0);
     }, [textToType]);
 
-    // Effect to handle the character-by-character typing
     useEffect(() => {
         if (index < textToType.length) {
             const timeout = setTimeout(() => {
@@ -37,60 +35,68 @@ const useTypingEffect = (textToType, speed = 50) => {
 // --- 2. Dynamic Image Carousel Component ---
 const LoginCarousel = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
-        const [imagesLoaded, setImagesLoaded] = useState({});
+    const [imagesLoaded, setImagesLoaded] = useState({});
 
-    const carouselItems = useMemo(() => [
-        {
-            src: '/images/Carousel1.jpg',
-            title: '协同 · 无界',
-            description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
-            bgColor: '#e0f2fe', // Light sky blue
-            cardBgColor: 'rgba(240, 249, 255, 0.7)',
-        },
-        {
-            src: '/images/Carousel2.jpg',
-            title: '数据 · 驱动',
-            description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
-            bgColor: '#f0fdf4', // Light mint green
-            cardBgColor: 'rgba(240, 253, 244, 0.7)',
-        },
-        {
-            src: '/images/Carousel3.jpg',
-            title: '效率 · 提升',
-            description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
-            bgColor: '#f5f3ff', // Light lavender
-            cardBgColor: 'rgba(245, 243, 255, 0.75)',
-        },
-    ], []);
+    // --- ✨ 核心修正: 在 useMemo 内部为每个图片 URL 添加时间戳 ---
+    const carouselItems = useMemo(() => {
+        const timestamp = Date.now(); // 获取当前时间戳
+        return [
+            {
+                src: `/images/Carousel1.jpg?t=${timestamp}`, // 附加时间戳
+                title: '协同 · 无界',
+                description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
+                bgColor: '#e0f2fe',
+                cardBgColor: 'rgba(240, 249, 255, 0.7)',
+            },
+            {
+                src: `/images/Carousel2.jpg?t=${timestamp}`, // 附加时间戳
+                title: '数据 · 驱动',
+                description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
+                bgColor: '#f0fdf4',
+                cardBgColor: 'rgba(240, 253, 244, 0.7)',
+            },
+            {
+                src: `/images/Carousel3.jpg?t=${timestamp}`, // 附加时间戳
+                title: '效率 · 提升',
+                description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
+                bgColor: '#f5f3ff',
+                cardBgColor: 'rgba(245, 243, 255, 0.75)',
+            },
+        ];
+    }, []); // 依赖项为空，时间戳在组件挂载时生成一次
 
-   useEffect(() => {
+    useEffect(() => {
+        console.log("Starting image preloading with cache busting...");
         carouselItems.forEach((item) => {
-            const img = new window.Image(); // Use the browser's Image object
-            img.src = item.src;
+            const img = new window.Image();
+            img.src = item.src; // 使用带时间戳的 URL 进行预加载
+
             img.onload = () => {
-                // When an image finishes loading, update its status in our state
+                console.log(`Image loaded successfully (cache busted): ${item.src}`);
                 setImagesLoaded((prevLoaded) => ({
                     ...prevLoaded,
-                    [item.src]: true,
+                    [item.src]: true, // 使用带时间戳的 URL 作为 key
                 }));
             };
+
+            img.onerror = (error) => {
+                console.error(`Failed to load image (cache busted): ${item.src}`, error);
+            };
         });
-    }, [carouselItems]); // Dependency array ensures this runs once
+    }, [carouselItems]); // 依赖于 carouselItems (虽然它只生成一次)
 
     const currentItem = carouselItems[currentIndex];
+    // 检查加载状态时也使用带时间戳的 URL
     const isCurrentImageLoaded = !!imagesLoaded[currentItem.src];
 
-    // --- ✨ STEP 3: Conditionally start the typing animation ---
-    // If the image is loaded, pass the description. Otherwise, pass a loading message or empty string.
     const typedDescription = useTypingEffect(
         isCurrentImageLoaded ? currentItem.description : '图片加载中...'
     );
 
-    // Effect to control the global body background color
     useEffect(() => {
         document.body.style.backgroundColor = currentItem.bgColor;
         document.body.style.transition = 'background-color 0.5s ease-in-out';
-        return () => { // Cleanup function
+        return () => {
             document.body.style.backgroundColor = '';
             document.body.style.transition = '';
         };
@@ -107,45 +113,28 @@ const LoginCarousel = () => {
             >
                 {carouselItems.map((item, index) => (
                     <div key={index}>
+                        {/* 渲染时也使用带时间戳的 URL */}
                         <Image src={item.src} preview={false} style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }} />
                     </div>
                 ))}
             </Carousel>
             <Card style={{ marginTop: '-60px', width: '90%', maxWidth: '450px', zIndex: 10, backdropFilter: 'blur(10px)', backgroundColor: currentItem.cardBgColor, border: '1px solid rgba(255, 255, 255, 0.2)', transition: 'background-color 0.5s ease-in-out' }}>
                 <Title level={3}>{currentItem.title}</Title>
-                {/* ✨ --- 修改 Paragraph 为一个 div 容器 --- ✨ */}
                 <div
                     className="typing-text-container"
-                    style={{
-                        position: 'relative', // 设为相对定位，作为子元素的定位基准
-                        minHeight: '72px', // 同样可以保留 minHeight 作为兜底
-                    }}
+                    style={{ position: 'relative', minHeight: '72px' }}
                 >
-                    {/* 底层：看不见的完整文本，用于撑开空间 */}
-                    <Paragraph
-                        type="secondary"
-                        style={{
-                            visibility: 'hidden', // 使用 visibility 而不是 display:none 来保留空间
-                        }}
-                    >
+                    <Paragraph type="secondary" style={{ visibility: 'hidden' }}>
                         {currentItem.description}
                     </Paragraph>
-
-                    {/* 顶层：看得见的打字效果文本 */}
                     <Paragraph
                         type="secondary"
-                        style={{
-                            position: 'absolute', // 绝对定位，覆盖在底层之上
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                        }}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                     >
-                           {/* Optional: Show a spinner while the image is loading */}
-                    {!isCurrentImageLoaded && <Spin size="small" />} 
+                        {!isCurrentImageLoaded && <Spin size="small" />}
                         {typedDescription}
-                        <span className="typing-cursor">|</span>
+                        {/* 仅在图片加载完成后显示光标 */}
+                        {isCurrentImageLoaded && <span className="typing-cursor">|</span>}
                     </Paragraph>
                 </div>
             </Card>
@@ -154,7 +143,7 @@ const LoginCarousel = () => {
 };
 
 
-// --- 3. Main Login Page Component ---
+// --- 3. Main Login Page Component (保持不变) ---
 const LoginPage = () => {
     const navigate = useNavigate();
     const { messageApi } = useNotification();
@@ -193,10 +182,10 @@ const LoginPage = () => {
                 {/* Left Side: Visuals and Branding */}
                 <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                     <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                        {/* <Image width={100} src="/volvo-logo.png"  preview={false} /> */}
+                        {/* Logo can be added back here if needed */}
                         <Title level={2} style={{ marginTop: '16px', color: '#1f2937' }}>供应商与SD信息交换平台</Title>
                         <Paragraph type="secondary" style={{ fontSize: '16px', maxWidth: '450px' }}>
-                            连接供应链的每一个环节，实现数据驱动的智能决策。
+                           连接供应链的每一个环节，实现数据驱动的智能决策。
                         </Paragraph>
                     </div>
                     <div style={{ maxWidth: '500px', width: '100%' }}>
@@ -221,7 +210,7 @@ const LoginPage = () => {
                             <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码!' }]}>
                                 <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
                             </Form.Item>
-
+                            
                             <Form.Item>
                                 <div style={{ textAlign: 'right' }}>
                                     <Link href="/forgot-password" target="_blank">忘记密码？</Link>
@@ -231,7 +220,7 @@ const LoginPage = () => {
                             <Form.Item>
                                 <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">登 录</Button>
                             </Form.Item>
-
+                            
                             <div style={{ textAlign: 'center' }}>
                                 <Text type="secondary" style={{ fontSize: '12px' }}>
                                     如遇登录问题，请联系：

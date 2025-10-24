@@ -1,0 +1,87 @@
+/* --- 整体布局 --- */
+.intelligent-search-layout {
+    display: flex;
+    flex-direction: row;
+    height: calc(100vh - 120px); /* 视您的 MainLayout 头部和边距而定 */
+    max-width: 1200px;
+    margin: 24px auto;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+}
+
+/* --- 侧边栏 (会话列表) --- */
+.chat-sider {
+    background-color: #ffffff !important;
+    border-right: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+}
+.chat-sider-header {
+    padding: 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+.chat-sider-menu {
+    border: none;
+    height: calc(100% - 65px);
+    overflow-y: auto;
+}
+
+/* --- 内容区 (聊天窗口) --- */
+.chat-content-layout {
+    background: #fff;
+}
+.chat-content-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid #f0f0f0;
+    background-color: #fafafa;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.chat-messages-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 24px;
+}
+.chat-input-area {
+    padding: 15px 24px;
+    border-top: 1px solid #f0f0f0;
+    background-color: #ffffff;
+}
+.chat-spin-container {
+    text-align: center;
+    padding: 50px;
+}
+
+/* --- 聊天消息样式 --- */
+.chat-message {
+    margin-bottom: 16px;
+    display: flex;
+}
+.chat-message.user {
+    justify-content: flex-end;
+}
+.chat-message.system {
+    justify-content: flex-start;
+}
+.chat-message-card {
+    max-width: 75%;
+    border-radius: 10px;
+}
+.chat-message-timestamp {
+    font-size: 11px;
+    display: block;
+    margin-top: 5px;
+}
+.chat-message.user .chat-message-timestamp {
+    text-align: right;
+}
+.chat-message.system .chat-message-timestamp {
+    text-align: left;
+}
+.feedback-buttons {
+    margin-top: 8px;
+    font-size: 12px;
+}
