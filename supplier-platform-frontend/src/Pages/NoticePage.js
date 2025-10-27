@@ -639,12 +639,12 @@ const NoticePage = () => {
         const userId = currentUser.id;
         const isLiked = currentLikes.includes(userId);
         const newLikesArray = isLiked ? currentLikes.filter(id => id !== userId) : [...currentLikes, userId];
-        const newHistoryEntry = { type: isLiked ? 'unlike' : 'like', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss') };
-        const updatedHistory = [...(notice.history || []), newHistoryEntry];
+        // const newHistoryEntry = { type: isLiked ? 'unlike' : 'like', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss') };
+        // const updatedHistory = [...(notice.history || []), newHistoryEntry];
 
         // --- 核心修正：直接使用 updateNotice Hook ---
         try {
-            await updateNotice(notice.id, { likes: newLikesArray, history: updatedHistory });
+            await updateNotice(notice.id, { likes: newLikesArray });
             messageApi.success(isLiked ? '已取消点赞' : '感谢您的认可！');
         } catch (error) {
             messageApi.error(`操作失败: ${error.message}`);

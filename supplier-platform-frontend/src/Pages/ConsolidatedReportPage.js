@@ -240,6 +240,7 @@ const ConsolidatedReportPage = () => {
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
 
     const generateColumnsForCategory = (category) => {
+
         const baseColumns = [
             { title: 'Parma ID', dataIndex: ['supplier', 'parmaId'], key: 'parma_id', width: 100, sorter: (a, b) => getNestedValue(a, ['supplier', 'parmaId']).localeCompare(getNestedValue(b, ['supplier', 'parmaId'])), },
             {

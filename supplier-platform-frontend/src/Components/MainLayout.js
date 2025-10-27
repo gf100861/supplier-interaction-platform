@@ -12,9 +12,8 @@ import {
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
-
+import { AlertBell } from './notice/AlertBell';
 import { CrownOutlined } from '@ant-design/icons';
-import { icons } from 'antd/es/image/PreviewGroup';
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
 
@@ -142,6 +141,7 @@ const MainLayout = () => {
 
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>欢迎您, <Text strong>{userName}</Text></Text>
+                        <AlertBell/>
                         <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>登出</Button>
                     </Space>
                 </Header>

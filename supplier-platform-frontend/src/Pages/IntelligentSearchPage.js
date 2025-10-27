@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Layout, Menu, Input, Button, List, Card, Typography, Spin, Avatar, Space, Tooltip, Rate, Modal,Popconfirm } from 'antd';
+import { Layout, Menu, Input, Button, List, Card, Typography, Spin, Avatar, Space, Tooltip, Rate, Modal, Popconfirm } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, LikeOutlined, DislikeOutlined, StarOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
@@ -85,7 +85,7 @@ const IntelligentSearchPage = () => {
                     .map(id => notices.find(n => n.id === id))
                     .filter(Boolean); // 过滤掉任何未找到的
 
-                console.log('www',resultNotices)
+                console.log('www', resultNotices)
 
                 return (
                     <div>
@@ -93,24 +93,24 @@ const IntelligentSearchPage = () => {
                         <List
                             size="small"
                             dataSource={resultNotices}
-                            
+
                             renderItem={item => (
                                 <List.Item key={item.id} style={{ padding: '8px 0' }}>
                                     <List.Item.Meta
                                         avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
                                         title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
-                                        description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode} | 发起人：${item?.creator?.username}` }
+                                        description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode} | 发起人：${item?.creator?.username}`}
                                     />
                                 </List.Item>
-                                
-    
+
+
                             )}
                         />
                     </div>
 
-                    
+
                 );
-   
+
             }
         } catch (e) {
             // 不是JSON，只是纯文本，保持原样
@@ -152,13 +152,13 @@ const IntelligentSearchPage = () => {
     }, [currentUser?.id]);
 
     // --- 切换会话时，重新加载消息 ---
-   // --- 切换会话时，或当notices列表更新时，重新加载消息 ---
-    useEffect(() => {
-        if (activeSessionId) {
-            fetchMessages(activeSessionId);
-        }
-    // --- 核心修正：在这里加入 'notices' 依赖项 ---
-    }, [activeSessionId, notices]);
+    // --- 切换会话时，或当notices列表更新时，重新加载消息 ---
+    useEffect(() => {
+        if (activeSessionId) {
+            fetchMessages(activeSessionId);
+        }
+        // --- 核心修正：在这里加入 'notices' 依赖项 ---
+    }, [activeSessionId, notices]);
 
     // 滚动到底部
     useEffect(() => {
@@ -176,18 +176,18 @@ const IntelligentSearchPage = () => {
 
     const handleDeleteSession = async (e, sessionId) => {
         e.stopPropagation(); // 阻止点击事件冒泡，防止Sider意外切换
-        
+
         try {
             const { error } = await supabase
                 .from('chat_sessions')
                 .delete()
                 .eq('id', sessionId)
                 .eq('user_id', currentUser.id); // 确保用户只能删除自己的
-                
+
             if (error) throw error;
 
             messageApi.success('对话已删除！');
-            
+
             // 立即从Sider的UI上移除
             const newSessions = sessions.filter(s => s.id !== sessionId);
             setSessions(newSessions);
@@ -200,7 +200,7 @@ const IntelligentSearchPage = () => {
                     handleNewChat(true); // 如果没有会话了，就新建一个
                 }
             }
-            
+
         } catch (error) {
             messageApi.error(`删除失败: ${error.message}`);
         }
@@ -254,7 +254,13 @@ const IntelligentSearchPage = () => {
             // const { data: aiData, error: aiError } = await supabase.functions.invoke(...);
             // ... (模拟 AI 回复)
             await new Promise(resolve => setTimeout(resolve, 1500));
-            const mockResults = notices.filter(n => (n.title?.toLowerCase() || '').includes(userQuery.toLowerCase())).slice(0, 3);
+            const lowerCaseQuery = userQuery.toLowerCase();
+            const mockResults = notices.filter(n => {
+                // 将整个通知单对象（包括所有历史记录和详情）转换为一个可搜索的字符串
+                const searchableText = JSON.stringify(n).toLowerCase();
+                return searchableText.includes(lowerCaseQuery);
+            }).slice(0, 3); // 仍然只返回最相关的3条
+
             let systemResponseContent; // <-- 存入DB的 (将是JSON字符串)
             let systemResponseRenderableContent; // <-- 立即显示的 (将是JSX)
 
@@ -271,10 +277,8 @@ const IntelligentSearchPage = () => {
                                         avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
                                         title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
                                         description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode}`}
-
                                     />
                                 </List.Item>
-
                             )}
                         />
                     </div>
@@ -290,7 +294,6 @@ const IntelligentSearchPage = () => {
                 systemResponseContent = systemResponseRenderableContent; // 纯文本直接存
             }
 
-            // ... (模拟 AI 回复结束)
 
             // 3. 保存系统消息到数据库
             const { data: savedSystemData, error: systemSaveError } = await supabase
@@ -431,7 +434,7 @@ const IntelligentSearchPage = () => {
                     onClick={(e) => setActiveSessionId(e.key)}
                     className="chat-sider-menu"
                 >
-                   {sessions.map(session => (
+                    {sessions.map(session => (
                         // --- 3. 核心修正：为 Menu.Item 添加删除按钮和确认框 ---
                         <Menu.Item key={session.id}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -465,6 +468,7 @@ const IntelligentSearchPage = () => {
                         <Space>
                             <Avatar icon={<RobotOutlined />} style={{ backgroundColor: '#1890ff' }} />
                             <Title level={4} style={{ margin: 0 }}>智能检索助手</Title>
+                                 <Paragraph type="secondary" style={{display:'contents'}}>检索通知单的所有内容</Paragraph>
                         </Space>
                         <Button icon={<StarOutlined />} onClick={() => setShowRatingModal(true)} disabled={!activeSessionId}>
                             评价本次会话
@@ -492,7 +496,11 @@ const IntelligentSearchPage = () => {
                                                 <Tooltip title="点踩"><Button type="text" size="small" shape="circle" icon={<DislikeOutlined />} style={{ color: msg.feedback === 'dislike' ? '#ff4d4f' : 'inherit' }} onClick={() => handleFeedback(msg.id, 'dislike')} /></Tooltip>
                                             </Space>
                                         )}
-                                        {msg.timestamp && !msg.isThinking && <Text type="secondary" className="chat-message-timestamp">{dayjs(msg.timestamp).format('HH:mm')}</Text>}
+                                        {msg.timestamp && !msg.isThinking && (
+                                            <Text type="secondary" className="chat-message-timestamp">
+                                                {dayjs(msg.timestamp).format('YYYY.MM.DD HH:mm')}
+                                            </Text>
+                                        )}
                                     </Card>
                                 </div>
                             ))
