@@ -7,8 +7,7 @@ import {
     LogoutOutlined,
     AuditOutlined,
     BookOutlined,
-    PrinterOutlined,
-    RobotOutlined
+    PrinterOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';

@@ -421,8 +421,8 @@ export const NoticeDetailModal = ({
             supplier_evidence_submission: "供应商提交了完成证据",
             sd_evidence_rejection: "SD驳回了完成证据",
             sd_closure_approve: "SD批准关闭",
-            manager_reassignment: "管理员重分配了供应商",
-            manager_void: "管理员作废了通知单",
+            manager_reassignment: "重分配了供应商",
+            manager_void: "作废了通知单",
             // --- 核心修正：在这里新增对 like 和 unlike 的处理 ---
             // like: "点赞了此改善",
             // unlike: "取消了点赞"
@@ -454,7 +454,7 @@ export const NoticeDetailModal = ({
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
             <Card size="small" type="inner">
                 {/* 修正 #2: 将富文本数组转换为纯文本 */}
-                <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description || notice?.sdNotice?.details?.finding)}</Paragraph>
+                <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.details?.description || notice?.sdNotice?.details?.finding)}</Paragraph>
                 <DynamicDetailsDisplay notice={notice} />
                 <ImageScroller images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />

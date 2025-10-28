@@ -2,17 +2,28 @@ import React, { useState, useEffect, useMemo } from 'react'; // 引入 useMemo
 import { useNavigate } from 'react-router-dom';
 
 import {
-    Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio // 引入 Radio
+    Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider // 引入 Radio
 } from 'antd';
-import { EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined } from '@ant-design/icons';
+import { EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined,MessageOutlined, BookOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph, Text} = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
-const { Search } = Input; // 从 Input 中解构 Search
+const { Search,TextArea } = Input; // 从 Input 中解构 Search
+
+
+const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix','alarm'];
+const feedbackStatusColors = {
+    new: 'blue',
+    acked: 'purple',
+    resolved: 'success',
+    wontfix: 'yellow',
+    alarm : 'red'
+};
+
 
 
 const AdminPage = () => {
@@ -38,6 +49,10 @@ const AdminPage = () => {
     const [correctionModal, setCorrectionModal] = useState({ visible: false, type: null, notice: null });
     const [correctionForm] = Form.useForm();
 
+    const [feedbackList, setFeedbackList] = useState([]); // 2. State for feedback
+    const [feedbackLoading, setFeedbackLoading] = useState(true); // 3. Loading state for feedback
+      const [feedbackResponses, setFeedbackResponses] = useState({}); // 1. State for admin responses
+
     const currentUser = JSON.parse(localStorage.getItem('user'));
 
       const navigate = useNavigate();
@@ -61,35 +76,52 @@ const AdminPage = () => {
     }, [notices, searchTerm, statusFilter]); // 当这三个值任意一个变化时，重新计算
 
     // --- Data Fetching ---
+  
+
+    // --- Data Fetching ---
     const fetchData = async () => {
         setLoading(true);
+        setFeedbackLoading(true); // Start feedback loading
         try {
-            // Fetch users
-            const { data: usersData, error: usersError } = await supabase.from('users').select(`id, username, email, phone, role, managed_suppliers:sd_supplier_assignments(supplier_id)`).in('role', ['SD', 'Manager']);
+            // Fetch users, suppliers, notices (existing logic)
+            const usersPromise = supabase.from('users').select(`id, username, email, phone, role, managed_suppliers:sd_supplier_assignments(supplier_id)`).in('role', ['SD', 'Manager']);
+            const suppliersPromise = supabase.from('suppliers').select('id, name');
+            const noticesPromise = supabase.from('notices').select('*').order('created_at', { ascending: false });
+            // --- 4. Fetch Feedback Data ---
+            const feedbackPromise = supabase
+                .from('feedback')
+                .select(`
+                    *,
+                    user:users ( username )
+                `)
+                .order('created_at', { ascending: false });
+
+
+            const [
+                { data: usersData, error: usersError },
+                { data: suppliersData, error: suppliersError },
+                { data: noticesData, error: noticesError },
+                { data: feedbackData, error: feedbackError } // Destructure feedback results
+            ] = await Promise.all([usersPromise, suppliersPromise, noticesPromise, feedbackPromise]);
+
             if (usersError) throw usersError;
-            setUsers(usersData);
-
-            // Fetch suppliers
-            const { data: suppliersData, error: suppliersError } = await supabase
-                .from('suppliers')
-                .select('id, name');
-
             if (suppliersError) throw suppliersError;
-            setAllSuppliers(suppliersData.map(s => ({ key: s.id, title: s.name })));
-
-            console.log('Supplier', allSuppliers)
-
-            // 新增：Fetch all notices
-            const { data: noticesData, error: noticesError } = await supabase.from('notices').select('*').order('created_at', { ascending: false });
             if (noticesError) throw noticesError;
-            setNotices(noticesData);
+            if (feedbackError) throw feedbackError; // Check for feedback error
+
+            setUsers(usersData || []);
+            setAllSuppliers(suppliersData.map(s => ({ key: s.id, title: s.name })) || []);
+            setNotices(noticesData || []);
+            setFeedbackList(feedbackData || []); // Set feedback data
 
         } catch (error) {
             messageApi.error(`数据加载失败: ${error.message}`);
         } finally {
             setLoading(false);
+            setFeedbackLoading(false); // Stop feedback loading
         }
     };
+
 
     const fetchLogs = () => {
         setLogs([
@@ -284,6 +316,62 @@ const AdminPage = () => {
     const onTransferChange = (nextTargetKeys) => {
         setTargetSupplierKeys(nextTargetKeys);
     };
+
+
+     const handleFeedbackStatusChange = async (feedbackId, newStatus) => {
+        messageApi.loading({ content: '正在更新状态...', key: `feedback-${feedbackId}` });
+        try {
+            const { error } = await supabase
+                .from('feedback')
+                .update({ status: newStatus })
+                .eq('id', feedbackId);
+
+            if (error) throw error;
+
+            messageApi.success({ content: '状态更新成功！', key: `feedback-${feedbackId}`, duration: 2 });
+            // Update local state for immediate UI feedback
+            setFeedbackList(prevList => prevList.map(item =>
+                item.id === feedbackId ? { ...item, status: newStatus } : item
+            ));
+            // Optional: Refetch all data if needed, but local update is faster
+            // fetchData();
+        } catch (error) {
+            messageApi.error({ content: `状态更新失败: ${error.message}`, key: `feedback-${feedbackId}`, duration: 3 });
+        }
+    };
+
+       const handleResponseChange = (feedbackId, value) => {
+        setFeedbackResponses(prev => ({
+            ...prev,
+            [feedbackId]: value
+        }));
+    };
+
+        const handleSaveFeedbackResponse = async (feedbackId) => {
+        const responseText = feedbackResponses[feedbackId];
+        // Check if the response actually changed from what's in the DB to avoid unnecessary updates
+        const currentFeedbackItem = feedbackList.find(item => item.id === feedbackId);
+        if (currentFeedbackItem && currentFeedbackItem.admin_response === responseText) {
+            return; // No change, do nothing
+        }
+
+        messageApi.loading({ content: '正在保存回复...', key: `response-${feedbackId}` });
+        try {
+            const { error } = await supabase
+                .from('feedback')
+                .update({ admin_response: responseText })
+                .eq('id', feedbackId);
+            if (error) throw error;
+            messageApi.success({ content: '回复已保存！', key: `response-${feedbackId}`, duration: 2 });
+             // Update the main feedback list state as well
+             setFeedbackList(prevList => prevList.map(item =>
+                item.id === feedbackId ? { ...item, admin_response: responseText } : item
+            ));
+        } catch (error) {
+            messageApi.error({ content: `回复保存失败: ${error.message}`, key: `response-${feedbackId}`, duration: 3 });
+        }
+    };
+
     // --- Table Column Definitions ---
     const userColumns = [
         // --- 修改点 6 ---
@@ -338,6 +426,32 @@ const AdminPage = () => {
             ),
         },
     ];
+
+     const feedbackColumns = [
+         { title: '提交用户', dataIndex: ['user', 'username'], key: 'username', width: 150, render: (username) => username || <Text type="secondary">未知用户</Text> },
+         { title: '反馈内容', dataIndex: 'content', key: 'content', ellipsis: true },
+         { title: '类别', dataIndex: 'category', key: 'category', width: 120, render: (cat) => cat || <Text type="secondary">无</Text> },
+         { title: '状态', dataIndex: 'status', key: 'status', width: 130, render: (status, record) => ( <Select value={status || 'new'} size="small" style={{ width: '100%' }} onChange={(value) => handleFeedbackStatusChange(record.id, value)}> {feedbackStatuses.map(s => (<Option key={s} value={s}> <Tag color={feedbackStatusColors[s] || 'default'}>{s}</Tag> </Option> ))} </Select> ) },
+         // --- 7. Add Admin Response Column ---
+         {
+            title: '管理员回复',
+            dataIndex: 'admin_response',
+            key: 'admin_response',
+            width: 250, // Adjust width as needed
+            render: (text, record) => (
+                <TextArea
+                    value={feedbackResponses[record.id] || ''}
+                    onChange={(e) => handleResponseChange(record.id, e.target.value)}
+                    onBlur={() => handleSaveFeedbackResponse(record.id)} // Save on blur
+                    placeholder="输入回复或备注..."
+                    autoSize={{ minRows: 1, maxRows: 4 }}
+                />
+            )
+         },
+         { title: '提交时间', dataIndex: 'created_at', key: 'created_at', width: 160, render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm') },
+         { title: '操作', key: 'action', width: 80, render: (_, record) => ( <Popconfirm title="确定删除此反馈吗?" onConfirm={async () => { /* delete logic */ }}> <Button danger type="link" size="small" icon={<DeleteOutlined />} /> </Popconfirm> ) }
+    ];
+
 
     const logColumns = [
         { title: '时间戳', dataIndex: 'timestamp', key: 'timestamp' },
@@ -396,8 +510,39 @@ const AdminPage = () => {
                         <Table columns={noticeColumns} dataSource={filteredNotices} rowKey="id" />
                     </TabPane>
 
-                    <TabPane tab={<Space><FileTextOutlined />系统日志</Space>} key="3">
+                      <TabPane tab={<Space><MessageOutlined />用户反馈</Space>} key="3">
+                        <Table columns={feedbackColumns} dataSource={feedbackList} rowKey="id" loading={feedbackLoading} />
+                    </TabPane>
+
+                    <TabPane tab={<Space><FileTextOutlined />系统日志</Space>} key="4">
                         <Table columns={logColumns} dataSource={logs} rowKey="id" />
+                    </TabPane>
+                      <TabPane tab={<Space><BookOutlined />开发文档</Space>} key="5">
+                         <Typography>
+                            <Title level={4}>系统开发文档</Title>
+                            <Paragraph>
+                                这里是开发文档的占位符内容。您可以将您的 Markdown 文件内容或通过其他方式获取的文档信息渲染在这里。
+                            </Paragraph>
+                            <Divider />
+                            <Title level={5}>技术栈</Title>
+                            <ul>
+                                <li>前端: React, Ant Design</li>
+                                <li>后端/数据库: Supabase (PostgreSQL, Auth, Edge Functions)</li>
+                                {/* Add more details */}
+                            </ul>
+                             <Title level={5}>主要功能模块</Title>
+                             <Paragraph>
+                                 - 用户认证与权限管理<br/>
+                                 - 通知单创建、流转与管理<br/>
+                                 - 供应商管理与分配<br/>
+                                 - 历史经验标签<br/>
+                                 - 报表与统计<br/>
+                                 - 实时提醒<br/>
+                                 - 管理后台<br/>
+                                 - (待开发) 智能检索与AI打标签
+                             </Paragraph>
+                             {/* Add more sections like Deployment, API Reference etc. */}
+                         </Typography>
                     </TabPane>
 
                 </Tabs>

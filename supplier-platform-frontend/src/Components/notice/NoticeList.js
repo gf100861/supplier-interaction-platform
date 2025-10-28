@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm,Tooltip} from 'antd'; // 1. Import message
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip } from 'antd'; // 1. Import message
 // 2. 引入删除图标
 import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -59,6 +59,7 @@ const SingleNoticeItem = ({
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据';
 
+
     return (
         <List.Item actions={getActionsForItem(item)}>
             {/* --- 4. 添加用于批量选择的 Checkbox --- */}
@@ -104,6 +105,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     const supplierName = batch.representative.supplier?.name || '未知供应商'; // Corrected access
     const category = batch.representative?.category || '未知类型';
     const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const isRealBatch = batch.batchId.startsWith('BATCH-');
     const titleText = isRealBatch
         ? `批量任务: ${supplierShortCode} - ${category}`
@@ -118,7 +120,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
     const allowBatchDelete = useMemo(() => {
 
-        return batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理'); // Also allow '待供应商处理' for flexibility
+        return batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理') && currentUser.role != 'Supplier'; // Also allow '待供应商处理' for flexibility
 
     }, [batch.notices]);
 

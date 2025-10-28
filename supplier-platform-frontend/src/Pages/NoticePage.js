@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Tabs, Form,  theme, Spin, Button, Space, Select, Tooltip } from 'antd';
+import { Card, Typography, Input, Tabs, Form,  theme, Spin, Button, Space, Select, Tooltip, Popconfirm } from 'antd';
 import { StarOutlined, StarFilled } from '@ant-design/icons'; // 1. 引入新图标
 import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -15,9 +15,7 @@ import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
-
 import { useConfig } from '../contexts/ConfigContext';
-// import { allPossibleStatuses } from '../data/_mockData'; // 导入状态字典
 import { supabase } from '../supabaseClient'; // 确保导入 supabase
 
 const { Title, Paragraph, Text } = Typography;
@@ -30,8 +28,6 @@ const NoticePage = () => {
     const { suppliers } = useSuppliers();
     const { messageApi, notificationApi } = useNotification();
     const { token } = theme.useToken();
-
-  
 
 
     const allPossibleStatuses = [
@@ -342,7 +338,7 @@ const NoticePage = () => {
     const handlePlanApprove = async (targetNotice) => {
 
         //selectedNotice 这个 state 中已经存储了我们正在操作的、完整的通知单对象
-        const notice = selectedNotice;
+        const notice = targetNotice;
         if (!notice) return;
 
         // 使用 (notice.history || []) 来确保我们总是在操作一个数组
@@ -694,9 +690,9 @@ const NoticePage = () => {
                 actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
             }
             // 关闭阶段
-            // if (item.status === '待SD关闭') {
-            //     actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
-            // }
+            if (item.status === '待SD关闭') {
+                actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
+            }
             
             if (item.status === '已完成' && isSDOrManager) {
                 const isLiked = item.likes && item.likes.includes(currentUser.id);

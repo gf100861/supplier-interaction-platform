@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Form, Input, Button, Upload, Typography, Divider, Modal, theme, Select, InputNumber, Card, Row, Col, Space, Spin, Empty, DatePicker, AutoComplete, Popconfirm } from 'antd'; // 1. Import Popconfirm
-import { UploadOutlined, InboxOutlined, PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'; // 2. Import DeleteOutlined
+import { Form, Input, Button, Upload, Typography, Divider, Modal, theme, Select, InputNumber, Card, Row, Col, Space, Spin, Empty, DatePicker, AutoComplete, Popconfirm } from 'antd';
+import { UploadOutlined, InboxOutlined, PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
@@ -30,18 +30,15 @@ const EditNoticePage = () => {
     const [historicalTags, setHistoricalTags] = useState({});
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [selectedSource, setSelectedSource] = useState(null);
-    const [isDeleting, setIsDeleting] = useState(false); // 3. Add delete loading state
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const { categories, loading: categoriesLoading } = useCategories();
-    // 4. Destructure deleteNotice from useNotices
     const { notices, updateNotice, deleteNotice } = useNotices();
     const { messageApi } = useNotification();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const navigate = useNavigate();
     const { id: noticeId } = useParams();
-
-    console.log(currentUser)
 
     const editingNotice = useMemo(() => {
         if (!noticeId || notices.length === 0) return null;
@@ -51,13 +48,16 @@ const EditNoticePage = () => {
     const sortedCategories = useMemo(() => {
         if (!categories || categories.length === 0) return [];
         const desiredOrder = ['Process Audit', 'SEM'];
-        return [...categories].sort((a, b) => {
+        // Ensure categories is treated as an array of strings if that's what useCategories returns
+        const categoryNames = Array.isArray(categories) ? categories : [];
+        return [...categoryNames].sort((a, b) => {
           const indexA = desiredOrder.indexOf(a);
           const indexB = desiredOrder.indexOf(b);
           if (indexA !== -1 && indexB !== -1) return indexA - indexB;
           if (indexA !== -1) return -1;
           if (indexB !== -1) return 1;
-          return a.localeCompare(b);
+          // Ensure localeCompare is called on strings
+          return String(a).localeCompare(String(b));
         });
       }, [categories]);
 
@@ -66,18 +66,25 @@ const EditNoticePage = () => {
             form.setFieldsValue({
                 category: editingNotice.category,
                 supplierId: editingNotice.assignedSupplierId,
-                date: dayjs(editingNotice.sdNotice.createTime),
-                problem_source: editingNotice.sdNotice.problem_source,
-                cause: editingNotice.sdNotice.cause,
-                details: editingNotice.sdNotice.details,
-                images: editingNotice.sdNotice.images,
-                attachments: editingNotice.sdNotice.attachments,
+                date: dayjs(editingNotice.sdNotice?.createTime), // Add safe navigation
+                problem_source: editingNotice.sdNotice?.problem_source, // Add safe navigation
+                cause: editingNotice.sdNotice?.cause, // Add safe navigation
+                details: editingNotice.sdNotice?.details, // Add safe navigation
+                images: editingNotice.sdNotice?.images || [], // Default to empty array
+                attachments: editingNotice.sdNotice?.attachments || [], // Default to empty array
             });
             setSelectedCategory(editingNotice.category);
-            handleSupplierChange(editingNotice.assignedSupplierId, editingNotice.sdNotice.problem_source, editingNotice.sdNotice.cause);
+            // Pass potentially undefined details safely
+            handleSupplierChange(editingNotice.assignedSupplierId, editingNotice.sdNotice?.problem_source, editingNotice.sdNotice?.cause);
             setPageLoading(false);
+        } else if (!editingNotice && notices.length > 0) {
+            // Handle case where notice ID is invalid but notices have loaded
+             messageApi.error("未找到指定的通知单。");
+             setPageLoading(false); // Stop loading indicator
         }
-    }, [editingNotice, form]);
+        // If notices are still loading, pageLoading remains true
+    }, [editingNotice, form, notices.length]); // Added notices.length dependency
+
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser) return [];
@@ -113,8 +120,10 @@ const EditNoticePage = () => {
             if (error) throw error;
 
             const tags = data.reduce((acc, { problem_source, cause }) => {
-                if (!acc[problem_source]) acc[problem_source] = new Set();
-                if (cause) acc[problem_source].add(cause);
+                if (problem_source){ // Ensure source exists before adding
+                    if (!acc[problem_source]) acc[problem_source] = new Set();
+                    if (cause) acc[problem_source].add(cause);
+                }
                 return acc;
             }, {});
 
@@ -127,42 +136,25 @@ const EditNoticePage = () => {
         }
     };
 
+    // --- ✨ CORE FIX: Modify renderDynamicFields ---
     const renderDynamicFields = () => {
-        if (!selectedCategory) return null;
+        if (!selectedCategory || !editingNotice?.sdNotice?.details) return null;
+
+        const details = editingNotice.sdNotice.details;
 
         if (selectedCategory === 'SEM') {
             return (
                 <>
-                    <Form.Item
-                        key="criteria"
-                        name={['details', 'criteria']}
-                        label="Criteria n°"
-                        rules={[{ required: true, message: '请输入 Criteria n°！' }]}
-                    >
+                    <Form.Item key="criteria" name={['details', 'criteria']} label="Criteria n°" rules={[{ required: true }]}>
                         <Input placeholder="请输入 Criteria n°" />
                     </Form.Item>
-                    <Form.Item
-                        key="parameter"
-                        name={['details', 'parameter']}
-                        label="SEM Parameter"
-                        rules={[{ required: true, message: '请输入 SEM Parameter！' }]}
-                    >
+                    <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true }]}>
                         <TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="请输入 SEM Parameter" />
                     </Form.Item>
-                    <Form.Item
-                        key="description"
-                        name={['details', 'description']}
-                        label="Gap description"
-                        rules={[{ required: true, message: '请输入 Gap description！' }]}
-                    >
+                    <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true }]}>
                         <TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="请输入 Gap description" />
                     </Form.Item>
-                    <Form.Item
-                        key="score"
-                        name={['details', 'score']}
-                        label="Actual SEM points"
-                        rules={[{ required: true, message: '请输入 Actual SEM points！' }]}
-                    >
+                    <Form.Item key="score" name={['details', 'score']} label="Actual SEM points" rules={[{ required: true }]}>
                         <InputNumber min={0} max={5} style={{ width: '100%' }} placeholder="请输入1到5之间的分数" />
                     </Form.Item>
                 </>
@@ -170,19 +162,30 @@ const EditNoticePage = () => {
         }
 
         if (selectedCategory === 'Process Audit') {
+            // Determine the correct field name for PROCESS/QUESTIONS
+            // Check if 'title' exists in details, otherwise check for 'process', finally check for 'finding' as per user description
+            const processFieldName = details.hasOwnProperty('title') ? 'title'
+                                   : details.hasOwnProperty('process') ? 'process'
+                                   : details.hasOwnProperty('finding') ? 'finding' // Use finding if title/process don't exist
+                                   : 'title'; // Default fallback if none exist (less likely)
+
+            // The FINDINGS/DEVIATIONS field seems consistently mapped to 'description'
+            const findingFieldName = details.hasOwnProperty('description') ? 'description'
+                                    : 'finding'
+
             return (
                 <>
                     <Form.Item
-                        key="process"
-                        name={['details', 'title']} // Use 'title' here to match onFinish
+                        key={processFieldName} // Use determined field name for key
+                        name={['details', processFieldName]} // Use determined field name
                         label="PROCESS/QUESTIONS"
                         rules={[{ required: true, message: '请输入Process/Questions' }]}
                     >
                         <Input placeholder="请输入Process/Questions" />
                     </Form.Item>
                     <Form.Item
-                        key="finding"
-                        name={['details', 'description']} // Use 'description' here to match onFinish
+                        key={findingFieldName}
+                        name={['details', findingFieldName]}
                         label="FINDINGS/DEVIATIONS"
                         rules={[{ required: true, message: '请输入FINDINGS/DEVIATIONS' }]}
                     >
@@ -194,6 +197,7 @@ const EditNoticePage = () => {
 
         return null;
     };
+
 
     const handlePreview = async (file) => {
         if (!file.url && !file.preview && file.originFileObj) {
@@ -230,11 +234,24 @@ const EditNoticePage = () => {
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
             description: 'SD 修改了初始通知内容。',
         };
+        const currentHistory = editingNotice.history || [];
+        const updatedHistory = [...currentHistory, newHistoryEntry];
+
+         // Determine title based on category and available fields
+         let noticeTitle = editingNotice.title; // Default to original
+         if (values.category === 'Process Audit') {
+            noticeTitle = values.details?.title || values.details?.process || values.details?.finding || noticeTitle;
+         } else if (values.category === 'SEM') {
+            noticeTitle = values.details?.parameter || values.details?.criteria || noticeTitle;
+         } else {
+             // Fallback for other categories if they have a 'title' in details
+             noticeTitle = values.details?.title || noticeTitle;
+         }
+
 
         const noticeUpdates = {
             category: values.category,
-            // Adjust title logic based on Process Audit fields
-            title: values.details?.title || values.details?.parameter || values.details?.criteria || editingNotice.title,
+            title: noticeTitle, // Use determined title
             assigned_supplier_id: values.supplierId,
             assigned_supplier_name: selectedSupplierInfo?.name || '',
             sd_notice: {
@@ -248,9 +265,8 @@ const EditNoticePage = () => {
                 problem_source: values.problem_source || null,
                 cause: values.cause || null,
             },
-            history: [...(editingNotice.history || []), newHistoryEntry],
+            history: updatedHistory
         };
-
 
         try {
             await updateNotice(editingNotice.id, noticeUpdates);
@@ -263,7 +279,6 @@ const EditNoticePage = () => {
         }
     };
 
-    // --- 5. Implement handleDelete function ---
     const handleDelete = async () => {
         if (!editingNotice) return;
         setIsDeleting(true);
@@ -271,12 +286,11 @@ const EditNoticePage = () => {
         try {
             await deleteNotice(editingNotice.id);
             messageApi.success({ content: `通知单 ${editingNotice.noticeCode} 已删除！`, key: 'deleting', duration: 2 });
-            navigate('/notices'); // Navigate back to the list after deletion
+            navigate('/notices');
         } catch (error) {
             messageApi.error({ content: `删除失败: ${error.message}`, key: 'deleting', duration: 3 });
             setIsDeleting(false);
         }
-        // No finally block needed here as we navigate away on success
     };
 
     if (pageLoading || suppliersLoading || categoriesLoading) {
@@ -386,7 +400,6 @@ const EditNoticePage = () => {
                     <Form.Item style={{ marginTop: 32, textAlign: 'right' }}>
                         <Space>
                             <Button onClick={() => navigate('/notices')}>取消</Button>
-                            {/* --- 6. Add Delete Button with Popconfirm --- */}
                             <Popconfirm
                                 title="确定要删除这个通知单吗？"
                                 description="此操作不可撤销。"
