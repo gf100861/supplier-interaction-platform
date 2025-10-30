@@ -259,7 +259,7 @@ const IntelligentSearchPage = () => {
                 // 将整个通知单对象（包括所有历史记录和详情）转换为一个可搜索的字符串
                 const searchableText = JSON.stringify(n).toLowerCase();
                 return searchableText.includes(lowerCaseQuery);
-            }).slice(0, 3); // 仍然只返回最相关的3条
+            }).slice(0, 5); // 仍然只返回最相关的3条
 
             let systemResponseContent; // <-- 存入DB的 (将是JSON字符串)
             let systemResponseRenderableContent; // <-- 立即显示的 (将是JSX)

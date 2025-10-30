@@ -22,13 +22,25 @@ const stickyColumnWidths = {
 };
 
 const matrixStyles = {
-    scrollContainer: { overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: '8px' },
-    table: { display: 'inline-block', minWidth: '100%' },
-    headerRow: { display: 'flex', position: 'sticky', top: 0, zIndex: 2, backgroundColor: '#fafafa' },
-    bodyRow: { display: 'flex' },
-    stickyCell: { padding: '8px 12px', borderRight: '1px solid #f0f0f0', backgroundColor: '#fff', position: 'sticky', zIndex: 1 },
-    headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
-    cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
+    // 移除 scrollContainer
+    table: { display: 'inline-block', minWidth: '100%' },
+    headerRow: { 
+        display: 'flex', 
+        position: 'sticky', // <-- 它将粘在 Card 的 body 顶部
+        top: 0, 
+        zIndex: 2, 
+        backgroundColor: '#fafafa' 
+    },
+    bodyRow: { display: 'flex' },
+    stickyCell: { 
+        padding: '8px 12px', 
+        borderRight: '1px solid #f0f0f0', 
+        backgroundColor: '#fff', 
+        position: 'sticky', 
+        zIndex: 1 // body row zIndex
+    },
+    headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
+    cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
 };
 
 
@@ -360,6 +372,11 @@ const AuditPlanPage = () => {
             <Card
                 title={`${currentYear} 年度规划矩阵`}
                 extra={<Button icon={<DownloadOutlined />} onClick={handleExportExcel}>导出为Excel</Button>}
+                bodyStyle={{
+                    padding: 0,
+                    overflow: 'auto', // 允许垂直和水平滚动
+                    maxHeight: 'calc(100vh - 400px)' // 设置一个最大高度，开始垂直滚动
+                }}
             >
                 {loading || suppliersLoading ? <div style={{ textAlign: 'center', padding: '50px' }}><Spin size="large" /></div> : (
                     <div style={matrixStyles.scrollContainer}>

@@ -323,23 +323,46 @@ const BatchNoticeCreationPage = () => {
         setGlobalSettings(null);
     };
 
-    const handleSubmitAll = async () => {
-        if (!globalSettings) {
-            messageApi.error('请点击“确认设置”按钮！');
-            return;
-        }
+   const handleSubmitAll = async () => {
+        if (!globalSettings) {
+            messageApi.error('请点击“确认设置”按钮！');
+            return;
+        }
 
-        const validDataSource = dataSource.filter(item =>
-            (typeof item.title === 'string' && item.title.trim() !== '') ||
-            (typeof item.description === 'string' && item.description.trim() !== '')
-        );
+        const validDataSource = dataSource.filter(item => {
+            // 获取当前分类的动态列定义
+            const dynamicFields = categoryColumnConfig[globalSettings.category] || [];
+            // 找出所有被定义为 "editable: true" 的字段的 dataIndex
+            // 修正：我们应该检查所有非备注的必填字段，而不仅仅是 "editable" 字段
+            const keyFields = dynamicFields
+                .filter(col => col.dataIndex !== 'comments' && col.dataIndex !== 'score') // 排除备注和非文本分数
+                .map(col => col.dataIndex); // e.g., ['criteria', 'parameter', 'description'] or ['title', 'description']
 
-        if (validDataSource.length === 0) {
-            messageApi.error('请至少填写一条有效的整改项！');
-            return;
-        }
+            // 如果配置为空（例如 "其他"），我们至少要检查 title 和 description
+            if (keyFields.length === 0) {
+                keyFields.push('title', 'description');
+            }
+            // 检查：这些关键字段中，是否 *至少有一个* 被填写了
+            const isValid = keyFields.some(key => {
+                const value = item[key];
+                // 核心修正：这个新方法可以完美处理字符串、数字(integer)和null/undefined
+                // 1. 将 value 转换为字符串
+                // 2. 去除首尾空格
+                // 3. 检查长度是否不为0
+                const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
+                
+                return hasValue;
+            });
 
-        messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
+            return isValid;
+        });
+
+        if (validDataSource.length === 0) {
+            messageApi.error('请至少填写一条有效的整改项！（例如: 标题、描述等关键字段不能为空）');
+            return;
+        }
+
+        messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
 
         // --- 核心修正 2：在提交前，异步处理所有行的数据，特别是图片 ---
         const processRowData = async (item) => {
@@ -540,6 +563,8 @@ const BatchNoticeCreationPage = () => {
                 importedData.push(newRowData);
                 currentDataIndex++;
             });
+
+            console.log('打印的Data',importedData)
 
             setDataSource(prevData => [...prevData, ...importedData]);
             setCount(currentDataIndex);

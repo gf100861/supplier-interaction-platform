@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select } from 'antd';
-import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm } from 'antd';
+import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
 import { supabase } from '../supabaseClient';
 import { useSuppliers } from '../contexts/SupplierContext';
+import { useNotification } from '../contexts/NotificationContext';
 const { Title, Paragraph, Text } = Typography;
 
 const DashboardPage = () => {
@@ -17,26 +18,60 @@ const DashboardPage = () => {
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const [nextMonthPlans, setNextMonthPlans] = useState([]);
     const [plansLoading, setPlansLoading] = useState(true);
-    
+
 
     const [planCategories, setPlanCategories] = useState([]);
     const [categoriesLoading, setCategoriesLoading] = useState(true);
     const [selectedPlanCategory, setSelectedPlanCategory] = useState('all');
     const [selectedPlanSupplier, setSelectedPlanSupplier] = useState('all');
 
-     const managedSuppliers = useMemo(() => {
-           if (!currentUser || !suppliers) return [];
-           if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-             return suppliers;
-           }
-           if (currentUser.role === 'SD') {
-             const managed = currentUser.managed_suppliers || [];
-             // Ensure supplier data is present before returning
-             return managed.map(assignment => assignment.supplier).filter(Boolean);
-           }
-           return [];
-         }, [currentUser, suppliers]);
+    const { messageApi } = useNotification();
+    const { Option } = Select; // 确保 Option 已导入
 
+    const managedSuppliers = useMemo(() => {
+        if (!currentUser || !suppliers) return [];
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+            return suppliers;
+        }
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            // Ensure supplier data is present before returning
+            return managed.map(assignment => assignment.supplier).filter(Boolean);
+        }
+        return [];
+    }, [currentUser, suppliers]);
+
+    const handleMarkAsComplete = async (id, currentStatus) => {
+        const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
+        const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
+        const { error } = await supabase
+            .from('audit_plans')
+            .update({ status: newStatus, completion_date: completionDate })
+            .eq('id', id);
+
+        if (error) {
+            messageApi.error(`更新状态失败: ${error.message}`);
+        } else {
+            messageApi.success('状态更新成功！');
+            // 实时更新UI：从列表中移除 (因为它不再是'待办')
+            setNextMonthPlans(prevPlans => prevPlans.filter(p => p.id !== id));
+        }
+    };
+
+    const handleDeleteEvent = async (id) => {
+        const { error } = await supabase
+            .from('audit_plans')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            messageApi.error(`删除失败: ${error.message}`);
+        } else {
+            messageApi.success('事件已删除！');
+            // 实时更新UI：从列表中移除
+            setNextMonthPlans(prevPlans => prevPlans.filter(p => p.id !== id));
+        }
+    };
 
     // Fetch all users
     useEffect(() => {
@@ -142,7 +177,7 @@ const DashboardPage = () => {
 
         // --- 将新筛选器 state 加入依赖项 ---
     }, [currentUser, suppliers, suppliersLoading, selectedPlanCategory, selectedPlanSupplier]);
-  
+
     const userLookup = useMemo(() => {
         return allUsers.reduce((acc, user) => {
             acc[user.id] = user;
@@ -151,7 +186,7 @@ const DashboardPage = () => {
     }, [allUsers]);
 
     const dashboardData = useMemo(() => {
-          if (noticesLoading || usersLoading || suppliersLoading) return null; 
+        if (noticesLoading || usersLoading || suppliersLoading) return null;
 
         let baseData = [];
         if (currentUser) {
@@ -211,12 +246,12 @@ const DashboardPage = () => {
     const planCardLoading = plansLoading || categoriesLoading;
 
 
-     if (mainPageLoading && !dashboardData) {
-           return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
-       }
-       if (!dashboardData) {
-           return <div style={{ padding: 24 }}><Empty description="无法加载仪表盘数据，请稍后重试或联系管理员。" /></div>;
-       }
+    if (mainPageLoading && !dashboardData) {
+        return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
+    }
+    if (!dashboardData) {
+        return <div style={{ padding: 24 }}><Empty description="无法加载仪表盘数据，请稍后重试或联系管理员。" /></div>;
+    }
 
 
 
@@ -228,7 +263,7 @@ const DashboardPage = () => {
                     <Title level={4} style={{ margin: 0 }}>我的仪表盘</Title>
                     <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>查看与您公司相关的核心问题指标。</Paragraph>
                 </Card>
-                <Row gutter={[24, 24]}>
+                <Row gutter={[10, 10]}>
                     <Col xs={24} sm={12}>
                         <Card bordered={false} loading={mainPageLoading}><Statistic title="本月已关闭问题" value={dashboardData.closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Card>
                     </Col>
@@ -247,7 +282,6 @@ const DashboardPage = () => {
             </div>
         );
     }
-
     // --- SD / Manager / Admin View ---
     const { closedThisMonth, allOpenIssues, supplierActionRequired, topImprovement } = dashboardData;
 
@@ -270,28 +304,25 @@ const DashboardPage = () => {
             </Card>
 
             <Row gutter={[24, 24]} align="stretch">
-                <Col xs={24} md={isSDManagerOrAdmin ? 12 : 24} lg={12}>
-                    {/* --- 核心修正 2：使用 height: '100%' 替代 minHeight --- */}
-                    <Card bordered={false}loading={mainPageLoading} style={{ height: '100%' }}>
-                        <Row gutter={16} align="middle">
-                            <Col span={12}>
-                                <Statistic title="本月已关闭问题" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
-                            </Col>
-                            <Col span={12}>
-                                <Statistic title="所有未关闭问题" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
-                            </Col>
-                        </Row>
+                {/* 1. KPI 卡片：宽度从 lg={12} 缩小为 lg={8} */}
+                <Col xs={24} md={isSDManagerOrAdmin ? 8 : 24} lg={8}>
+                    <Card bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                        {/* 2. 移除 Row 和 Col，改为垂直堆叠 */}
+                        <Statistic title="本月已关闭问题" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
+                        <div style={{ marginTop: '24px' }}>
+                            <Statistic title="所有未关闭问题" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
+                        </div>
                     </Card>
                 </Col>
 
                 {isSDManagerOrAdmin && (
-                    <Col xs={24} md={12} lg={12}>
-                        {/* --- ✨ 核心修正 2: 为计划卡片设置 minHeight --- */}
+                    // 3. 计划卡片：宽度从 lg={12} 扩展为 lg={16}
+                    <Col xs={24} md={16} lg={16}>
                         <Card
                             title={`下月 (${dayjs().add(1, 'month').format('YYYY年M月')}) 计划概览`}
                             bordered={false}
                             loading={planCardLoading}
-                            style={{ height: '100%' }}// 设置最小高度
+                            style={{ height: '100%' }}
                         >
                             <Space wrap style={{ marginBottom: 16 }}>
                                 <Select
@@ -315,32 +346,53 @@ const DashboardPage = () => {
                                     ]}
                                 />
                             </Space>
+
                             <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
                                 <List
                                     itemLayout="horizontal"
                                     dataSource={nextMonthPlans}
                                     renderItem={(plan) => (
+
                                         <List.Item>
+
                                             <List.Item.Meta
+
                                                 avatar={getPlanIcon(plan.type)}
+
                                                 title={<Text strong>{plan.supplier_name}</Text>}
+
                                                 description={`类型: ${plan.category} | 负责人: ${plan.auditor}`}
+
                                             />
+
                                             <Tag>{plan.type === 'audit' ? '审计' : (plan.type === 'qrm' ? 'QRM' : '评审')}</Tag>
+
+                                            <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
+                                                <Popconfirm title={`确定要将状态变更为“${plan.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(plan.id, plan.status)}>
+                                                    <Button type="text" size="small" style={{ padding: '0 5px', color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }}>
+                                                        {plan.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
+                                                    </Button>
+                                                </Popconfirm>
+                                                <Popconfirm title="确定删除此项吗?" onConfirm={() => handleDeleteEvent([plan].id)}>
+                                                    <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} />
+                                                </Popconfirm>
+                                            </Space>
+
                                         </List.Item>
+
                                     )}
                                     locale={{ emptyText: <Empty description="下个月暂无计划。" /> }}
-                                // pagination={{ pageSize: 3, size:'small' }} // <-- 移除此行
                                 />
+
+
                             </div>
                         </Card>
                     </Col>
                 )}
             </Row>
-
             <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
                 <Col xs={24} lg={12}>
-                    <Card title="行动预警：近30天待处理" bordered={false} loading={mainPageLoading}  style={{ height: '100%' }}>
+                    <Card title="行动预警：近30天待处理" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
                         <List
                             itemLayout="horizontal"
                             dataSource={supplierActionRequired}
@@ -367,17 +419,28 @@ const DashboardPage = () => {
                     <Card title="亮点展示：近期最受欢迎改善" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
                         {topImprovement ? (
                             <div>
-                                <Tag color="gold" style={{ marginBottom: 16 }}>来自: {topImprovement.supplier?.short_code || '未知'}</Tag>
-                                <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
-                                <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
-                                    {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || '无详细描述'}
-                                    <Divider style={{ margin: '8px 0' }} />
-                                    <Space size='small' wrap>
+                                {/* 1. 将所有标签放在一个 Space 容器中，并与按钮水平对齐 */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                    <Space wrap size="small">
+                                        <Tag color="gold">来自: {topImprovement.supplier?.short_code || '未知'}</Tag>
                                         {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
                                         {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
-                                        {!topImprovement?.sdNotice?.problem_source && !topImprovement?.sdNotice?.cause && <Text type="secondary">(暂无标签)</Text>}
                                     </Space>
+                                    <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>
+                                        查看详情
+                                    </Button>
+                                </div>
+
+                                <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
+
+                                {/* 2. 描述: 现在只包含描述 */}
+                                <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
+                                    {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || '无详细描述'}
                                 </Paragraph>
+
+                                {/* 3. 移除描述下方的标签，将其移到顶部 */}
+                                <Divider style={{ margin: '12px 0' }} />
+
                                 <Space align="center">
                                     <StarOutlined style={{ color: '#ffc53d' }} />
                                     <Text strong>{topImprovement.likes?.length || 0} 个赞</Text>
@@ -391,8 +454,6 @@ const DashboardPage = () => {
                                         ))}
                                     </Avatar.Group>
                                 </Space>
-
-                                <Button type="link" style={{ display: 'block', marginTop: 16 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>查看详情</Button>
                             </div>
                         ) : (
                             <Empty description="近期暂无获得点赞的改善案例。" />

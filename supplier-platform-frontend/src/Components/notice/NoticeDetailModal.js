@@ -484,7 +484,7 @@ export const NoticeDetailModal = ({
 
                 {(notice.history || []).map((h, index) => {
                     const label = getHistoryItemLabel(h);
-                    console.log('h是什么', h)
+                  
                     return (
                         <Timeline.Item key={index} color={label.color}>
                             <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
