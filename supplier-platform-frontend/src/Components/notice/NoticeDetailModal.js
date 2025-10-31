@@ -2,8 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm } from 'antd';
 import {
-    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined,  SolutionOutlined,
-     LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
+    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, SolutionOutlined,
+    LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
     InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
@@ -20,7 +20,7 @@ const DynamicDetailsDisplay = ({ notice }) => {
     // 修正 #2: 使用可选链 ?. 来安全地访问深层属性
     if (!notice?.category || !notice?.sdNotice?.details) return null;
 
-    const config =  [];
+    const config = [];
     const dynamicFields = config.filter(
         col => col.dataIndex !== 'title' && col.dataIndex !== 'description'
     );
@@ -479,27 +479,26 @@ export const NoticeDetailModal = ({
             <Timeline>
                 <Timeline.Item color="green">
                     <p><b>{notice?.creator?.username || '发起人'}</b> 在 {dayjs(notice.createdAt).format('YYYY-MM-DD HH:mm')} 发起了通知</p>
-
                 </Timeline.Item>
 
-                {(notice.history || []).map((h, index) => {
+                {(() => {
+                    const history = notice.history || [];
+                    if (history.length === 0) {
+                        return <Timeline.Item>（暂无更多历史记录）</Timeline.Item>;
+                    }
+
+                    const h = history[history.length - 1];
                     const label = getHistoryItemLabel(h);
-                  
                     return (
-                        <Timeline.Item key={index} color={label.color}>
+                        <Timeline.Item key={history.length - 1} color={label.color}>
                             <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
-
-                            {/* 如果历史记录中有描述，则显示 */}
                             {h.description && h.description.startsWith('[') && <Text type="danger">{h.description}</Text>}
-                            {/* <AttachmentsDisplay attachments={h.attachments} /> */}
-
-                            {/* ✨ 在对应的历史节点，调用新组件来显示计划/证据详情 */}
                             {(h.type === 'supplier_plan_submission' || h.type === 'supplier_evidence_submission') && (
                                 <ActionPlanReviewDisplay historyItem={h} />
                             )}
                         </Timeline.Item>
                     );
-                })}
+                })()}
             </Timeline>
 
             {notice.status === '已完成' && isSDOrManager && (
