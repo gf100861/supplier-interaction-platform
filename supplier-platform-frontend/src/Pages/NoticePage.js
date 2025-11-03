@@ -1,43 +1,47 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Tabs, Form,  theme, Spin, Button, Space, Select, Tooltip, Popconfirm } from 'antd';
-import { StarOutlined, StarFilled } from '@ant-design/icons'; // 1. 引入新图标
-import dayjs from 'dayjs';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SortAscendingOutlined, SortDescendingOutlined,EditOutlined } from '@ant-design/icons';
-// 1. 导入所有需要的组件、Hooks 和数据
+import {
+    Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider, DatePicker, Tooltip, theme // 1. 引入 DatePicker
+} from 'antd';
+import { EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, ManOutlined } from '@ant-design/icons';
+import { supabase } from '../supabaseClient';
+import dayjs from 'dayjs';
+
+// 2. 导入所有需要的组件、Hooks 和数据
 import { NoticeList } from '../Components/notice/NoticeList';
 import { RejectionModal } from '../Components/notice/RejectionModal';
 import { CorrectionModal } from '../Components/notice/CorrectionModal';
 import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
 
-
 //导入所有需要的所有的Context
 import { useNotification } from '../contexts/NotificationContext';
-import { useSuppliers } from '../contexts/SupplierContext';
+import { useSuppliers } from '../contexts/SupplierContext'; // 3. 导入 useSuppliers
 import { useNotices } from '../contexts/NoticeContext';
 import { useConfig } from '../contexts/ConfigContext';
-import { supabase } from '../supabaseClient'; // 确保导入 supabase
+
 
 const { Title, Paragraph, Text } = Typography;
 const { Search } = Input;
 const { TabPane } = Tabs;
+const { RangePicker } = DatePicker; // 4. 解构 RangePicker
+
 
 const NoticePage = () => {
-    // --- 状态管理 (已清理) ---
+    // --- 状态管理 ---
     const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
-    const { suppliers } = useSuppliers();
-    const { messageApi, notificationApi } = useNotification();
+    const { suppliers, loading: suppliersLoading } = useSuppliers(); // 5. 获取 suppliers
+    const { messageApi } = useNotification();
     const { token } = theme.useToken();
 
 
+    const navigate = useNavigate();
+    const location = useLocation();
+
+
     const allPossibleStatuses = [
-        '待提交Action Plan',
-        '待供应商关闭',
-        '待SD确认',
-        '待SD关闭',
-        '已完成',
-        '已作废'
-    ]
+        '待提交Action Plan', '待供应商关闭', '待SD确认',
+        '待SD关闭', '已完成', '已作废'
+    ];
 
     const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
     const [form] = Form.useForm();
@@ -54,22 +58,49 @@ const NoticePage = () => {
     const [selectedStatuses, setSelectedStatuses] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [usersLoading, setUsersLoading] = useState(true);
-    const [listSortOrder, setListSortOrder] = useState('desc'); // 默认按日期降序（最新在前）
+    const [listSortOrder, setListSortOrder] = useState('desc');
 
+    const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
 
-    const sortedNoticeCategories = useMemo(() => {
-        if (!noticeCategories || noticeCategories.length === 0) {
-            return [];
+    // --- 6. 为 Supplier 和 DateRange 添加 State ---
+    const [selectedSuppliers, setSelectedSuppliers] = useState([]);
+    const [dateRange, setDateRange] = useState(null);
+
+    const managedSuppliers = useMemo(() => {
+        if (!currentUser || !suppliers) return [];
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+            return suppliers;
         }
-        const target = "Process Audit"; // 您想要置顶的项
-        // 如果目标项存在于数组中，则将其置顶
-        if (noticeCategories.includes(target)) {
-            return [target, ...noticeCategories.filter(item => item !== target)];
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier).filter(Boolean);
         }
-        // 如果不存在，则返回原始顺序
-        return noticeCategories;
-    }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+        return [];
+    }, [currentUser, suppliers]);
 
+    // --- 7. (核心) 添加 useEffect 以接收来自 AuditPlanPage 的 state ---
+    useEffect(() => {
+        const passedState = location.state;
+        if (passedState && passedState.preSelectedSupplierId && passedState.preSelectedMonth && passedState.preSelectedYear) {
+            const { preSelectedSupplierId, preSelectedMonth, preSelectedYear } = passedState;
+
+            // 1. 应用供应商筛选
+            setSelectedSuppliers([preSelectedSupplierId]);
+
+            // 2. 应用月份筛选
+            const targetDate = dayjs(`${preSelectedYear}-${preSelectedMonth}-01`);
+            setDateRange([targetDate.startOf('month'), targetDate.endOf('month')]);
+
+            // 3. 提示用户
+            messageApi.info(`已为您筛选 ${preSelectedYear}年${preSelectedMonth}月 ${suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || ''} 的相关通知单。`);
+
+            // 4. (关键) 清除 state，防止刷新时保留筛选
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.state, navigate, messageApi, suppliers]); // 依赖 suppliers 以确保名称能正确显示
+
+
+    // (获取 allUsers 的 useEffect 保持不变)
     useEffect(() => {
         const fetchUsers = async () => {
             try {
@@ -85,95 +116,111 @@ const NoticePage = () => {
         fetchUsers();
     }, []);
 
-
+    // (同步 selectedNotice 的 useEffect 保持不变)
     useEffect(() => {
-
-    }, [selectedNotice]);
-
-    useEffect(() => {
-        // 如果弹窗是打开的，并且主 notices 列表已更新
         if (selectedNotice && notices.length > 0) {
-            // 从最新的 notices 列表中找到我们当前正在查看的通知单
             const updatedVersion = notices.find(n => n.id === selectedNotice.id);
-            if (updatedVersion) {
-                // 用最新版本的数据来更新弹窗的状态
+            if (updatedVersion && JSON.stringify(updatedVersion) !== JSON.stringify(selectedNotice)) {
                 setSelectedNotice(updatedVersion);
             }
         }
-    }, [notices]); // 这个 effect 只在 notices 数组变化时运行
+    }, [notices, selectedNotice]);
 
-    // --- 数据逻辑 ---
-    const userVisibleNotices = useMemo(() => {
+    // (处理 URL ?open= 参数的 useEffect 保持不变)
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const noticeIdToOpen = params.get('open');
+        if (noticeIdToOpen && notices.length > 0) {
+            const noticeToOpen = notices.find(n => n.id === noticeIdToOpen);
+            if (noticeToOpen) {
+                showDetailsModal(noticeToOpen);
+                navigate('/notices', { replace: true });
+            }
+        }
+    }, [location.search, notices, navigate]);
 
-        if (!currentUser || !notices) {
+
+    const sortedNoticeCategories = useMemo(() => {
+        if (!noticeCategories || noticeCategories.length === 0) {
             return [];
         }
+        const target = "Process Audit"; // 您想要置顶的项
+        // 如果目标项存在于数组中，则将其置顶
+        if (noticeCategories.includes(target)) {
+            return [target, ...noticeCategories.filter(item => item !== target)];
+        }
+        // 如果不存在，则返回原始顺序
+        return noticeCategories;
+    }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
+
+
+    // (userVisibleNotices useMemo 保持不变)
+    const userVisibleNotices = useMemo(() => {
+        if (!currentUser || !notices) return [];
         switch (currentUser.role) {
             case 'Manager':
-            case 'Admin': // 管理员和经理可以看到所有
-
+            case 'Admin':
                 return notices;
             case 'SD':
                 const managedSupplierIds = (currentUser.managed_suppliers || []).map(s => s.supplier.id);
                 return notices.filter(n =>
-                    // 条件1：如果是“已完成”的通知单，则所有SD都可见
                     n.status === '已完成' ||
-                    // 条件2：如果通知单是由当前SD创建的
                     n.creatorId === currentUser.id ||
-                    // 条件3：如果通知单被指派给了当前SD负责的供应商
                     managedSupplierIds.includes(n.assignedSupplierId)
                 );
-
             case 'Supplier':
-                // 从当前用户对象中获取其所属的公司IDconcon
                 const supplierCompanyId = currentUser.supplier_id;
-
-                const filteredNotices = notices.filter(n => {
-                    // ✅ 修正：将 n.assigned_supplier_id 改为 n.assignedSupplierId
-                    const isMatch = n.assignedSupplierId === supplierCompanyId;
-                    return isMatch;
-                });
-
-                return filteredNotices;
-
+                return notices.filter(n => n.assignedSupplierId === supplierCompanyId);
             default:
                 return [];
         }
     }, [notices, currentUser]);
 
+    // --- 8. 更新 searchedNotices useMemo 以包含新筛选 ---
     const searchedNotices = useMemo(() => {
         let data = userVisibleNotices;
 
+        // 类别筛选
         if (selectedCategories && selectedCategories.length > 0) {
             data = data.filter(n => selectedCategories.includes(n.category));
         }
 
+        // 状态筛选
+        if (selectedStatuses.length > 0) {
+            data = data.filter(n => selectedStatuses.includes(n.status));
+        }
+
+        // (新增) 供应商筛选
+        if (selectedSuppliers.length > 0) {
+            data = data.filter(n => selectedSuppliers.includes(n.assignedSupplierId));
+        }
+
+        // (新增) 日期范围筛选
+        if (dateRange && dateRange[0] && dateRange[1]) {
+            data = data.filter(n => {
+                const createTime = dayjs(n.sdNotice?.createTime);
+                return createTime.isAfter(dateRange[0].startOf('day')) && createTime.isBefore(dateRange[1].endOf('day'));
+            });
+        }
+
+        // 关键词搜索
         const keywords = searchTerm.toLowerCase().split(/[；;@,，]/).map(k => k.trim()).filter(Boolean);
         if (keywords.length > 0) {
             data = data.filter(notice => {
-                // --- 核心修改：在此数组中加入 notice.status ---
                 const searchableText = [
                     notice.title,
                     notice.sdNotice?.description,
                     notice.assignedSupplierName,
                     notice.category,
-                    notice.status, // 将 status 添加到可搜索的文本中
+                    notice.status,
                     notice?.noticeCode
                 ].join(' ').toLowerCase();
-
-                console.log(notice.status)
-
-                // 使用 .some() 确保只要有任意一个关键词存在于 searchableText 中，就匹配成功
                 return keywords.some(keyword => searchableText.includes(keyword));
             });
         }
 
-        if (selectedStatuses.length > 0) {
-            data = data.filter(n => selectedStatuses.includes(n.status));
-        }
-
         return data;
-    }, [userVisibleNotices, searchTerm, selectedCategories, selectedStatuses]);
+    }, [userVisibleNotices, searchTerm, selectedCategories, selectedStatuses, selectedSuppliers, dateRange]); // <-- 添加新依赖
 
 
     // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
@@ -232,11 +279,6 @@ const NoticePage = () => {
         return combinedList;
     }, [searchedNotices, listSortOrder]); // <-- 确保依赖项正确
 
-
-
-
-    const navigate = useNavigate();
-    const location = useLocation();
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -365,10 +407,10 @@ const NoticePage = () => {
         await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
 
         // 发送传统提醒
-      
+
 
         // 发送新的结构化提醒
-       
+
         messageApi.success('计划已批准！');
         handleDetailModalCancel();
         if (!targetNotice) {
@@ -452,7 +494,7 @@ const NoticePage = () => {
             });
 
             // 6. --- 发送实时提醒 ---
-           
+
 
             // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
             messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
@@ -541,7 +583,7 @@ const NoticePage = () => {
 
         await updateNotice(notice.id, { status: '待供应商关闭', history: [...newFullHistory, rejectionHistory] });
 
-       //发送提醒
+        //发送提醒
         messageApi.warning('该条证据已驳回，单据退回到提交证据阶段');
         handleRejectionCancel();
         handleDetailModalCancel();
@@ -596,7 +638,7 @@ const NoticePage = () => {
 
         // --- 使用正确的用户ID发送提醒 ---
         //提醒
-       
+
 
         messageApi.success('通知单已成功重分配！');
         setCorrectionModal({ visible: false, notice: null });
@@ -622,7 +664,7 @@ const NoticePage = () => {
         });
 
         // 为相关方创建提醒
-      
+
 
         messageApi.warning('通知单已作废！');
         setCorrectionModal({ visible: false, notice: null }); // 关闭修正弹窗
@@ -670,9 +712,9 @@ const NoticePage = () => {
         if (isAllowedToEdit) {
             // --- 核心修正：修改此按钮的 onClick ---
             actions.push(
-                <Button 
-                    key="edit" 
-                    icon={<EditOutlined />} 
+                <Button
+                    key="edit"
+                    icon={<EditOutlined />}
                     type="link"
                     disabled={!canEdit}
                     onClick={(e) => stopPropagationAndRun(e, () => navigate(`/edit-notice/${item.id}`))} // <-- 指向新的路由
@@ -693,7 +735,7 @@ const NoticePage = () => {
             if (item.status === '待SD关闭') {
                 actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
             }
-            
+
             if (item.status === '已完成' && isSDOrManager) {
                 const isLiked = item.likes && item.likes.includes(currentUser.id);
                 actions.push(
@@ -779,22 +821,62 @@ const NoticePage = () => {
             <Card style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                     <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单</Paragraph></div>
+
                     <Space wrap>
-                        <Select mode="multiple" allowClear style={{ width: 250 }} placeholder="按问题类型筛选" onChange={setSelectedCategories} options={sortedNoticeCategories.map(c => ({ label: c, value: c }))} />
+                        {isSDManagerOrAdmin && (
+                            <Select
+                                mode="multiple"
+                                allowClear
+                                style={{ minWidth: 200 }} // 改为 minWidth
+                                placeholder="按供应商筛选"
+                                value={selectedSuppliers} // 绑定 state
+                                onChange={setSelectedSuppliers} // 绑定 state setter
+                                loading={suppliersLoading}
+                                maxTagCount="responsive"
+                                showSearch // 明确开启搜索功能
+
+                                // --- 核心修正 1：在这里组合 label ---
+                                options={managedSuppliers.map(s => ({
+                                    value: s.id,
+                                    label: `${s.short_code}` // 例如: "CVG (CVI-CVG)"
+                                }))}
+
+                                // --- 核心修正 2：使用 Antd 的默认智能筛选 ---
+                                filterOption={(input, option) =>
+                                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                            />
+                        )}
+                        <RangePicker
+                            style={{ minWidth: 240 }}
+                            value={dateRange} // 绑定 state
+                            onChange={setDateRange} // 绑定 state setter
+                        />
                         <Select
                             mode="multiple"
                             allowClear
-                            style={{ width: 250 }}
+                            style={{ minWidth: 200 }}
+                            placeholder="按问题类型筛选"
+                            onChange={setSelectedCategories}
+                            options={sortedNoticeCategories.map(c => ({ label: c, value: c }))}
+                            loading={configLoading}
+                            maxTagCount="responsive"
+                        />
+                        <Select
+                            mode="multiple"
+                            allowClear
+                            style={{ minWidth: 200 }}
                             placeholder="按状态筛选"
                             onChange={setSelectedStatuses}
                             options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
+                            maxTagCount="responsive"
                         />
                         <Search
-                            placeholder="搜索内容 (可用;；@,，分隔多关键词)"
+                            placeholder="可用;；@,，分隔关键词"
                             allowClear
                             onSearch={setSearchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            style={{ width: 300 }}
+                            style={{ width: 220 }}
                         />
                         <Tooltip title="按创建日期升序">
                             <Button
@@ -836,12 +918,11 @@ const NoticePage = () => {
                 form={form}
 
                 onPlanSubmit={handlePlanSubmit}
-                onPlanApprove={handlePlanApprove}
+                onPlanApprove={() => handlePlanApprove(selectedNotice)} // 确保传递 notice
                 showPlanRejectionModal={() => showRejectionModal(selectedNotice, handlePlanReject)}
 
                 onEvidenceSubmit={handleEvidenceSubmit}
-                onClosureApprove={handleClosureApprove}
-                showEvidenceRejectionModal={() => setRejectionModal({ visible: true, notice: selectedNotice, handler: handleEvidenceReject })}
+                onClosureApprove={() => handleClosureApprove(selectedNotice)} // 确保传递 notice
                 onApproveEvidenceItem={(index) => handleEvidenceItemApprove(index)}
                 onRejectEvidenceItem={(index) => setRejectionModal({ visible: true, notice: selectedNotice, handler: (values) => handleEvidenceItemReject(values, index) })}
                 onLikeToggle={handleLikeToggle}
@@ -860,13 +941,11 @@ const NoticePage = () => {
                 onCancel={handleCorrectionCancel}
                 onReassign={handleReassignment}
                 onVoid={handleVoidNotice}
-                suppliers={suppliers}
+                suppliers={suppliers} // 确保传递 suppliers
                 form={reassignForm}
             />
         </div>
     );
 };
-
-
 
 export default NoticePage;

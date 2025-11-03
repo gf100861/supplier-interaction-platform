@@ -7,7 +7,8 @@ import {
     LogoutOutlined,
     AuditOutlined,
     BookOutlined,
-    PrinterOutlined
+    PrinterOutlined,
+    ShareAltOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -36,6 +37,13 @@ const allMenuItems = [
 
             }
         ]
+    },
+    { 
+      key: '/offline-share', 
+      icon: <ShareAltOutlined />, 
+      label: '离线分享', 
+      // 假设只有SD和经理需要这个功能
+      roles: ['SD', 'Manager', 'Admin'] 
     },
     { key: '/analysis', icon: <BookOutlined />, label: '经验使用', roles: ['SD', 'Manager', 'Admin'] },
     { key: '/reports', icon: <PrinterOutlined />, label: '综合报告', roles: ['SD', 'Manager', 'Supplier'] },

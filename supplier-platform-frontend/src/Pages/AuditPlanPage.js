@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, Empty, Avatar, Space, Tooltip, Divider, Spin, Statistic, Row, Col } from 'antd';
-// 1. 引入一个新的图标，例如 ReconciliationOutlined
-import { PlusOutlined, UserOutlined, DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined } from '@ant-design/icons';
+// 1. 引入 FileTextOutlined
+import { PlusOutlined, UserOutlined, DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNavigate } from 'react-router-dom';
@@ -22,25 +22,24 @@ const stickyColumnWidths = {
 };
 
 const matrixStyles = {
-    // 移除 scrollContainer
-    table: { display: 'inline-block', minWidth: '100%' },
-    headerRow: { 
-        display: 'flex', 
-        position: 'sticky', // <-- 它将粘在 Card 的 body 顶部
-        top: 0, 
-        zIndex: 2, 
-        backgroundColor: '#fafafa' 
+    table: { display: 'inline-block', minWidth: '100%' },
+    headerRow: {
+        display: 'flex',
+        position: 'sticky',
+        top: 0,
+        zIndex: 2,
+        backgroundColor: '#fafafa'
     },
-    bodyRow: { display: 'flex' },
-    stickyCell: { 
-        padding: '8px 12px', 
-        borderRight: '1px solid #f0f0f0', 
-        backgroundColor: '#fff', 
-        position: 'sticky', 
-        zIndex: 1 // body row zIndex
+    bodyRow: { display: 'flex' },
+    stickyCell: {
+        padding: '8px 12px',
+        borderRight: '1px solid #f0f0f0',
+        backgroundColor: '#fff',
+        position: 'sticky',
+        zIndex: 1
     },
-    headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
-    cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
+    headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
+    cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
 };
 
 
@@ -52,7 +51,7 @@ const AuditPlanPage = () => {
     const [currentYear, setCurrentYear] = useState(dayjs().year());
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState([]);
-    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(150));
+    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(180));
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
@@ -96,31 +95,29 @@ const AuditPlanPage = () => {
         fetchData();
     }, [currentYear]);
 
-     const managedSuppliers = useMemo(() => {
-       if (!currentUser || !suppliers) return [];
-       if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-         return suppliers;
-       }
-       if (currentUser.role === 'SD') {
-         const managed = currentUser.managed_suppliers || [];
-         // Ensure supplier data is present before returning
-         return managed.map(assignment => assignment.supplier).filter(Boolean);
-       }
-       return [];
-     }, [currentUser, suppliers]);
+    const managedSuppliers = useMemo(() => {
+        if (!currentUser || !suppliers) return [];
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+            return suppliers;
+        }
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier).filter(Boolean);
+        }
+        return [];
+    }, [currentUser, suppliers]);
 
-     const filteredEvents = useMemo(() => {
-       if (!currentUser) return [];
-       if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-         return events;
-       }
-       if (currentUser.role === 'SD') {
-         // Filter suppliers based on managed list *before* grouping events
-         const managedSupplierIds = new Set(managedSuppliers.map(s => s.id));
-         return events.filter(event => managedSupplierIds.has(event.supplier_id));
-       }
-       return [];
-     }, [events, currentUser, managedSuppliers]); // Correct dependency
+    const filteredEvents = useMemo(() => {
+        if (!currentUser) return [];
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+            return events;
+        }
+        if (currentUser.role === 'SD') {
+            const managedSupplierIds = new Set(managedSuppliers.map(s => s.id));
+            return events.filter(event => managedSupplierIds.has(event.supplier_id));
+        }
+        return [];
+    }, [events, currentUser, managedSuppliers]);
 
 
     const planStats = useMemo(() => {
@@ -141,17 +138,15 @@ const AuditPlanPage = () => {
 
     const matrixData = useMemo(() => {
         const grouped = {};
-        // Group by supplier NAME (as before for display consistency)
         filteredEvents.forEach(event => {
             if (!grouped[event.supplier_name]) {
                 grouped[event.supplier_name] = Array.from({ length: 12 }, () => []);
             }
-             // Ensure planned_month is a valid index (1-12 maps to 0-11)
-             if (event.planned_month >= 1 && event.planned_month <= 12) {
+            if (event.planned_month >= 1 && event.planned_month <= 12) {
                 grouped[event.supplier_name][event.planned_month - 1].push(event);
-             } else {
-                 console.warn(`Invalid planned_month found: ${event.planned_month} for event ID: ${event.id}`);
-             }
+            } else {
+                console.warn(`Invalid planned_month found: ${event.planned_month} for event ID: ${event.id}`);
+            }
         });
         return grouped;
     }, [filteredEvents]);
@@ -181,6 +176,23 @@ const AuditPlanPage = () => {
         }
     };
 
+    // 2. 新增导航函数
+    const handleNavigateToNotices = (plan) => {
+        if (!plan.supplier_id || !plan.planned_month || !plan.year) {
+            messageApi.error("无法跳转，计划信息不完整。");
+            return;
+        }
+
+        // 导航到通知单列表页，并携带筛选参数
+        navigate('/notices', {
+            state: {
+                preSelectedSupplierId: plan.supplier_id,
+                preSelectedMonth: plan.planned_month,
+                preSelectedYear: plan.year,
+            }
+        });
+    };
+
     const showAddModal = (type) => {
         setEventType(type);
         form.resetFields();
@@ -197,7 +209,7 @@ const AuditPlanPage = () => {
             return;
         }
         const newEvent = {
-            type: eventType, // This will be 'audit', 'qrm', or 'quality_review'
+            type: eventType,
             year: currentYear,
             category: values.category,
             planned_month: values.plannedMonth,
@@ -205,12 +217,12 @@ const AuditPlanPage = () => {
             supplier_name: selectedSupplier.name,
             auditor: values.auditor,
             status: 'pending',
+            comment: values.comment
         };
         const { error } = await supabase.from('audit_plans').insert([newEvent]);
         if (error) {
             messageApi.error(`添加失败: ${error.message}`);
         } else {
-            // --- ✨ 核心修正 2: 更新成功提示消息 ---
             const successMessageMap = {
                 'audit': '审计计划 添加成功！',
                 'qrm': 'QRM会议 添加成功！',
@@ -257,7 +269,6 @@ const AuditPlanPage = () => {
     };
 
     const handleExportExcel = async () => {
-        // Excel export logic remains the same
         if (managedSuppliers.length === 0) {
             messageApi.warning('没有可供导出的数据。');
             return;
@@ -282,7 +293,6 @@ const AuditPlanPage = () => {
             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
 
-        // Use managedSuppliers for rows to ensure correct filtering for SD role
         managedSuppliers.forEach(supplier => {
             const rowData = {
                 parmaId: supplier.parma_id,
@@ -291,14 +301,12 @@ const AuditPlanPage = () => {
             };
 
             months.forEach((_, monthIndex) => {
-                // Use supplier.name for lookup in matrixData as it was grouped by name
                 const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
 
                 if (itemsInCell.length > 0) {
                     const richTextValue = itemsInCell.flatMap((item, index) => {
                         const statusText = item.status === 'completed' ? '[已完成] ' : '[待办] ';
                         const statusColor = item.status === 'completed' ? 'FF008000' : 'FFFFC000'; // Green : Orange
-                        // Adjust text based on type
                         const typeText = { audit: '审计', qrm: 'QRM', quality_review: '评审' }[item.type] || item.type;
                         const mainText = `[${typeText}] ${item.category} (负责人: ${item.auditor || 'N/A'})`;
 
@@ -330,7 +338,6 @@ const AuditPlanPage = () => {
         messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
     };
 
-    // --- ✨ 核心修正 3: 获取模态框标题 ---
     const getModalTitle = () => {
         switch (eventType) {
             case 'audit': return '新建审计计划';
@@ -353,7 +360,6 @@ const AuditPlanPage = () => {
                         <Button icon={<RightOutlined />} onClick={nextYear} size="small" />
                         <Title level={4} style={{ margin: 0, marginLeft: 16 }}>{currentYear} 年度战略规划面板</Title>
                     </div>
-                    {/* --- ✨ 核心修正 4: 添加新按钮 --- */}
                     <Space>
                         <Button type="primary" icon={<AuditOutlined />} onClick={() => showAddModal('audit')}>新建审计计划</Button>
                         <Button icon={<TeamOutlined />} onClick={() => showAddModal('qrm')} style={{ backgroundColor: '#fffbe6', borderColor: '#ffe58f' }}>添加QRM会议</Button>
@@ -374,87 +380,99 @@ const AuditPlanPage = () => {
                 extra={<Button icon={<DownloadOutlined />} onClick={handleExportExcel}>导出为Excel</Button>}
                 bodyStyle={{
                     padding: 0,
-                    overflow: 'auto', // 允许垂直和水平滚动
-                    maxHeight: 'calc(100vh - 400px)' // 设置一个最大高度，开始垂直滚动
+                    overflow: 'auto',
+                    maxHeight: 'calc(100vh - 400px)'
                 }}
             >
                 {loading || suppliersLoading ? <div style={{ textAlign: 'center', padding: '50px' }}><Spin size="large" /></div> : (
-                    <div style={matrixStyles.scrollContainer}>
-                        <div style={matrixStyles.table}>
-                            <div style={matrixStyles.headerRow}>
-                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>
-                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma, fontWeight: 'bold' }}>CMT</div>
-                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>供应商</div>
-                                {months.map((month, index) => (
-                                    <div key={month} style={{ ...matrixStyles.headerCell, flex: `0 0 ${monthColumnWidths[index]}px`}}>
-                                        {month}
-                                        <div
-                                            onMouseDown={handleResizeMouseDown(index)}
-                                            style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '10px', cursor: 'col-resize', userSelect: 'none' }}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* Use managedSuppliers for rows to ensure correct filtering */}
-                            {managedSuppliers.map(supplier => (
-                                <div key={supplier.id} style={matrixStyles.bodyRow}>
-                                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
-                                        <Text type="secondary">{supplier.parma_id}</Text>
-                                    </div>
-                                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma }}>
-                                        <Tag>{supplier.cmt}</Tag>
-                                    </div>
-                                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>
-                                        {supplier.short_code}
-                                    </div>
-
-                                    {Array.from({ length: 12 }).map((_, monthIndex) => {
-                                        // Use supplier.name for lookup as matrixData is grouped by name
-                                        const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
-                                        return (
-                                            <div key={monthIndex} style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}>
-                                                {itemsInCell.map(item => {
-                                                     // --- ✨ 核心修正 5: 显示正确的事件类型 Tag ---
-                                                     const typeTagMap = {
-                                                         audit: { color: 'blue', text: '审计' },
-                                                         qrm: { color: 'orange', text: 'QRM' },
-                                                         quality_review: { color: 'cyan', text: '评审'}
-                                                     };
-                                                     const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
-
-                                                     return (
-                                                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '4px', marginBottom: '4px', borderRadius: '4px', background: item.status === 'completed' ? '#f6ffed' : '#fafafa', border: '1px solid #d9d9d9' }}>
-                                                            <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div></>}>
-                                                                <Text style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                    <Tag color={typeInfo.color}>{typeInfo.text}</Tag>
-                                                                </Text>
-                                                            </Tooltip>
-                                                            <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
-                                                                <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>
-                                                                    <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#1890ff' : '#8c8c8c' }}>
-                                                                        {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
-                                                                    </Button>
-                                                                </Popconfirm>
-                                                                <Popconfirm title="确定删除此项吗?" onConfirm={() => handleDeleteEvent(item.id)}>
-                                                                    <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} />
-                                                                </Popconfirm>
-                                                            </Space>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        );
-                                    })}
+                    // 移除 matrixStyles.scrollContainer
+                    <div style={matrixStyles.table}>
+                        <div style={matrixStyles.headerRow}>
+                            <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>
+                            <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma, fontWeight: 'bold' }}>CMT</div>
+                            <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>供应商</div>
+                            {months.map((month, index) => (
+                                <div key={month} style={{ ...matrixStyles.headerCell, flex: `0 0 ${monthColumnWidths[index]}px` }}>
+                                    {month}
+                                    <div
+                                        onMouseDown={handleResizeMouseDown(index)}
+                                        style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '10px', cursor: 'col-resize', userSelect: 'none' }}
+                                    />
                                 </div>
                             ))}
                         </div>
+
+                        {managedSuppliers.map(supplier => (
+                            <div key={supplier.id} style={matrixStyles.bodyRow}>
+                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
+                                    <Text type="secondary">{supplier.parma_id}</Text>
+                                </div>
+                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma }}>
+                                    <Tag>{supplier.cmt}</Tag>
+                                </div>
+                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>
+                                    {supplier.short_code}
+                                </div>
+
+                                {Array.from({ length: 12 }).map((_, monthIndex) => {
+                                    const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
+                                    return (
+                                        <div key={monthIndex} style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}>
+                                            {itemsInCell.map(item => {
+                                                const typeTagMap = {
+                                                    audit: { color: 'blue', text: '审计' },
+                                                    qrm: { color: 'orange', text: 'QRM' },
+                                                    quality_review: { color: 'cyan', text: '评审' }
+                                                };
+                                                const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
+
+                                                return (
+                                                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '4px', marginBottom: '4px', borderRadius: '4px', background: item.status === 'completed' ? '#f6ffed' : '#fafafa', border: '1px solid #d9d9d9' }}>
+                                                        <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div><div><b>备注:</b> {item.comment || '无'}</div></>}>
+                                                            <Text style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                <Tag color={typeInfo.color}>{typeInfo.text}</Tag>
+                                                            </Text>
+                                                        </Tooltip>
+                                                        {/* 3. 添加新按钮到 Space --- */}
+                                                        <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
+                                                            <Tooltip title="查找相关通知单">
+                                                                <Button
+                                                                    type="text"
+                                                                    size="small"
+                                                                    icon={<FileTextOutlined />}
+                                                                    style={{ color: '#595959' }}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation(); // 阻止 Popconfirm 触发
+                                                                        handleNavigateToNotices(item);
+                                                                    }}
+                                                                />
+                                                            </Tooltip>
+                                                            <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为待办'}>
+                                                                <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>
+                                                                    <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#7d92a7ff' : '#8c8c8c' }}>
+                                                                        {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
+                                                                    </Button>
+                                                                </Popconfirm>
+                                                            </Tooltip>
+                                                            <Tooltip title="删除此计划">
+                                                                <Popconfirm title="确定删除此项吗?" onConfirm={() => handleDeleteEvent(item.id)}>
+                                                                    <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} />
+                                                                </Popconfirm>
+                                                            </Tooltip>
+                                                        </Space>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ))}
                     </div>
                 )}
             </Card>
 
             <Modal
-                // --- ✨ 核心修正 6: 使用动态标题 ---
                 title={getModalTitle()}
                 open={isModalVisible}
                 onCancel={handleCancel}
@@ -475,15 +493,10 @@ const AuditPlanPage = () => {
                             {categories.map(cat => <Option key={cat.id} value={cat.name}>{cat.name}</Option>)}
                         </Select>
                     </Form.Item>
-                     {/* Dynamic fields based on event type could be added here if needed */}
-                     {/* Example:
-                     {eventType === 'quality_review' && (
-                         <Form.Item name="review_focus" label="评审重点">
-                             <Input.TextArea placeholder="请输入评审的重点内容" />
-                         </Form.Item>
-                     )}
-                     */}
-                    <Form.Item name="auditor" label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
+                    <Form.Item name="comment" label="备注">
+                        <Input.TextArea placeholder="请输入备注内容" />
+                    </Form.Item>
+                    <Form.Item name="auditor" label="负责人" rules={[{ required: true, message: '请输入负责人' }]} style={{ display: 'none' }}>
                         <Input readOnly />
                     </Form.Item>
                     <Form.Item><Button type="primary" htmlType="submit">提交</Button></Form.Item>
