@@ -421,7 +421,7 @@ const ConsolidatedReportPage = () => {
                     <Select
                         mode="multiple"
                         allowClear
-                        style={{ width: 300 }}
+                        style={{ width: 300,display: currentUser?.role === 'SD' || 'Manager' }}
                         placeholder="筛选供应商"
                         onChange={setSelectedSuppliers}
                         value={selectedSuppliers}
