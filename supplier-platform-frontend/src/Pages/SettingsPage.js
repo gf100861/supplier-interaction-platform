@@ -1,21 +1,31 @@
 import React, { useState, useMemo } from 'react';
-import { Card, Avatar, Typography, Button, Upload, Form, Input, List, Switch, Divider, Col, Row, Select } from 'antd';
-import { UserOutlined, UploadOutlined, LockOutlined, MessageOutlined } from '@ant-design/icons';
+import { Card, Avatar, Typography, Button, Upload, Form, Input, List, Switch, Divider, Col, Row, Select, Spin, Modal } from 'antd'; // 1. 引入 Upload, Spin, Modal
+import { UserOutlined, UploadOutlined, LockOutlined, MessageOutlined, InboxOutlined } from '@ant-design/icons'; // 2. 引入 InboxOutlined
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 
 const { Title, Text, Paragraph } = Typography;
-const { TextArea } = Input;
+const { TextArea } = Input; // 3. 确保 TextArea 从 Input 导入
 const { Option } = Select;
+const { Dragger } = Upload; // 4. 引入 Dragger
+
+// 5. 引入文件处理的辅助函数
+const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
+const getBase64 = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = (error) => reject(error); });
 
 
 const SettingsPage = () => {
     const [passwordForm] = Form.useForm();
-    const [feedbackForm] = Form.useForm(); // 为反馈表单创建新的实例
+    const [feedbackForm] = Form.useForm();
     const { messageApi } = useNotification();
+    const [feedbackLoading, setFeedbackLoading] = useState(false); // 6. 为反馈表单添加 loading 状态
+    
+    // 预览图片的状态
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewImage, setPreviewImage] = useState('');
+    const [previewTitle, setPreviewTitle] = useState('');
 
-    // ✨ 核心修正：使用 useState 来管理 currentUser，以便在更新后能刷新UI
     const [currentUser, setCurrentUser] = useState(() => {
         const userString = localStorage.getItem('user');
         return userString ? JSON.parse(userString) : null;
@@ -23,18 +33,47 @@ const SettingsPage = () => {
 
     const { theme, toggleTheme } = useTheme();
 
-
     if (!currentUser) {
-        return <p>加载用户信息中...</p>;
+        return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
     }
 
+    // 7. 文件预览逻辑
+    const handlePreview = async (file) => {
+        if (!file.url && !file.preview && file.originFileObj) {
+            file.preview = await getBase64(file.originFileObj);
+        }
+        setPreviewImage(file.url || file.preview);
+        setPreviewOpen(true);
+        setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
+    };
+    const handleCancelPreview = () => setPreviewOpen(false);
+
+    // 8. 核心修改：更新 handleFeedbackSubmit 以处理文件
     const handleFeedbackSubmit = async (values) => {
+        setFeedbackLoading(true);
         try {
+            // 8a. 复制文件处理逻辑
+            const processFiles = async (fileList = []) => {
+                return Promise.all((fileList || []).map(async file => {
+                    if (file.originFileObj && !file.url) { // 是新文件
+                        const base64Url = await getBase64(file.originFileObj);
+                        return { uid: file.uid, name: file.name, status: 'done', url: base64Url, type: file.type, size: file.size };
+                    }
+                    return file; // 已经是处理过的文件 (例如，来自草稿)
+                }));
+            };
+
+            const processedImages = await processFiles(values.images);
+            const processedAttachments = await processFiles(values.attachments);
+
+            // 8b. 插入数据库，包含新字段
             const { error } = await supabase.from('feedback').insert([
                 {
                     user_id: currentUser.id,
                     content: values.content,
-                    category: values.category
+                    category: values.category,
+                    images: processedImages.length > 0 ? processedImages : null, // 存入图片
+                    attachments: processedAttachments.length > 0 ? processedAttachments : null, // 存入附件
                 }
             ]);
 
@@ -44,28 +83,20 @@ const SettingsPage = () => {
             feedbackForm.resetFields();
         } catch (error) {
             messageApi.error(`提交失败: ${error.message}`);
+        } finally {
+            setFeedbackLoading(false);
         }
     };
 
-    if (!currentUser) {
-        return <p>加载用户信息中...</p>;
-    }
-
-
-    // ✨ 核心修正：实现真正的密码修改逻辑
     const onFinishChangePassword = async (values) => {
-        // Supabase 的密码更新 API 不需要旧密码，只要用户是登录状态即可
+        // (密码修改逻辑保持不变)
         try {
             const { error } = await supabase.auth.updateUser({
                 password: values.newPassword
             });
-
             if (error) throw error;
-
             messageApi.success('密码修改成功！请重新登录以使新密码生效。');
             passwordForm.resetFields();
-            // 建议：可以在这里添加一个延时后自动登出的逻辑
-
         } catch (error) {
             messageApi.error(`密码修改失败: ${error.message}`);
         }
@@ -74,7 +105,6 @@ const SettingsPage = () => {
     return (
         <div style={{ padding: '24px' }}>
             <Row gutter={[24, 24]}>
-                {/* --- 核心修正 1：将“反馈与建议”表单移动到左侧卡片中 --- */}
                 <Col xs={24} md={8}>
                     <Card>
                         <div style={{ textAlign: 'center' }}>
@@ -83,7 +113,6 @@ const SettingsPage = () => {
                             <Text type="secondary">{currentUser.role}</Text>
                         </div>
                         <Divider />
-                        {/* 反馈与建议区域 */}
                         <Title level={5}><MessageOutlined /> 反馈与建议</Title>
                         <Paragraph type="secondary">我们非常重视您的意见。</Paragraph>
                         <Form form={feedbackForm} layout="vertical" onFinish={handleFeedbackSubmit}>
@@ -97,16 +126,40 @@ const SettingsPage = () => {
                             <Form.Item name="content" label="详细内容" rules={[{ required: true, message: '请填写您的反馈内容' }]}>
                                 <TextArea rows={4} placeholder="请详细描述..." />
                             </Form.Item>
+
+                            {/* --- 9. 添加图片上传 --- */}
+                            <Form.Item label="相关图片 (可选)">
+                                <Form.Item name="images" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
+                                    <Dragger 
+                                        multiple 
+                                        listType="picture" 
+                                        beforeUpload={() => false} 
+                                        onPreview={handlePreview} 
+                                        accept="image/*"
+                                    >
+                                        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                                        <p className="ant-upload-text">点击或拖拽图片到此区域</p>
+                                    </Dragger>
+                                </Form.Item>
+                            </Form.Item>
+
+                            {/* --- 10. 添加附件上传 --- */}
+                            <Form.Item label="相关附件 (可选)">
+                                <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
+                                    <Upload beforeUpload={() => false} multiple>
+                                        <Button icon={<UploadOutlined />}>点击上传附件</Button>
+                                    </Upload>
+                                </Form.Item>
+                            </Form.Item>
+                            
                             <Form.Item>
-                                <Button type="primary" htmlType="submit">提交反馈</Button>
+                                <Button type="primary" htmlType="submit" loading={feedbackLoading}>提交反馈</Button>
                             </Form.Item>
                         </Form>
                     </Card>
                 </Col>
-                {/* 设置项卡片 */}
                 <Col xs={24} md={16}>
                     <Card>
-                        {/* 安全设置 (表单逻辑已连接数据库) */}
                         <Title level={5}><LockOutlined /> 安全设置</Title>
                         <Form
                             form={passwordForm}
@@ -114,16 +167,19 @@ const SettingsPage = () => {
                             onFinish={onFinishChangePassword}
                             style={{ maxWidth: 400 }}
                         >
-                            <Form.Item name="oldPassword" label="当前密码" rules={[{ required: true, message: '请输入当前密码' }]}>
-                                <Input.Password />
-                            </Form.Item>
-                            <Form.Item name="newPassword" label="新密码" rules={[{ required: true, message: '请输入新密码' }]}>
-                                <Input.Password />
+                            <Form.Item 
+                                name="newPassword" 
+                                label="新密码" 
+                                rules={[{ required: true, message: '请输入新密码' }, {min: 6, message: '密码至少需要6位'}]}
+                                hasFeedback
+                            >
+                                <Input.Password placeholder="输入新密码" />
                             </Form.Item>
                             <Form.Item
                                 name="confirmPassword"
                                 label="确认新密码"
                                 dependencies={['newPassword']}
+                                hasFeedback
                                 rules={[
                                     { required: true, message: '请确认您的新密码' },
                                     ({ getFieldValue }) => ({
@@ -136,16 +192,13 @@ const SettingsPage = () => {
                                     }),
                                 ]}
                             >
-                                <Input.Password />
+                                <Input.Password placeholder="再次输入新密码" />
                             </Form.Item>
                             <Form.Item>
                                 <Button type="primary" htmlType="submit">修改密码</Button>
                             </Form.Item>
                         </Form>
                         <Divider />
-                        {/* 通用设置 (保持不变) */}
-
-
                         <Title level={5}><UserOutlined /> 通用设置</Title>
                         <List>
                             <List.Item>
@@ -156,6 +209,11 @@ const SettingsPage = () => {
                     </Card>
                 </Col>
             </Row>
+
+            {/* 11. 添加图片预览 Modal */}
+            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancelPreview}>
+                <img alt="预览" style={{ width: '100%' }} src={previewImage} />
+            </Modal>
         </div>
     );
 };

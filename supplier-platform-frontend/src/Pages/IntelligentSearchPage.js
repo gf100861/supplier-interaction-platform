@@ -22,7 +22,7 @@ const IntelligentSearchPage = () => {
     const [isLoading, setIsLoading] = useState(false); // AI回复的加载状态
     const [isHistoryLoading, setIsHistoryLoading] = useState(true); // 页面初始加载状态
 
-    const { notices } = useNotices();
+    const { notices } = useNotices(); // 确保 useNotices 提供了 notices 列表
     const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
     const { messageApi } = useNotification();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
@@ -31,6 +31,8 @@ const IntelligentSearchPage = () => {
     // --- 评星弹窗 State ---
     const [showRatingModal, setShowRatingModal] = useState(false);
     const [currentRating, setCurrentRating] = useState(0);
+    // 确保 rating comment state 也已定义
+    const [ratingComment, setRatingComment] = useState('');
 
     const navigate = useNavigate();
 
@@ -75,17 +77,11 @@ const IntelligentSearchPage = () => {
 
         let content = msg.content;
         try {
-            // 尝试解析 content，看它是否是我们存的JSON对象
             const parsed = JSON.parse(content);
-
-            // 检查是否是我们保存的“搜索结果”格式
             if (parsed && parsed.type === 'search_result') {
-                // 是的，现在我们用 notices 列表来重建它
                 const resultNotices = parsed.noticeIds
-                    .map(id => notices.find(n => n.id === id))
-                    .filter(Boolean); // 过滤掉任何未找到的
-
-                console.log('www', resultNotices)
+                    .map(id => notices.find(n => n.id === id)) // 使用完整的 notices 列表
+                    .filter(Boolean);
 
                 return (
                     <div>
@@ -93,31 +89,26 @@ const IntelligentSearchPage = () => {
                         <List
                             size="small"
                             dataSource={resultNotices}
-
                             renderItem={item => (
                                 <List.Item key={item.id} style={{ padding: '8px 0' }}>
                                     <List.Item.Meta
                                         avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
                                         title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
-                                        description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode} | 发起人：${item?.creator?.username}`}
+                                        // --- ✨ 核心修正: 使用 .supplier.short_code 和 .creator.username ---
+                                        description={`编号: ${item.noticeCode} | 供应商: ${item.supplier?.short_code || 'N/A'} | 发起人: ${item.creator?.username || 'N/A'}`}
                                     />
                                 </List.Item>
-
-
                             )}
                         />
                     </div>
-
-
                 );
-
             }
         } catch (e) {
-            // 不是JSON，只是纯文本，保持原样
+            // 不是JSON，只是纯文本
         }
-        // 如果所有解析都失败了，就返回纯文本
-        return content;
+        return content; // 返回纯文本内容
     };
+
 
     // --- 2. 核心修正：fetchMessages 现在使用“消息渲染器” ---
     const fetchMessages = async (sessionId) => {
@@ -135,10 +126,9 @@ const IntelligentSearchPage = () => {
                 .order('created_at', { ascending: true });
             if (error) throw error;
 
-            // 在这里使用渲染器
             setMessages(data.map(msg => ({
                 ...msg,
-                content: renderMessageContent(msg)
+                content: renderMessageContent(msg) // 渲染时解析内容
             })));
         } catch (error) {
             messageApi.error(`加载聊天记录失败: ${error.message}`);
@@ -146,19 +136,35 @@ const IntelligentSearchPage = () => {
             setIsHistoryLoading(false);
         }
     };
+
     // --- 初始加载 ---
     useEffect(() => {
         fetchSessions();
     }, [currentUser?.id]);
 
-    // --- 切换会话时，重新加载消息 ---
-    // --- 切换会话时，或当notices列表更新时，重新加载消息 ---
+    // --- ✨ 核心修正: 修复竞态条件 ---
+    // 仅在 activeSessionId 改变时 (用户点击Sider) 且不在加载中时，才获取消息
     useEffect(() => {
-        if (activeSessionId) {
+        if (activeSessionId && !isLoading) {
             fetchMessages(activeSessionId);
+        } else if (!activeSessionId) {
+            // 这是 "新建对话" 状态
+            setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请问您想查找哪方面的通知单？', feedback: null }]);
         }
-        // --- 核心修正：在这里加入 'notices' 依赖项 ---
-    }, [activeSessionId, notices]);
+    }, [activeSessionId]); // <-- 移除 'notices' 依赖
+
+    // --- ✨ 核心修正: 新增 Effect，当 notices 列表更新时，重新渲染消息内容 ---
+    // 这解决了消息（含ID）先加载，而 `notices` 数据后加载导致无法显示详情的问题
+    useEffect(() => {
+        if (notices.length > 0) { // 仅当 notices 确实有数据时才重渲
+            setMessages(prevMessages =>
+                prevMessages.map(msg => ({
+                    ...msg,
+                    content: renderMessageContent(msg) // 重新运行渲染函数以获取最新数据
+                }))
+            );
+        }
+    }, [notices]); // <-- 仅依赖 'notices'
 
     // 滚动到底部
     useEffect(() => {
@@ -222,13 +228,14 @@ const IntelligentSearchPage = () => {
             // --- 如果是新会话，先创建会话 ---
             if (!currentSessionId) {
                 isNewSession = true;
-                const firstTitle = userQuery.length > 40 ? `${userQuery.substring(0, 40)}...` : userQuery;
+                // --- ✨ 核心修正: 使用您要求的标题格式 ---
+                const firstTitle = userQuery.length > 4 ? `${userQuery.substring(0, 4)}...` : userQuery;
+
                 const { data: newSession, error: sessionError } = await supabase
                     .from('chat_sessions')
                     .insert({ user_id: currentUser.id, title: firstTitle })
                     .select()
                     .single();
-
                 if (sessionError) throw sessionError;
 
                 currentSessionId = newSession.id;
@@ -241,64 +248,48 @@ const IntelligentSearchPage = () => {
             const optimisticUserMessage = { id: `temp-${Date.now()}`, sender: 'user', content: userQuery, timestamp: new Date().toISOString() };
             const thinkingMessageId = `temp-${Date.now()}-thinking`;
             const thinkingMessageUI = { id: thinkingMessageId, sender: 'system', content: <Spin size="small" />, isThinking: true };
+
+            // --- ✨ 核心修正: 确保新会话也能正确显示第一条消息 ---
             setMessages(prev => isNewSession ? [optimisticUserMessage, thinkingMessageUI] : [...prev, optimisticUserMessage, thinkingMessageUI]);
             setInputValue('');
 
             // 1. 保存用户消息到数据库
             const { error: userSaveError } = await supabase
                 .from('chat_messages')
-                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery });
+                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery, timestamp: optimisticUserMessage.timestamp });
             if (userSaveError) throw userSaveError;
 
             // 2. --- TODO: 调用您的 AI Edge Function ---
-            // const { data: aiData, error: aiError } = await supabase.functions.invoke(...);
-            // ... (模拟 AI 回复)
             await new Promise(resolve => setTimeout(resolve, 1500));
             const lowerCaseQuery = userQuery.toLowerCase();
             const mockResults = notices.filter(n => {
-                // 将整个通知单对象（包括所有历史记录和详情）转换为一个可搜索的字符串
                 const searchableText = JSON.stringify(n).toLowerCase();
                 return searchableText.includes(lowerCaseQuery);
-            }).slice(0, 5); // 仍然只返回最相关的3条
+            }).slice(0, 5);
 
-            let systemResponseContent; // <-- 存入DB的 (将是JSON字符串)
-            let systemResponseRenderableContent; // <-- 立即显示的 (将是JSX)
+            let systemResponseContent;
+            let systemResponseRenderableContent;
 
             if (mockResults.length > 0) {
-                systemResponseRenderableContent = (
-                    <div>
-                        <Paragraph>根据您的描述，我找到了以下相关的通知单：</Paragraph>
-                        <List
-                            size="small"
-                            dataSource={mockResults}
-                            renderItem={item => (
-                                <List.Item key={item.id} style={{ padding: '8px 0' }}>
-                                    <List.Item.Meta
-                                        avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
-                                        title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
-                                        description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode}`}
-                                    />
-                                </List.Item>
-                            )}
-                        />
-                    </div>
-                );
                 const contentForDB = {
                     type: "search_result",
                     text: "根据您的描述，我找到了以下相关的通知单：",
                     noticeIds: mockResults.map(n => n.id) // 只存储ID
                 };
                 systemResponseContent = JSON.stringify(contentForDB); // 转换为字符串存入DB
+
+                // 立即渲染 (因为 notices 列表可能已在 `useEffect` 中更新)
+                systemResponseRenderableContent = renderMessageContent({ content: systemResponseContent });
+
             } else {
                 systemResponseRenderableContent = "抱歉，未能找到相关通知单。";
-                systemResponseContent = systemResponseRenderableContent; // 纯文本直接存
+                systemResponseContent = systemResponseRenderableContent;
             }
-
 
             // 3. 保存系统消息到数据库
             const { data: savedSystemData, error: systemSaveError } = await supabase
                 .from('chat_messages')
-                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'system', content: systemResponseContent })
+                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'system', content: systemResponseContent, timestamp: new Date().toISOString() })
                 .select()
                 .single();
             if (systemSaveError) throw systemSaveError;
@@ -306,7 +297,7 @@ const IntelligentSearchPage = () => {
             // 4. 更新UI，用真实数据替换“思考中”
             setMessages(prev => prev.map(msg =>
                 msg.id === thinkingMessageId
-                    ? { ...savedSystemData, content: systemResponseRenderableContent }
+                    ? { ...savedSystemData, content: systemResponseRenderableContent } // 使用渲染后的内容
                     : msg
             ));
 
@@ -468,9 +459,9 @@ const IntelligentSearchPage = () => {
                         <Space>
                             <Avatar icon={<RobotOutlined />} style={{ backgroundColor: '#1890ff' }} />
                             <Title level={4} style={{ margin: 0 }}>智能检索助手</Title>
-                                 <Paragraph type="secondary" style={{display:'contents'}}>检索通知单的所有内容</Paragraph>
+                            <Paragraph type="secondary" style={{ display: 'contents' }}>检索通知单的所有内容</Paragraph>
                         </Space>
-                        <Button icon={<StarOutlined />} onClick={() => setShowRatingModal(true)} disabled={!activeSessionId}>
+                        <Button icon={<StarOutlined />} onClick={handleEndSession} disabled={!activeSessionId || messages.length <= 1}>
                             评价本次会话
                         </Button>
                     </div>
@@ -532,11 +523,39 @@ const IntelligentSearchPage = () => {
             </Layout>
 
             {/* --- 8. 弹窗 (保持不变) --- */}
-            <NoticeDetailModal notice={detailsModal.notice} open={detailsModal.visible} onCancel={handleDetailsCancel} /* ... */ />
-            <Modal title="评价本次会话" open={showRatingModal} onOk={handleRatingSubmit} onCancel={handleRatingCancel} okText="提交评价" cancelText="取消">
+            <NoticeDetailModal
+                notice={detailsModal.notice}
+                open={detailsModal.visible}
+                onCancel={handleDetailsCancel}
+                currentUser={currentUser}
+                form={null}
+                onPlanSubmit={handlePlaceholder}
+                onPlanApprove={handlePlaceholder}
+                showPlanRejectionModal={handlePlaceholder}
+                onEvidenceSubmit={handlePlaceholder}
+                onClosureApprove={handlePlaceholder}
+                onApproveEvidenceItem={handlePlaceholder}
+                onRejectEvidenceItem={handlePlaceholder}
+                onLikeToggle={handlePlaceholder}
+            />
+            <Modal
+                title="评价本次会话"
+                open={showRatingModal}
+                onOk={handleRatingSubmit}
+                onCancel={handleRatingCancel}
+                okText="提交评价"
+                cancelText="取消"
+                okButtonProps={{ disabled: currentRating === 0 && !ratingComment.trim() }}
+            >
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
                     <Paragraph>请为本次智能检索的体验打分：</Paragraph>
-                    <Rate allowHalf value={currentRating} onChange={setCurrentRating} style={{ fontSize: 36 }} />
+                    <Rate allowHalf value={currentRating} onChange={setCurrentRating} style={{ fontSize: 36, marginBottom: 20 }} />
+                    <TextArea
+                        rows={3}
+                        placeholder="您可以留下具体的评论或建议（可选）"
+                        value={ratingComment}
+                        onChange={(e) => setRatingComment(e.target.value)}
+                    />
                 </div>
             </Modal>
         </Layout>
