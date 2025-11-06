@@ -316,6 +316,8 @@ const NoticePage = () => {
         const history = notice.history || [];
         const lastHistory = history[history.length - 1];
 
+        console.log('通知单',notice)
+
         // 逻辑修正：检查 '计划被驳回' 的情况（兼容不同状态文案）
         if (notice.status === '待提交Action Plan' && lastHistory?.type === 'sd_plan_rejection') {
             const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission');

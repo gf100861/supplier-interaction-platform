@@ -37,7 +37,7 @@ const DynamicDetailsDisplay = ({ notice }) => {
     if (!notice?.category || !notice?.sdNotice?.details) return null;
 
     // --- 现在使用内置的 config ---
-    const config = categoryColumnConfig[notice.category] || []; 
+    const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(
         col => col.dataIndex !== 'title' && col.dataIndex !== 'description'
     );
@@ -138,7 +138,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                                 onPreview={handlePreview}
                                 accept="image/*"
                                 multiple
-                                // --- ✨ 3. 移除固定样式 ---
+                            // --- ✨ 3. 移除固定样式 ---
                             >
                                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                                 <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
@@ -153,7 +153,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                             <Upload.Dragger
                                 beforeUpload={() => false}
                                 multiple
-                                // --- ✨ 3. 移除固定样式 ---
+                            // --- ✨ 3. 移除固定样式 ---
                             >
                                 <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
                                 <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
@@ -259,14 +259,14 @@ export const NoticeDetailModal = ({
         const isSDOrManager = currentUser?.role === 'SD' || currentUser?.role === 'Manager';
 
         switch (notice.status) {
-               case '待提交Action Plan':
-                 return isAssignedSupplier && <PlanSubmissionForm form={form} onFinish={onPlanSubmit} actionAreaStyle={actionAreaStyle} />;
+            case '待提交Action Plan':
+                return isAssignedSupplier && <PlanSubmissionForm form={form} onFinish={onPlanSubmit} actionAreaStyle={actionAreaStyle} />;
             case '待SD确认':
             case '待SD确认计划':
                 return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} actionAreaStyle={actionAreaStyle} />;
             case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
-              case '待SD关闭': {
+            case '待SD关闭': {
                 if (!isSDOrManager) return null;
                 // 渲染逐条证据审批区
                 const history = notice.history || [];
@@ -372,12 +372,13 @@ export const NoticeDetailModal = ({
                 <EnhancedImageDisplay images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
 
-                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
+                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause || notice?.sdNotice?.details?.product) && (
                     <div style={{ marginTop: '12px' }}>
                         <Space wrap>
                             <Text strong><TagsOutlined /> 历史经验标签:</Text>
                             {notice.sdNotice?.problemSource && <Tag color="geekblue">{notice?.sdNotice?.problemSource}</Tag>}
                             {notice?.sdNotice?.cause && <Tag color="purple">{notice?.sdNotice?.cause}</Tag>}
+                            {<Tag color="purple">{notice?.sdNotice?.details?.product}</Tag>}
                         </Space>
                     </div>
                 )}
@@ -394,13 +395,13 @@ export const NoticeDetailModal = ({
 
                 </Timeline.Item>
 
-                  {(notice.history || []).map((h, index) => {
+                {(notice.history || []).map((h, index) => {
                     const label = getHistoryItemLabel(h);
                     const historyArray = notice.history || [];
 
                     let historyItemForDisplay = h; // 默认显示当前项的详情
                     let shouldRenderItem = false; // 默认不渲染
-                    
+
                     // 1. 只显示“批准”节点
                     if (h.type === 'sd_plan_approval' || h.type === 'sd_closure_approve') {
                         shouldRenderItem = true;
@@ -411,7 +412,7 @@ export const NoticeDetailModal = ({
                             const lastEvidenceSubmission = [...historyArray.slice(0, index)] // 只看此节点之前的记录
                                 .reverse()
                                 .find(item => item.type === 'supplier_evidence_submission');
-                            
+
                             if (lastEvidenceSubmission) {
                                 // 检查这个证据提交是否被驳回过
                                 const nextItem = historyArray[historyArray.indexOf(lastEvidenceSubmission) + 1];
@@ -430,7 +431,7 @@ export const NoticeDetailModal = ({
                     return (
                         <Timeline.Item key={index} color={label.color}>
                             <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
-                            
+
                             {/* - 'sd_plan_approval' 会显示其 actionPlans (批准的计划)
                               - 'sd_closure_approve' 会显示 'historyItemForDisplay' (即最后一次提交的证据) 的 actionPlans
                             */}

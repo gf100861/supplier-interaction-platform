@@ -84,7 +84,6 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
     }
     return <td {...restProps}>{childNode}</td>;
 };
-// --- 可编辑单元格组件结束 ---
 
 
 // --- 列配置中心 ---
@@ -100,8 +99,10 @@ const categoryColumnConfig = {
         },
     ],
     'Process Audit': [
+        { title: 'PRODUCT', dataIndex: 'product', editable: true, width: '20%' },
         { title: 'PROCESS/QUESTIONS', dataIndex: 'title', editable: true, width: '20%' },
         { title: 'FINDINGS/DEVIATIONS', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
+       
 
     ],
     '文档资质': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
