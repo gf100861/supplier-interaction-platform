@@ -421,11 +421,11 @@ const ConsolidatedReportPage = () => {
                     <Select
                         mode="multiple"
                         allowClear
-                        style={{ width: 300,display: currentUser?.role === 'SD' || 'Manager' }}
+                        style={{ width: 300,display: currentUser?.role !== 'Supplier' ? 'block' : 'none' }}
                         placeholder="筛选供应商"
                         onChange={setSelectedSuppliers}
                         value={selectedSuppliers}
-                        disabled={currentUser?.role === 'Supplier'}
+                        disabled={currentUser?.role === 'Supplier' }
                         options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code} (${s.name})` }))}
                     />
                     <Select

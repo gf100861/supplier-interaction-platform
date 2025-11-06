@@ -263,33 +263,49 @@ const IntelligentSearchPage = () => {
             await new Promise(resolve => setTimeout(resolve, 1500));
             const lowerCaseQuery = userQuery.toLowerCase();
             const mockResults = notices.filter(n => {
+                // 将整个通知单对象（包括所有历史记录和详情）转换为一个可搜索的字符串
                 const searchableText = JSON.stringify(n).toLowerCase();
                 return searchableText.includes(lowerCaseQuery);
-            }).slice(0, 5);
+            }).slice(0, 5); // 仍然只返回最相关的3条
 
-            let systemResponseContent;
-            let systemResponseRenderableContent;
+            let systemResponseContent; // <-- 存入DB的 (将是JSON字符串)
+            let systemResponseRenderableContent; // <-- 立即显示的 (将是JSX)
 
             if (mockResults.length > 0) {
+                systemResponseRenderableContent = (
+                    <div>
+                        <Paragraph>根据您的描述，我找到了以下相关的通知单：</Paragraph>
+                        <List
+                            size="small"
+                            dataSource={mockResults}
+                            renderItem={item => (
+                                <List.Item key={item.id} style={{ padding: '8px 0' }}>
+                                    <List.Item.Meta
+                                        avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
+                                        title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
+                                        description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode}`}
+                                    />
+                                </List.Item>
+                            )}
+                        />
+                    </div>
+                );
                 const contentForDB = {
                     type: "search_result",
                     text: "根据您的描述，我找到了以下相关的通知单：",
                     noticeIds: mockResults.map(n => n.id) // 只存储ID
                 };
                 systemResponseContent = JSON.stringify(contentForDB); // 转换为字符串存入DB
-
-                // 立即渲染 (因为 notices 列表可能已在 `useEffect` 中更新)
-                systemResponseRenderableContent = renderMessageContent({ content: systemResponseContent });
-
             } else {
                 systemResponseRenderableContent = "抱歉，未能找到相关通知单。";
-                systemResponseContent = systemResponseRenderableContent;
+                systemResponseContent = systemResponseRenderableContent; // 纯文本直接存
             }
+
 
             // 3. 保存系统消息到数据库
             const { data: savedSystemData, error: systemSaveError } = await supabase
                 .from('chat_messages')
-                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'system', content: systemResponseContent, timestamp: new Date().toISOString() })
+                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'system', content: systemResponseContent })
                 .select()
                 .single();
             if (systemSaveError) throw systemSaveError;
@@ -297,7 +313,7 @@ const IntelligentSearchPage = () => {
             // 4. 更新UI，用真实数据替换“思考中”
             setMessages(prev => prev.map(msg =>
                 msg.id === thinkingMessageId
-                    ? { ...savedSystemData, content: systemResponseRenderableContent } // 使用渲染后的内容
+                    ? { ...savedSystemData, content: systemResponseRenderableContent }
                     : msg
             ));
 

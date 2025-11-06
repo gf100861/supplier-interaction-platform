@@ -298,6 +298,11 @@ const DashboardPage = () => {
 
         const allOpenIssues = baseDataWithDeadline.filter(n => !['已完成', '已作废'].includes(n.status)).length;
 
+        const recentPendingIssues = baseDataWithDeadline.filter(n =>
+            !['已完成', '已作废'].includes(n.status) &&
+            dayjs(n.createdAt).isAfter(thirtyDaysAgo)
+        ).length;
+
         const pendingForSupplier = baseDataWithDeadline.filter(n =>
             !['已完成', '已作废'].includes(n.status) &&
             dayjs(n.createdAt).isAfter(thirtyDaysAgo)
@@ -324,7 +329,8 @@ const DashboardPage = () => {
             closedThisMonth,
             allOpenIssues,
             supplierActionRequired,
-            topImprovement
+            topImprovement,
+            recentPendingIssues
         };
 
     }, [notices, allUsers, suppliers, noticesLoading, usersLoading, suppliersLoading, currentUser, managedSuppliers]);
@@ -343,7 +349,8 @@ const DashboardPage = () => {
 
     // --- Supplier View ---
     if (currentUser.role === 'Supplier') {
-        // ... (Supplier view remains unchanged)
+        // --- 3. 核心修改：解构新值并更新供应商 UI ---
+        const { allOpenIssues, recentPendingIssues } = dashboardData;
         return (
             <div>
                 <Card style={{ marginBottom: 24 }} bordered={false}>
@@ -352,10 +359,24 @@ const DashboardPage = () => {
                 </Card>
                 <Row gutter={[10, 10]}>
                     <Col xs={24} sm={12}>
-                        <Card bordered={false} loading={pageIsLoading}><Statistic title="本月已关闭问题" value={dashboardData.closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Card>
+                        <Card bordered={false} loading={pageIsLoading}>
+                            <Statistic
+                                title="通知单历史未完成"
+                                value={allOpenIssues}
+                                valueStyle={{ color: '#faad14' }}
+                                prefix={<ClockCircleOutlined />}
+                            />
+                        </Card>
                     </Col>
                     <Col xs={24} sm={12}>
-                        <Card bordered={false} loading={pageIsLoading}><Statistic title="当前所有未关闭问题" value={dashboardData.allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card>
+                        <Card bordered={false} loading={pageIsLoading}>
+                            <Statistic
+                                title="最近30天未完成"
+                                value={recentPendingIssues}
+                                valueStyle={{ color: '#f5222d' }}
+                                prefix={<WarningOutlined />}
+                            />
+                        </Card>
                     </Col>
                 </Row>
                 <Card style={{ marginTop: 24 }} bordered={false}>

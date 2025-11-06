@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, Empty, Avatar, Space, Tooltip, Divider, Spin, Statistic, Row, Col } from 'antd';
-// 1. 引入 FileTextOutlined
+// 1. 引入 Radio 和 Form.Item (虽然 Form.Item 没显式用，但在 Select 内部需要)
+import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, Empty, Avatar, Space, Tooltip, Divider, Spin, Statistic, Row, Col, Radio } from 'antd';
 import { PlusOutlined, UserOutlined, DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
@@ -51,11 +51,17 @@ const AuditPlanPage = () => {
     const [currentYear, setCurrentYear] = useState(dayjs().year());
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState([]);
-    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(180));
+    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(150));
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
     const navigate = useNavigate();
+
+    // --- 2. 为筛选器添加 State ---
+    const [selectedSupplierKeys, setSelectedSupplierKeys] = useState([]);
+    const [selectedCategoryKeys, setSelectedCategoryKeys] = useState([]);
+    const [selectedStatusKey, setSelectedStatusKey] = useState('all'); // 'all', 'pending', 'completed'
+
 
     if (currentUser.role === 'Supplier') {
         navigate('/');
@@ -107,17 +113,43 @@ const AuditPlanPage = () => {
         return [];
     }, [currentUser, suppliers]);
 
+    // --- 3. 核心修改：更新 filteredEvents 逻辑 ---
     const filteredEvents = useMemo(() => {
         if (!currentUser) return [];
+
+        let roleFilteredEvents = [];
+        // 角色过滤
         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-            return events;
-        }
-        if (currentUser.role === 'SD') {
+            roleFilteredEvents = events;
+        } else if (currentUser.role === 'SD') {
             const managedSupplierIds = new Set(managedSuppliers.map(s => s.id));
-            return events.filter(event => managedSupplierIds.has(event.supplier_id));
+            roleFilteredEvents = events.filter(event => managedSupplierIds.has(event.supplier_id));
         }
-        return [];
-    }, [events, currentUser, managedSuppliers]);
+
+        // --- 应用新增的筛选器 ---
+        return roleFilteredEvents.filter(event => {
+            // 状态筛选
+            const statusMatch = selectedStatusKey === 'all' || event.status === selectedStatusKey;
+
+            // 供应商筛选
+            const supplierMatch = selectedSupplierKeys.length === 0 || selectedSupplierKeys.includes(event.supplier_id);
+
+            // 类型筛选
+            const categoryMatch = selectedCategoryKeys.length === 0 || selectedCategoryKeys.includes(event.category);
+
+            return statusMatch && supplierMatch && categoryMatch;
+        });
+    }, [events, currentUser, managedSuppliers, selectedSupplierKeys, selectedCategoryKeys, selectedStatusKey]); // <-- 添加新依赖
+
+
+    // --- 4. 核心修改：根据筛选器计算要渲染的供应商列表 ---
+    const suppliersToRender = useMemo(() => {
+        if (selectedSupplierKeys.length === 0) {
+            return managedSuppliers; // 如果未筛选，显示所有管理的供应商
+        }
+        // 如果已筛选，只显示筛选中的供应商
+        return managedSuppliers.filter(s => selectedSupplierKeys.includes(s.id));
+    }, [managedSuppliers, selectedSupplierKeys]);
 
 
     const planStats = useMemo(() => {
@@ -134,11 +166,11 @@ const AuditPlanPage = () => {
             }
         }
         return stats;
-    }, [filteredEvents]);
+    }, [filteredEvents]); // 依赖于已过滤的事件
 
     const matrixData = useMemo(() => {
         const grouped = {};
-        filteredEvents.forEach(event => {
+        filteredEvents.forEach(event => { // 使用已过滤的事件
             if (!grouped[event.supplier_name]) {
                 grouped[event.supplier_name] = Array.from({ length: 12 }, () => []);
             }
@@ -149,7 +181,7 @@ const AuditPlanPage = () => {
             }
         });
         return grouped;
-    }, [filteredEvents]);
+    }, [filteredEvents]); // 依赖于已过滤的事件
 
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
@@ -269,7 +301,7 @@ const AuditPlanPage = () => {
     };
 
     const handleExportExcel = async () => {
-        if (managedSuppliers.length === 0) {
+        if (suppliersToRender.length === 0) { // 修正：使用 suppliersToRender
             messageApi.warning('没有可供导出的数据。');
             return;
         }
@@ -293,7 +325,7 @@ const AuditPlanPage = () => {
             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
 
-        managedSuppliers.forEach(supplier => {
+        suppliersToRender.forEach(supplier => { // 修正：使用 suppliersToRender
             const rowData = {
                 parmaId: supplier.parma_id,
                 cmt: supplier.cmt,
@@ -316,7 +348,7 @@ const AuditPlanPage = () => {
                         ];
 
                         if (index < itemsInCell.length - 1) {
-                           textParts.push({ font: { color: { argb: 'FF000000' } }, text: '\n' });
+                            textParts.push({ font: { color: { argb: 'FF000000' } }, text: '\n' });
                         }
                         return textParts;
                     });
@@ -368,10 +400,57 @@ const AuditPlanPage = () => {
                 </div>
                 <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计、QRM会议与质量评审的整体进度。</Paragraph>
                 <Divider style={{ margin: '16px 0' }} />
+                <Row gutter={[16, 16]} align="bottom">
+                    <Col xs={24} sm={12} md={8} lg={6}>
+                        <Form.Item label="筛选供应商" style={{ margin: 0 }}>
+                            <Select
+                                mode="multiple"
+                                allowClear
+                                placeholder="选择供应商 (默认全部)"
+                                value={selectedSupplierKeys}
+                                onChange={setSelectedSupplierKeys}
+                                style={{ width: '100%' }}
+                                options={managedSuppliers.map(s => ({ label: s.short_code, value: s.id }))}
+                                filterOption={(input, option) =>
+                                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                                maxTagCount="responsive"
+                            />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12} md={8} lg={6}>
+                        <Form.Item label="筛选问题类型" style={{ margin: 0 }}>
+                            <Select
+                                mode="multiple"
+                                allowClear
+                                placeholder="选择类型 (默认全部)"
+                                value={selectedCategoryKeys}
+                                onChange={setSelectedCategoryKeys}
+                                style={{ width: '100%' }}
+                                options={categories.map(c => ({ label: c.name, value: c.name }))}
+                                maxTagCount="responsive"
+                            />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12} md={8} lg={6}>
+                        <Form.Item label="筛选状态" style={{ margin: 0 }}>
+                            <Radio.Group
+                                value={selectedStatusKey}
+                                onChange={(e) => setSelectedStatusKey(e.target.value)}
+                            >
+                                <Radio.Button value="all">全部</Radio.Button>
+                                <Radio.Button value="pending">待办</Radio.Button>
+                                <Radio.Button value="completed">已完成</Radio.Button>
+                            </Radio.Group>
+                        </Form.Item>
+                    </Col>
+                </Row>
+
+                <Divider style={{ margin: '16px 0' }} />
                 <Row gutter={16}>
-                    <Col span={8}><Statistic title="总计事项" value={planStats.total} /></Col>
-                    <Col span={8}><Statistic title="已完成" value={planStats.completed} valueStyle={{ color: '#52c41a' }} suffix={`/ ${planStats.total}`} /></Col>
-                    <Col span={8}><Statistic title="待办" value={planStats.pending} valueStyle={{ color: '#faad14' }} /></Col>
+                    <Col span={8}><Statistic title="总计事项(已筛选）" value={planStats.total} /></Col>
+                    <Col span={8}><Statistic title="已完成(已筛选）" value={planStats.completed} valueStyle={{ color: '#52c41a' }} suffix={`/ ${planStats.total}`} /></Col>
+                    <Col span={8}><Statistic title="待办(已筛选）" value={planStats.pending} valueStyle={{ color: '#faad14' }} /></Col>
                 </Row>
             </Card>
 
@@ -402,7 +481,7 @@ const AuditPlanPage = () => {
                             ))}
                         </div>
 
-                        {managedSuppliers.map(supplier => (
+                        {suppliersToRender.map(supplier => (
                             <div key={supplier.id} style={matrixStyles.bodyRow}>
                                 <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
                                     <Text type="secondary">{supplier.parma_id}</Text>

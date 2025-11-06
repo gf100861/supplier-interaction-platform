@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'; // 1. 引入 useEffect
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, Typography, Input, Select, List, Empty, Spin, Tag, Button, Divider, Space, Row, Col, DatePicker, message } from 'antd';
 import { BookOutlined, CheckSquareOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -14,8 +14,8 @@ const { Search } = Input;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 
-// --- 2. 用于本地存储最近搜索的 Key ---
-const RECENT_SUPPLIERS_KEY = 'recentAnalysisSuppliers';
+// --- 1. 将 Key 的基础名称移到外部 ---
+const RECENT_SUPPLIERS_KEY_PREFIX = 'recentAnalysisSuppliers';
 
 const ProblemAnalysisPage = () => {
     const currentUser = JSON.parse(localStorage.getItem('user'));
@@ -25,58 +25,57 @@ const ProblemAnalysisPage = () => {
     const navigate = useNavigate();
 
     const [filters, setFilters] = useState({
-        // 移除了 source 和 cause
         supplier: [],
         dateRange: null,
         keyword: '',
     });
     
-    // --- 3. 为“最近搜索”添加 State ---
-    const [recentSuppliers, setRecentSuppliers] = useState([]); // 存储供应商 ID
+    // --- 2. 核心修正：基于用户ID创建动态的、唯一的 Key ---
+    const RECENT_SUPPLIERS_KEY = useMemo(() => {
+        if (!currentUser?.id) return `${RECENT_SUPPLIERS_KEY_PREFIX}_guest`; // 为未登录用户提供回退
+        return `${RECENT_SUPPLIERS_KEY_PREFIX}_${currentUser.id}`;
+    }, [currentUser?.id]);
+
+
+    const [recentSuppliers, setRecentSuppliers] = useState([]);
 
     if (currentUser.role === 'Supplier') {
         navigate('/');
     }
 
-    // --- 4. 在页面加载时，获取“最近搜索”的供应商 ---
+    // --- 3. 核心修正：useEffect 依赖动态的 Key ---
     useEffect(() => {
         const saved = localStorage.getItem(RECENT_SUPPLIERS_KEY);
         if (saved) {
-            setRecentSuppliers(JSON.parse(saved)); // 这是一个 ID 数组
+            setRecentSuppliers(JSON.parse(saved));
         }
-    }, []);
+    }, [RECENT_SUPPLIERS_KEY]); // 当 key 变化时 (用户切换)，重新加载
 
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
     };
 
-    // --- 5. 创建一个专门处理供应商选择的函数，用于更新“最近搜索” ---
+    // --- 4. 核心修正：handleSupplierFilterChange 现在会使用动态的 Key ---
     const handleSupplierFilterChange = (supplierIds) => {
         handleFilterChange('supplier', supplierIds);
 
-        // 获取当前选择中尚未在“最近”列表里的新 ID
         const newIds = supplierIds.filter(id => !recentSuppliers.includes(id));
-        // 将新 ID 放在最前面
         let updatedRecent = [...newIds, ...recentSuppliers];
-        // 去重
         updatedRecent = [...new Set(updatedRecent)];
-        // 只保留最近 3 个
-        updatedRecent = updatedRecent.slice(0, 5);
+        updatedRecent = updatedRecent.slice(0, 5); // 保持5个
         
         setRecentSuppliers(updatedRecent);
+        // 使用用户专属的 Key 进行存储
         localStorage.setItem(RECENT_SUPPLIERS_KEY, JSON.stringify(updatedRecent));
     };
     
-    // --- 6. 核心筛选逻辑：现在直接筛选 notices，而不是 allFindings ---
     const filteredNotices = useMemo(() => {
         const { supplier, dateRange, keyword } = filters;
         
         return notices.filter(notice => {
-            // 供应商筛选
             if (supplier.length > 0 && !supplier.includes(notice.assignedSupplierId)) {
                 return false;
             }
-            // 日期筛选 (基于创建日期)
             if (dateRange && dateRange[0] && dateRange[1]) {
                 const createTime = dayjs(notice.createdAt);
                 if (!createTime.isAfter(dateRange[0].startOf('day')) || !createTime.isBefore(dateRange[1].endOf('day'))) {
@@ -84,7 +83,6 @@ const ProblemAnalysisPage = () => {
                 }
             }
             
-            // 关键词筛选 (现在会搜索 Process 和 Finding)
             const lowerCaseKeyword = keyword.toLowerCase();
             if (lowerCaseKeyword) {
                 const processText = notice.title || '';
@@ -103,7 +101,6 @@ const ProblemAnalysisPage = () => {
         });
     }, [notices, filters]);
 
-    // --- 7. 导出Excel (更新为双列数据) ---
     const handleExportExcel = async () => {
         if (filteredNotices.length === 0) {
             messageApi.warning('没有可导出的数据。');
@@ -141,7 +138,6 @@ const ProblemAnalysisPage = () => {
         messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
     };
 
-    // --- 8. 辅助函数：根据 ID 获取供应商 short_code ---
     const getSupplierShortCode = (id) => {
         return suppliers.find(s => s.id === id)?.short_code || '未知';
     };
@@ -165,10 +161,9 @@ const ProblemAnalysisPage = () => {
                                 allowClear 
                                 placeholder="按供应商筛选..." 
                                 style={{ width: '100%' }} 
-                                onChange={handleSupplierFilterChange} // <-- 9. 使用新函数
-                                value={filters.supplier} // 确保受控
+                                onChange={handleSupplierFilterChange}
+                                value={filters.supplier}
                                 options={suppliers.map(s => ({label: s.short_code, value: s.id}))} 
-                                // --- ✨ 核心修正：添加 showSearch 和 filterOption ---
                                 showSearch
                                 filterOption={(input, option) =>
                                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -179,7 +174,7 @@ const ProblemAnalysisPage = () => {
                             <RangePicker 
                                 style={{ width: '100%' }} 
                                 onChange={v => handleFilterChange('dateRange', v)} 
-                                value={filters.dateRange} // 确保受控
+                                value={filters.dateRange}
                             />
                         </Col>
                         <Col xs={24} md={24} lg={12}>
@@ -187,11 +182,10 @@ const ProblemAnalysisPage = () => {
                                 placeholder="在结果中搜索关键词 (标题, 编号, Process, Finding)..." 
                                 onSearch={v => handleFilterChange('keyword', v)}
                                 onChange={e => handleFilterChange('keyword', e.target.value)}
-                                value={filters.keyword} // 确保受控
+                                value={filters.keyword}
                             />
                         </Col>
                     </Row>
-                    {/* --- 10. “最近搜索”按钮区域 --- */}
                     {recentSuppliers.length > 0 && (
                         <Row>
                             <Col>
@@ -213,7 +207,6 @@ const ProblemAnalysisPage = () => {
                 </Space>
             </Card>
 
-            {/* --- 11. 核心：重构后的双列列表 --- */}
             <Card 
                 title={<Space><CheckSquareOutlined />知识经验库</Space>} 
                 bordered={false} 
@@ -232,7 +225,6 @@ const ProblemAnalysisPage = () => {
                         const processText = item.title || 'N/A';
                         const findingText = item.sdNotice?.details?.finding || item.sdNotice?.details?.description || 'N/A';
                         
-                        // ✨ 修正：在 renderItem 内部查找 supplier short_code
                         const supplierShortCode = suppliers.find(s => s.id === item.assignedSupplierId)?.short_code || item.assignedSupplierName;
 
                         return (
@@ -250,12 +242,10 @@ const ProblemAnalysisPage = () => {
                                             </Paragraph>
                                         </Col>
                                     </Row>
-                                    {/* <Divider style={{ margin: '8px 0' }} /> */}
+                                    <Divider style={{ margin: '8px 0' }} />
                                     <Space>
-                                        {/* ✨ 修正：使用上面找到的 supplierShortCode */}
                                         <Tag color="cyan">{supplierShortCode}</Tag>
                                         <Tag>{dayjs(item.createdAt).format('YYYY-MM-DD')}</Tag>
-                                        {/* 链接到通知单详情页，在新窗口打开 */}
                                         <Button 
                                             type="link" 
                                             size="small" 
@@ -278,4 +268,3 @@ const ProblemAnalysisPage = () => {
 };
 
 export default ProblemAnalysisPage;
-
