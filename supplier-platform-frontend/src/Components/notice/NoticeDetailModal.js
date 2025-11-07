@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react'; // 1. 确保导入 useEffect
-import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message } from 'antd'; // 2. 确保导入 message
+import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, theme, Popconfirm } from 'antd'; // 2. 确保导入 message
 import {
-    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
-    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
+    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, SolutionOutlined,
+    MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
     InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
@@ -163,6 +163,51 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
 };
 
 const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
+
+    const { messageApi } = useNotification();
+    const draftKey = `evidenceDraft_${notice?.id}`;
+
+    // --- 2. [加载草稿] - 组件加载时，尝试从 localStorage 加载草稿 ---
+    useEffect(() => {
+        if (notice?.id) {
+            const savedDraft = localStorage.getItem(draftKey);
+            if (savedDraft) {
+                try {
+                    const draftData = JSON.parse(savedDraft);
+                    // FileList 数据（作为对象数组）可以直接被 setFieldsValue 恢复
+                    form.setFieldsValue(draftData);
+                    messageApi.info("已为您加载上次未提交的证据草稿。");
+                } catch (e) {
+                    messageApi.error("加载证据草稿失败:", e);
+                    localStorage.removeItem(draftKey); // 清理无效草稿
+                }
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notice?.id, form, draftKey]); // 依赖项
+
+    // --- 3. [自动保存] - 表单内容变化时，自动保存到 localStorage ---
+    const handleFormChange = (changedValues, allValues) => {
+        if (notice?.id) {
+            try {
+                // 保存表单所有值，包括文件列表（元数据）
+                localStorage.setItem(draftKey, JSON.stringify(allValues));
+            } catch (e) {
+                messageApi.warn("保存证据草稿失败 (可能已满):", e);
+            }
+        }
+    };
+
+    // --- 4. [清空草稿] - 提交成功后，清空草稿 ---
+    const handleFinish = (values) => {
+        if (onFinish) {
+            onFinish(values); // 调用父组件传入的 onEvidenceSubmit
+        }
+        if (notice?.id) {
+            localStorage.removeItem(draftKey); // 提交成功，清除草稿
+        }
+    };
+
     const lastApprovedPlans = useMemo(() => {
         const history = notice?.history || [];
         const lastPlanEvent = [...history].reverse().find(h => h.type === 'sd_plan_approval' || h.type === 'supplier_plan_submission');
@@ -170,7 +215,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
     }, [notice]);
 
     return (
-        <Form form={form} layout="vertical" onFinish={onFinish}>
+        <Form form={form} layout="vertical" onFinish={handleFinish} onValuesChange={handleFormChange}>
             <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
             <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
             <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
@@ -324,8 +369,38 @@ export const NoticeDetailModal = ({
                 />;
 
             case '待SD确认':
-            case '待SD审核计划':
-                return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} actionAreaStyle={actionAreaStyle} />;
+            case '待SD审核计划': { // 1. 添加花括号 {}
+                if (!isSDOrManager) return null;
+
+                // 2. 查找供应商最新提交的计划
+                const lastPlanSubmission = [...(notice.history || [])]
+                    .reverse()
+                    .find(h => h.type === 'supplier_plan_submission');
+
+                return (
+                    // 3. 将所有内容包裹在 actionAreaStyle 中
+                    <div style={actionAreaStyle}>
+                        <Title level={5}>审核供应商行动计划</Title>
+
+                        {/* 4. 在这里渲染行动计划详情 */}
+                        {lastPlanSubmission ? (
+                            <ActionPlanReviewDisplay historyItem={lastPlanSubmission} />
+                        ) : (
+                            <Text type="danger">错误：未找到供应商提交的行动计划。</Text>
+                        )}
+
+                        <Divider />
+
+                        {/* 5. 渲染批准/驳回按钮 (移除多余样式) */}
+                        <ApprovalArea
+                            title="" // 标题已在上方，此处留空
+                            onApprove={onPlanApprove}
+                            onReject={showPlanRejectionModal}
+                            actionAreaStyle={{ background: 'none', border: 'none', padding: 0 }}
+                        />
+                    </div>
+                );
+            }
 
             case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
@@ -421,12 +496,21 @@ export const NoticeDetailModal = ({
                 <EnhancedImageDisplay images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
 
-                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
+                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause ) && (
                     <div style={{ marginTop: '12px' }}>
                         <Space wrap>
-                            <Text strong><TagsOutlined /> 历史经验标签:</Text>
+                            <Text strong><TagsOutlined /> 历史经验标签(单个):</Text>
                             {notice.sdNotice?.problemSource && <Tag color="geekblue">{notice?.sdNotice?.problemSource}</Tag>}
                             {notice?.sdNotice?.cause && <Tag color="purple">{notice?.sdNotice?.cause}</Tag>}
+                        </Space>
+                    </div>
+                )}
+
+                 {(notice?.sdNotice?.details?.product) && (
+                    <div style={{ marginTop: '12px' }}>
+                        <Space wrap>
+                            <Text strong><TagsOutlined /> 历史经验标签(批量):</Text>
+                            {notice?.sdNotice?.details?.product && <Tag color="geekblue">{notice?.sdNotice?.details?.product}</Tag>}
                         </Space>
                     </div>
                 )}
