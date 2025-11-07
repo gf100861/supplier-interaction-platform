@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
-import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal} from 'antd';
+import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal } from 'antd';
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import dayjs from 'dayjs';
@@ -10,7 +10,7 @@ import { useNotices } from '../contexts/NoticeContext';
 import { useCategories } from '../contexts/CategoryContext'; // 1. 导入新的 Hook
 window.Buffer = Buffer;
 
-const { Title, Paragraph,Text } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const { Dragger } = Upload; // 2. 引入 Dragger 组件
@@ -67,9 +67,20 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
     };
 
     let childNode = children;
+
+    //非必须要填的列
+    const optionalFields = ['comments', 'product'];
     if (editable) {
         childNode = editing ? (
-            <Form.Item style={{ margin: 0 }} name={dataIndex} rules={[{ required: dataIndex !== 'comments', message: `${title} is required.` }]}>
+            <Form.Item
+                style={{ margin: 0 }}
+                name={dataIndex}
+                rules={[{
+                    // 2. 逻辑反转：如果字段 *不* 在可选列表里，它就是必填的
+                    required: !optionalFields.includes(dataIndex),
+                    message: `${title} is required.`
+                }]}
+            >
                 {inputType === 'textarea' ? (
                     <TextArea ref={inputRef} onPressEnter={save} onBlur={save} autoSize={{ minRows: 3, maxRows: 8 }} />
                 ) : (
@@ -102,7 +113,7 @@ const categoryColumnConfig = {
         { title: 'PRODUCT', dataIndex: 'product', editable: true, width: '20%' },
         { title: 'PROCESS/QUESTIONS', dataIndex: 'title', editable: true, width: '20%' },
         { title: 'FINDINGS/DEVIATIONS', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
-       
+
 
     ],
     '文档资质': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
@@ -138,18 +149,18 @@ const BatchNoticeCreationPage = () => {
     }, [currentUser, suppliers]);
 
 
-     const sortedCategories = useMemo(() => {
+    const sortedCategories = useMemo(() => {
         if (!categories || categories.length === 0) return [];
         const desiredOrder = ['Process Audit', 'SEM'];
         return [...categories].sort((a, b) => {
-          const indexA = desiredOrder.indexOf(a);
-          const indexB = desiredOrder.indexOf(b);
-          if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-          if (indexA !== -1) return -1;
-          if (indexB !== -1) return 1;
-          return a.localeCompare(b);
+            const indexA = desiredOrder.indexOf(a);
+            const indexB = desiredOrder.indexOf(b);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.localeCompare(b);
         });
-      }, [categories]);
+    }, [categories]);
 
 
     const handleCellChange = (key, dataIndex, value) => {
@@ -215,9 +226,9 @@ const BatchNoticeCreationPage = () => {
         // 定义所有类型都共用的列
         const commonColumns = [
             // --- 3. 核心修改：重写“图片”列的渲染逻辑 ---
-           { 
-                title: '图片', 
-                dataIndex: 'images', 
+            {
+                title: '图片',
+                dataIndex: 'images',
                 width: 200, // 适当调整宽度
                 render: (_, record) => (
                     <Dragger
@@ -228,7 +239,7 @@ const BatchNoticeCreationPage = () => {
                         onChange={(info) => handleUploadChange(record.key, 'images', info)}
                         accept="image/*"
                         onPreview={handlePreview}
-                        // 移除固定的 height，让其自适应
+                    // 移除固定的 height，让其自适应
                     >
                         <div style={{ padding: '8px 0' }}> {/* 使用 div 包裹并增加内边距 */}
                             <p className="ant-upload-drag-icon">
@@ -324,16 +335,16 @@ const BatchNoticeCreationPage = () => {
         setGlobalSettings(null);
     };
 
-   const handleSubmitAll = async () => {
-        if (!globalSettings) {
-            messageApi.error('请点击“确认设置”按钮！');
-            return;
-        }
+    const handleSubmitAll = async () => {
+        if (!globalSettings) {
+            messageApi.error('请点击“确认设置”按钮！');
+            return;
+        }
 
-        const validDataSource = dataSource.filter(item => {
-            // 获取当前分类的动态列定义
-            const dynamicFields = categoryColumnConfig[globalSettings.category] || [];
-            // 找出所有被定义为 "editable: true" 的字段的 dataIndex
+        const validDataSource = dataSource.filter(item => {
+            // 获取当前分类的动态列定义
+            const dynamicFields = categoryColumnConfig[globalSettings.category] || [];
+            // 找出所有被定义为 "editable: true" 的字段的 dataIndex
             // 修正：我们应该检查所有非备注的必填字段，而不仅仅是 "editable" 字段
             const keyFields = dynamicFields
                 .filter(col => col.dataIndex !== 'comments' && col.dataIndex !== 'score') // 排除备注和非文本分数
@@ -343,27 +354,27 @@ const BatchNoticeCreationPage = () => {
             if (keyFields.length === 0) {
                 keyFields.push('title', 'description');
             }
-            // 检查：这些关键字段中，是否 *至少有一个* 被填写了
-            const isValid = keyFields.some(key => {
-                const value = item[key];
-                // 核心修正：这个新方法可以完美处理字符串、数字(integer)和null/undefined
-                // 1. 将 value 转换为字符串
-                // 2. 去除首尾空格
-                // 3. 检查长度是否不为0
-                const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
-                
-                return hasValue;
-            });
+            // 检查：这些关键字段中，是否 *至少有一个* 被填写了
+            const isValid = keyFields.some(key => {
+                const value = item[key];
+                // 核心修正：这个新方法可以完美处理字符串、数字(integer)和null/undefined
+                // 1. 将 value 转换为字符串
+                // 2. 去除首尾空格
+                // 3. 检查长度是否不为0
+                const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
+
+                return hasValue;
+            });
 
             return isValid;
-        });
+        });
 
-        if (validDataSource.length === 0) {
-            messageApi.error('请至少填写一条有效的整改项！（例如: 标题、描述等关键字段不能为空）');
-            return;
-        }
+        if (validDataSource.length === 0) {
+            messageApi.error('请至少填写一条有效的整改项！（例如: 标题、描述等关键字段不能为空）');
+            return;
+        }
 
-        messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
+        messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
 
         // --- 核心修正 2：在提交前，异步处理所有行的数据，特别是图片 ---
         const processRowData = async (item) => {
@@ -524,7 +535,7 @@ const BatchNoticeCreationPage = () => {
             });
 
             // --- 数据解析逻辑 (保持不变) ---
-           const importedData = [];
+            const importedData = [];
             let currentDataIndex = count;
             worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
                 if (rowNumber === 1) return;
@@ -534,7 +545,7 @@ const BatchNoticeCreationPage = () => {
                     images: imageMap.get(rowNumber - 1) || [],
                     attachments: [],
                 };
-                
+
                 // --- 在这里使用更健壮的单元格读取方法 ---
                 baseColumns.forEach((col, colIndex) => {
                     const cell = row.getCell(colIndex + 1);
@@ -544,11 +555,11 @@ const BatchNoticeCreationPage = () => {
                         // 如果是富文本对象，则提取所有文本
                         if (cell.value.richText) {
                             cellValue = cell.value.richText.map(rt => rt.text).join('');
-                        } 
+                        }
                         // 如果是普通对象（例如日期），转换为字符串
                         else if (typeof cell.value === 'object') {
                             cellValue = cell.value.toString();
-                        } 
+                        }
                         // 其他情况
                         else {
                             cellValue = cell.value;
@@ -565,7 +576,7 @@ const BatchNoticeCreationPage = () => {
                 currentDataIndex++;
             });
 
-            console.log('打印的Data',importedData)
+            console.log('打印的Data', importedData)
 
             setDataSource(prevData => [...prevData, ...importedData]);
             setCount(currentDataIndex);
@@ -613,7 +624,7 @@ const BatchNoticeCreationPage = () => {
                         </Select>
                     </Form.Item>
                     <Form.Item name="createTime" label="创建时间" rules={[{ required: true }]}>
-                        <DatePicker disabled={!!globalSettings}/>
+                        <DatePicker disabled={!!globalSettings} />
                     </Form.Item>
                     <Form.Item>
                         {/* 3. --- 核心修正：为确认按钮也添加 loading 状态 --- */}

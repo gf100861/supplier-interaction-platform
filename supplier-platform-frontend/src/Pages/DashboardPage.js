@@ -453,7 +453,7 @@ const DashboardPage = () => {
                             title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`}
                             onConfirm={() => handleMarkAsComplete(plan.id, plan.status)}
                         >
-                            <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
+                            <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{color: 'grey'}} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
                         </Popconfirm>
                     </Tooltip>
                     <Tooltip title="删除计划">

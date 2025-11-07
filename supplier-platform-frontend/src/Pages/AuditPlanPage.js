@@ -51,7 +51,7 @@ const AuditPlanPage = () => {
     const [currentYear, setCurrentYear] = useState(dayjs().year());
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState([]);
-    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(150));
+    const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(190));
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
@@ -433,7 +433,7 @@ const AuditPlanPage = () => {
                         </Form.Item>
                     </Col>
                     <Col xs={24} sm={12} md={8} lg={6}>
-                        <Form.Item label="筛选状态" style={{ margin: 0 }}>
+                        <Form.Item label="筛选状态" style={{ margin: 3 }}>
                             <Radio.Group
                                 value={selectedStatusKey}
                                 onChange={(e) => setSelectedStatusKey(e.target.value)}

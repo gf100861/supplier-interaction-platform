@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm } from 'antd';
+import React, { useState, useMemo, useEffect } from 'react'; // 1. 确保导入 useEffect
+import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message } from 'antd'; // 2. 确保导入 message
 import {
     PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
     CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
@@ -7,15 +7,15 @@ import {
     FileAddOutlined // 用于附件 Upload.Dragger 的图标
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-// --- ✨ 1. 移除 mockData 导入 ---
+// 3. 移除 mockData 导入
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
-
+import { useNotification } from '../../contexts/NotificationContext';
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 import { AttachmentsDisplay } from '../common/AttachmentsDisplay';
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
-// --- ✨ 2. 内置 categoryColumnConfig 以移除依赖 ---
+// 4. 内置 categoryColumnConfig 以移除依赖
 const categoryColumnConfig = {
     'SEM': [
         { title: 'Criteria n°', dataIndex: 'criteria' },
@@ -27,8 +27,8 @@ const categoryColumnConfig = {
         { title: 'PROCESS/QUESTIONS', dataIndex: 'title' },
         { title: 'FINDINGS/DEVIATIONS', dataIndex: 'description' }
     ],
-    // 您可以根据需要为其他类别添加配置
 };
+
 
 // --- 内部辅助组件 ---
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
@@ -36,7 +36,6 @@ const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList
 const DynamicDetailsDisplay = ({ notice }) => {
     if (!notice?.category || !notice?.sdNotice?.details) return null;
 
-    // --- 现在使用内置的 config ---
     const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(
         col => col.dataIndex !== 'title' && col.dataIndex !== 'description'
@@ -62,7 +61,6 @@ const DynamicDetailsDisplay = ({ notice }) => {
                 {dynamicFields.map(field => (
                     <Text key={field.dataIndex}>
                         <Text strong>{field.title}: </Text>
-                        {/* 安全访问 details 属性 */}
                         {toPlainText(notice.sdNotice.details[field.dataIndex])}
                     </Text>
                 ))}
@@ -71,42 +69,102 @@ const DynamicDetailsDisplay = ({ notice }) => {
     );
 };
 
-const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle }) => (
-    <div style={actionAreaStyle}>
-        <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
-        <Form form={form} layout="vertical" onFinish={onFinish} autoComplete="off">
-            <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
-                {(fields, { add, remove }) => (
-                    <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
-                        {fields.map((field, index) => (
-                            <Card key={field.key} size="small" title={`行动项 #${index + 1}`} extra={<MinusCircleOutlined onClick={() => remove(field.name)} />}>
-                                <Form.Item {...field} name={[field.name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
-                                    <TextArea autoSize={{ minRows: 3, maxRows: 9 }} />
-                                </Form.Item>
-                                <Space wrap align="baseline">
-                                    <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
-                                        <Input />
+// --- ✨ 核心修改：PlanSubmissionForm (含自动保存草稿功能) ---
+const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { // 接收 notice prop
+
+    // 定义一个基于通知单 ID 的唯一草稿 Key
+    const draftKey = `actionPlanDraft_${notice?.id}`;
+    const { messageApi } = useNotification();
+
+    // [加载草稿] - 组件加载时，尝试从 localStorage 加载草稿
+    useEffect(() => {
+        if (notice?.id) {
+            const savedDraft = localStorage.getItem(draftKey);
+            if (savedDraft) {
+                try {
+                    const draftData = JSON.parse(savedDraft);
+                    // 必须将日期字符串转回 dayjs 对象
+                    if (draftData.actionPlans) {
+                        draftData.actionPlans = draftData.actionPlans.map(plan => ({
+                            ...plan,
+                            deadline: plan.deadline ? dayjs(plan.deadline) : null
+                        }));
+                    }
+                    form.setFieldsValue(draftData);
+                    messageApi.info("已为您加载上次未提交的草稿。");
+                } catch (e) {
+                    console.error("加载草稿失败:", e);
+                    localStorage.removeItem(draftKey); // 清理无效草稿
+                }
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notice?.id, form, draftKey]); // 依赖项 (message 移出)
+
+    // [自动保存] - 表单内容变化时，自动保存到 localStorage
+    const handleFormChange = (changedValues, allValues) => {
+        if (notice?.id) {
+            try {
+                localStorage.setItem(draftKey, JSON.stringify(allValues));
+            } catch (e) {
+                console.warn("保存草稿失败 (可能已满):", e);
+            }
+        }
+    };
+
+    // [清空草稿] - 提交成功后，清空草稿
+    const handleFinish = (values) => {
+        if (onFinish) {
+            onFinish(values); // 调用父组件传入的 onPlanSubmit
+        }
+        if (notice?.id) {
+            localStorage.removeItem(draftKey); // 提交成功，清除草稿
+        }
+    };
+
+    return (
+        <div style={actionAreaStyle}>
+            <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
+            {/* 绑定 handleFinish 和 handleFormChange */}
+            <Form
+                form={form}
+                layout="vertical"
+                onFinish={handleFinish}
+                onValuesChange={handleFormChange} // <-- 自动保存触发器
+                autoComplete="off"
+            >
+                <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
+                    {(fields, { add, remove }) => (
+                        <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
+                            {fields.map((field, index) => (
+                                <Card key={field.key} size="small" title={`行动项 #${index + 1}`} extra={<MinusCircleOutlined onClick={() => remove(field.name)} />}>
+                                    <Form.Item {...field} name={[field.name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
+                                        <TextArea autoSize={{ minRows: 3, maxRows: 9 }} />
                                     </Form.Item>
-                                    <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
-                                        <DatePicker />
-                                    </Form.Item>
-                                </Space>
-                            </Card>
-                        ))}
-                        <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>添加行动项</Button>
-                    </div>
-                )}
-            </Form.List>
-            <Divider />
-            <Form.Item><Button type="primary" htmlType="submit">提交计划</Button></Form.Item>
-        </Form>
-    </div>
-);
+                                    <Space wrap align="baseline">
+                                        <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
+                                            <Input />
+                                        </Form.Item>
+                                        <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
+                                            <DatePicker />
+                                        </Form.Item>
+                                    </Space>
+                                </Card>
+                            ))}
+                            <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>添加行动项</Button>
+                        </div>
+                    )}
+                </Form.List>
+                <Divider />
+                <Form.Item><Button type="primary" htmlType="submit">提交计划</Button></Form.Item>
+            </Form>
+        </div>
+    );
+};
 
 const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
     const lastApprovedPlans = useMemo(() => {
         const history = notice?.history || [];
-        // 寻找最后一个被批准的计划或最近一次提交的计划（以防被驳回后重新提交）
         const lastPlanEvent = [...history].reverse().find(h => h.type === 'sd_plan_approval' || h.type === 'supplier_plan_submission');
         return lastPlanEvent?.actionPlans || [];
     }, [notice]);
@@ -138,7 +196,6 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                                 onPreview={handlePreview}
                                 accept="image/*"
                                 multiple
-                            // --- ✨ 3. 移除固定样式 ---
                             >
                                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                                 <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
@@ -153,7 +210,6 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                             <Upload.Dragger
                                 beforeUpload={() => false}
                                 multiple
-                            // --- ✨ 3. 移除固定样式 ---
                             >
                                 <p className="ant-upload-drag-icon"><FileAddOutlined /></p>
                                 <p className="ant-upload-text">点击或拖拽附件到此区域上传</p>
@@ -260,27 +316,28 @@ export const NoticeDetailModal = ({
 
         switch (notice.status) {
             case '待提交Action Plan':
-                return isAssignedSupplier && <PlanSubmissionForm form={form} onFinish={onPlanSubmit} actionAreaStyle={actionAreaStyle} />;
+                return isAssignedSupplier && <PlanSubmissionForm
+                    form={form}
+                    onFinish={onPlanSubmit}
+                    actionAreaStyle={actionAreaStyle}
+                    notice={notice} // <-- 传递 notice
+                />;
+
             case '待SD确认':
-            case '待SD确认计划':
+            case '待SD审核计划':
                 return isSDOrManager && <ApprovalArea title="审核行动计划" onApprove={onPlanApprove} onReject={showPlanRejectionModal} actionAreaStyle={actionAreaStyle} />;
+
             case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
+
             case '待SD关闭': {
                 if (!isSDOrManager) return null;
-                // 渲染逐条证据审批区
                 const history = notice.history || [];
                 const lastEvidenceIndex = [...history].reverse().findIndex(h => h.type === 'supplier_evidence_submission');
                 const realIndex = lastEvidenceIndex >= 0 ? history.length - 1 - lastEvidenceIndex : -1;
                 const lastEvidence = realIndex >= 0 ? history[realIndex] : null;
                 const evidenceList = lastEvidence?.actionPlans || [];
 
-                console.log('[NoticeDetailModal] Evidence debug info:', {
-                    noticeId: notice.id,
-                    lastEvidenceIndex: realIndex,
-                    lastEvidence: lastEvidence,
-                    evidenceList: evidenceList
-                });
                 const approvedSet = new Set();
                 if (realIndex >= 0) {
                     for (let i = realIndex + 1; i < history.length; i++) {
@@ -304,14 +361,7 @@ export const NoticeDetailModal = ({
                                         size="xlarge"
                                         showTitle={false}
                                     />
-                                    <AttachmentsDisplay
-
-                                        attachments={plan.evidenceAttachments}
-                                        title=""
-                                        size="xlarge"
-                                        showTitle={false}
-
-                                    />
+                                    <AttachmentsDisplay attachments={plan.evidenceAttachments || plan.attachments} />
                                     <Space style={{ marginTop: 8 }}>
                                         <Button type="primary" icon={<CheckCircleOutlined />} disabled={approvedFlags[index]} onClick={() => onApproveEvidenceItem?.(index)}>
                                             {approvedFlags[index] ? '已批准' : '批准此证据'}
@@ -321,7 +371,6 @@ export const NoticeDetailModal = ({
                                 </Card>
                             ))}
                             <Divider />
-                            {/* 用一个箭头函数 () => yourFunction() 来包裹它。这个箭头函数就像一个“防火墙”，可以“吞掉”不想要的参数。 */}
                             <Popconfirm title="确定所有证据均已审核通过并关闭吗？" onConfirm={() => onClosureApprove()}>
                                 <Button type="primary">全部批准并关闭</Button>
                             </Popconfirm>
@@ -372,13 +421,12 @@ export const NoticeDetailModal = ({
                 <EnhancedImageDisplay images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
 
-                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause || notice?.sdNotice?.details?.product) && (
+                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
                     <div style={{ marginTop: '12px' }}>
                         <Space wrap>
                             <Text strong><TagsOutlined /> 历史经验标签:</Text>
                             {notice.sdNotice?.problemSource && <Tag color="geekblue">{notice?.sdNotice?.problemSource}</Tag>}
                             {notice?.sdNotice?.cause && <Tag color="purple">{notice?.sdNotice?.cause}</Tag>}
-                            {<Tag color="purple">{notice?.sdNotice?.details?.product}</Tag>}
                         </Space>
                     </div>
                 )}
@@ -392,19 +440,32 @@ export const NoticeDetailModal = ({
             <Timeline>
                 <Timeline.Item color="green">
                     <p><b>{notice?.creator?.username || '发起人'}</b> 在 {dayjs(notice.createdAt).format('YYYY-MM-DD HH:mm')} 发起了通知</p>
-
                 </Timeline.Item>
 
                 {(notice.history || []).map((h, index) => {
                     const label = getHistoryItemLabel(h);
+
+                    let shouldShowPlanDetails = false;
                     const historyArray = notice.history || [];
 
-                    let historyItemForDisplay = h; // 默认显示当前项的详情
-                    let shouldRenderItem = false; // 默认不渲染
+                    if (h.type === 'supplier_plan_submission' || h.type === 'supplier_evidence_submission') {
+                        const nextHistoryItem = historyArray[index + 1];
 
+                        if (nextHistoryItem) {
+                            if (nextHistoryItem.type === 'sd_plan_rejection' || nextHistoryItem.type === 'sd_evidence_rejection') {
+                                shouldShowPlanDetails = false;
+                            } else {
+                                shouldShowPlanDetails = true;
+                            }
+                        } else {
+                            shouldShowPlanDetails = true;
+                        }
+                    }
+
+                    // --- 核心修正：只渲染“批准”节点 ---
                     // 1. 只显示“批准”节点
                     if (h.type === 'sd_plan_approval' || h.type === 'sd_closure_approve') {
-                        shouldRenderItem = true;
+                        let historyItemForDisplay = h; // 默认显示当前项的详情
 
                         // 2. 如果是“批准关闭”，则详情需要替换为“证据提交”的详情
                         if (h.type === 'sd_closure_approve') {
@@ -421,23 +482,16 @@ export const NoticeDetailModal = ({
                                 }
                             }
                         }
+
+                        return (
+                            <Timeline.Item key={index} color={label.color}>
+                                <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
+                                <ActionPlanReviewDisplay historyItem={historyItemForDisplay} />
+                            </Timeline.Item>
+                        );
                     }
 
-                    // 3. 如果不应该渲染，则返回 null
-                    if (!shouldRenderItem) {
-                        return null;
-                    }
-
-                    return (
-                        <Timeline.Item key={index} color={label.color}>
-                            <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
-
-                            {/* - 'sd_plan_approval' 会显示其 actionPlans (批准的计划)
-                              - 'sd_closure_approve' 会显示 'historyItemForDisplay' (即最后一次提交的证据) 的 actionPlans
-                            */}
-                            <ActionPlanReviewDisplay historyItem={historyItemForDisplay} />
-                        </Timeline.Item>
-                    );
+                    return null; // 隐藏所有其他节点
                 })}
             </Timeline>
 
@@ -460,7 +514,6 @@ export const NoticeDetailModal = ({
             )}
 
             <Divider />
-
             {renderActionArea()}
         </Modal>
     );
