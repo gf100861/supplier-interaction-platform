@@ -1,11 +1,15 @@
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useMemo } from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip } from 'antd'; // 1. Import message
-// 2. 引入删除图标
-import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, DeleteOutlined } from '@ant-design/icons';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload } from 'antd'; // 1. 引入 Upload
+// 2. 引入新图标
+import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNotices } from '../../contexts/NoticeContext';
 import { useNotification } from '../../contexts/NotificationContext';
+// 3. 引入 ExcelJS 和 FileSaver
+import * as ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+
 const { Text } = Typography;
 
 // --- 子组件：单个通知单 ---
@@ -13,6 +17,7 @@ const getStatusTag = (status) => {
     let color;
     switch (status) {
         case '待提交Action Plan':
+        case '待供应商处理':
             color = 'processing'; // 蓝色
             break;
         case '待供应商关闭':
@@ -20,8 +25,9 @@ const getStatusTag = (status) => {
             break;
         case '待SD确认':
             color = 'red';
-            break; // Added break statement
+            break;
         case '待SD关闭':
+        case '待SD审核计划':
             color = 'purple'; // 紫色
             break;
         case '已完成':
@@ -45,7 +51,6 @@ const SingleNoticeItem = ({
     token,
     currentUser,
     noticeCategoryDetails,
-    // --- 3. 添加批量选择相关 props ---
     selectable = false,
     selected = false,
     onSelectChange = () => { }
@@ -58,22 +63,20 @@ const SingleNoticeItem = ({
         ? noticeCategoryDetails[item.category]
         : { id: 'N/A', color: 'default' };
 
-    const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据';
+    const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
 
 
     return (
         <List.Item actions={getActionsForItem(item)}>
-            {/* --- 4. 添加用于批量选择的 Checkbox --- */}
             {selectable && (
                 <Checkbox
                     checked={selected}
                     onChange={(e) => onSelectChange(item.id, e.target.checked)}
-                    onClick={(e) => e.stopPropagation()} // 防止点击 Checkbox 时触发 List.Item 的点击事件
+                    onClick={(e) => e.stopPropagation()}
                     style={{ marginRight: '16px' }}
                 />
             )}
-            {/* --- (可选) 为 SD/Manager 添加审阅 Checkbox --- */}
-            {isReviewable && !selectable && (
+            {isReviewable && (
                 <Checkbox
                     checked={item.isReviewed}
                     onChange={(e) => handleReviewToggle(item, e)}
@@ -82,7 +85,7 @@ const SingleNoticeItem = ({
                 />
             )}
             <List.Item.Meta
-                style={{ paddingLeft: selectable || isReviewable ? '0px' : '24px' }} // 根据是否有 Checkbox 调整内边距
+                style={{ paddingLeft: selectable || isReviewable ? '0px' : '24px' }}
                 avatar={<FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary }} />}
                 title={
                     <Space>
@@ -103,7 +106,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
     const [sortOrder, setSortOrder] = useState('default');
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
-    const supplierName = batch.representative.supplier?.name || '未知供应商'; // Corrected access
+    const supplierName = batch.representative.supplier?.name || '未知供应商';
     const category = batch.representative?.category || '未知类型';
     const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
@@ -112,18 +115,27 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         ? `批量任务: ${supplierShortCode} - ${category}`
         : `每日任务: ${supplierShortCode}- ${category}`;
 
-    // --- 5. 从 props 中获取 deleteMultipleNotices ---
-    const { notices, deleteMultipleNotices } = useNotices();
-    const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]); // 存储选中的子项 ID
-    const [isDeletingBatchItems, setIsDeletingBatchItems] = useState(false); // 删除加载状态
+    // --- 4. 获取 updateNotice ---
+    const { deleteMultipleNotices, updateNotice } = useNotices();
+    const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]);
+    const [isDeletingBatchItems, setIsDeletingBatchItems] = useState(false);
+    const [isUploading, setIsUploading] = useState(false); // 5. 添加上传状态
 
     const { messageApi } = useNotification();
 
-    const allowBatchDelete = useMemo(() => {
+    // 6. 重命名为 allowBatchActions
+      const allowBatchActions = useMemo(() => {
+        // 检查是否所有通知单都处于待处理状态
+        const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
+        return allPending && currentUser.role === 'Supplier'; // 只有供应商可以操作
+    }, [batch.notices, currentUser]);
 
-        return batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理') && currentUser.role != 'Supplier'; // Also allow '待供应商处理' for flexibility
 
-    }, [batch.notices]);
+    const allowBatchEvidenceUpload = useMemo(() => {
+        const allPendingEvidence = batch.notices.every(notice => notice.status === '待供应商关闭');
+        // 只有供应商才能上传证据
+        return allPendingEvidence && currentUser.role === 'Supplier';
+    }, [batch.notices, currentUser]);
 
     const sortedNotices = useMemo(() => {
         const noticesToSort = [...batch.notices];
@@ -140,7 +152,6 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
     };
 
-    // --- 6. 子项选择逻辑 ---
     const handleSelectChange = (noticeId, checked) => {
         setSelectedNoticeKeys(prevKeys =>
             checked ? [...prevKeys, noticeId] : prevKeys.filter(key => key !== noticeId)
@@ -156,7 +167,6 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         }
     };
 
-    // --- 7. 批量删除内部项的逻辑 ---
     const handleBatchDeleteWithinBatch = async () => {
         if (selectedNoticeKeys.length === 0) {
             messageApi.warning('请至少选择一项进行删除。');
@@ -166,16 +176,322 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         try {
             await deleteMultipleNotices(selectedNoticeKeys);
             messageApi.success(`成功删除了 ${selectedNoticeKeys.length} 条通知单。`);
-            setSelectedNoticeKeys([]); // 清空选择
-            // 注意：这里需要父组件在删除后重新获取数据或更新状态，以反映列表变化
-
+            setSelectedNoticeKeys([]);
         } catch (error) {
             messageApi.error(`批量删除失败: ${error.message}`);
-
         } finally {
             setIsDeletingBatchItems(false);
         }
     };
+
+    // --- 7. 新增：下载行动计划模板 ---
+    const handleActionDownloadTemplate = async () => {
+        messageApi.loading({ content: '正在生成模板...', key: 'template' });
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Batch Action Plan');
+
+            worksheet.mergeCells('A1:F1');
+            worksheet.getCell('A1').value = '批量行动计划模板';
+            worksheet.getCell('A1').font = { bold: true, size: 16 };
+
+            worksheet.mergeCells('A2:F2');
+            worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
+
+            worksheet.mergeCells('A3:F3');
+            worksheet.getCell('A3').value = {
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C 列！请在 D, E, F 列填写内容。如有多个负责人，您可以复制单个通知项到其他行创建。' }]
+            };
+
+            worksheet.getRow(5).values = [
+                'Notice ID (请勿修改)',
+                'Process/Question (问题项)',
+                'Finding/Deviation (问题描述)',
+                'Action Plan (请填写)',
+                'Responsible (请填写)',
+                'Deadline (YYYY-MM-DD 请填写)'
+            ];
+            worksheet.getRow(5).font = { bold: true };
+            worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
+            worksheet.columns = [
+                { key: 'id', width: 38 },
+                { key: 'process', width: 40 },
+                { key: 'finding', width: 40 },
+                { key: 'plan', width: 40 },
+                { key: 'responsible', width: 20 },
+                { key: 'deadline', width: 20 },
+            ];
+
+            // 填充所有问题项
+            batch.notices.forEach(notice => {
+                worksheet.addRow({
+                    id: notice.id,
+                    process: notice.title || 'N/A',
+                    finding: notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || 'N/A',
+                    plan: '', // 留空给用户
+                    responsible: '', // 留空给用户
+                    deadline: '' // 留空给用户
+                });
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `BatchPlan_${supplierShortCode}_${category}.xlsx`);
+            messageApi.success({ content: '模板已开始下载。', key: 'template' });
+
+        } catch (error) {
+            console.error("生成模板失败:", error);
+            messageApi.error({ content: '模板生成失败，请重试。', key: 'template' });
+        }
+    };
+
+    // --- 8. 新增：处理行动计划批量上传 ---
+    const handleActionExcelUpload = (file) => {
+        setIsUploading(true);
+        messageApi.loading({ content: '正在解析并批量提交行动计划...', key: 'excelRead' });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
+
+                const plansByNoticeId = {};
+                let processedCount = 0;
+
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 5) return; // 跳过表头
+
+                    const noticeId = row.getCell(1).value?.toString();
+                    const planText = row.getCell(4).value?.toString() || '';
+                    const responsible = row.getCell(5).value?.toString() || '';
+                    const deadlineValue = row.getCell(6).value;
+
+                    // 必须三项都填写才算有效
+                    if (noticeId && planText.trim() && responsible.trim() && deadlineValue) {
+                        if (!plansByNoticeId[noticeId]) {
+                            plansByNoticeId[noticeId] = [];
+                        }
+                        plansByNoticeId[noticeId].push({
+                            plan: planText,
+                            responsible: responsible,
+                            deadline: dayjs(deadlineValue).format('YYYY-MM-DD') // 格式化日期
+                        });
+                        processedCount++;
+                    }
+                });
+
+                if (processedCount === 0) {
+                    messageApi.warning({ content: '未在Excel中找到有效的行动计划数据（请确保 Action Plan, Responsible, Deadline 均已填写）。', key: 'excelRead', duration: 4 });
+                    setIsUploading(false);
+                    return;
+                }
+
+                // --- 批量更新 Notice ---
+                const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
+                    const notice = batch.notices.find(n => n.id === noticeId);
+                    if (!notice) {
+                        console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
+                        return null;
+                    }
+
+                    const newHistory = {
+                        type: 'supplier_plan_submission',
+                        submitter: currentUser.name || currentUser.username,
+                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                        description: '供应商已批量提交行动计划。',
+                        actionPlans: plansByNoticeId[noticeId]
+                    };
+                    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+                    // 调用从 useNotices() 获取的 updateNotice 函数
+                    return updateNotice(noticeId, {
+                        status: '待SD确认', // 统一更新状态
+                        history: [...currentHistory, newHistory]
+                    });
+                });
+
+                await Promise.all(updatePromises.filter(Boolean));
+
+                messageApi.success({ content: `成功处理 ${processedCount} 条行动计划，已提交 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
+                // 刷新折叠面板
+                setActiveCollapseKeys([]);
+
+            } catch (error) {
+                console.error("解析或提交Excel失败:", error);
+                messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
+            } finally {
+                setIsUploading(false);
+            }
+        };
+        reader.onerror = (error) => {
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            setIsUploading(false);
+        };
+        reader.readAsArrayBuffer(file);
+        return false; // 阻止 antd 自动上传
+    };
+
+    // --- 8. 新增：下载证据模板 ---
+    const handleDownloadEvidenceTemplate = async () => {
+        messageApi.loading({ content: '正在生成证据模板...', key: 'evidenceTemplate' });
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Batch Evidence Template');
+
+            worksheet.mergeCells('A1:F1');
+            worksheet.getCell('A1').value = '批量证据提交模板';
+            worksheet.getCell('A1').font = { bold: true, size: 16 };
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } };
+
+            worksheet.mergeCells('A2:F2');
+            worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
+
+            worksheet.mergeCells('A3:F3');
+            worksheet.getCell('A3').value = {
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C, D, E 列！请仅在 F 列填写“完成情况说明”。' }]
+            };
+            worksheet.mergeCells('A4:F4');
+            worksheet.getCell('A4').value = {
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '图片和附件仍需进入通知单详情页单独上传。' }]
+            };
+
+            worksheet.getRow(6).values = [
+                'Notice ID (请勿修改)',
+                'Problem Finding (供参考)',
+                'Approved Action Plan (供参考)',
+                'Responsible (供参考)',
+                'Deadline (供参考)',
+                'Evidence Description (请填写)'
+            ];
+            worksheet.getRow(6).font = { bold: true };
+            worksheet.getRow(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
+            worksheet.columns = [
+                { key: 'id', width: 38 },
+                { key: 'finding', width: 40 },
+                { key: 'plan', width: 40 },
+                { key: 'responsible', width: 20 },
+                { key: 'deadline', width: 20 },
+                { key: 'evidence', width: 50 },
+            ];
+
+            // 填充所有已批准的行动计划
+            batch.notices.forEach(notice => {
+                const lastApprovedPlan = [...(notice.history || [])].reverse().find(h => h.type === 'sd_plan_approval');
+                if (lastApprovedPlan && lastApprovedPlan.actionPlans) {
+                    lastApprovedPlan.actionPlans.forEach(plan => {
+                        worksheet.addRow({
+                            id: notice.id,
+                            finding: notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title || 'N/A',
+                            plan: plan.plan,
+                            responsible: plan.responsible,
+                            deadline: dayjs(plan.deadline).format('YYYY-MM-DD'),
+                            evidence: '' // 留空给用户
+                        });
+                    });
+                }
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `BatchEvidence_${supplierShortCode}_${category}.xlsx`);
+            messageApi.success({ content: '证据模板已开始下载。', key: 'evidenceTemplate' });
+
+        } catch (error) {
+            console.error("生成证据模板失败:", error);
+            messageApi.error({ content: '模板生成失败，请重试。', key: 'evidenceTemplate' });
+        }
+    };
+
+    // --- 9. 新增：处理证据批量上传 ---
+    const handleEvidenceExcelUpload = (file) => {
+        setIsUploading(true);
+        messageApi.loading({ content: '正在解析并批量提交证据...', key: 'excelRead' });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
+
+                const plansByNoticeId = {};
+                let processedCount = 0;
+
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 6) return; // 跳过表头
+
+                    const noticeId = row.getCell(1).value?.toString();
+                    const planText = row.getCell(3).value?.toString() || ''; // Action Plan
+                    const responsible = row.getCell(4).value?.toString() || ''; // Responsible
+                    const deadlineValue = row.getCell(5).value; // Deadline
+                    const evidenceDescription = row.getCell(6).value?.toString() || ''; // Evidence
+
+                    // 只要有 Notice ID 和 Evidence Description，就认为有效
+                    if (noticeId && evidenceDescription.trim()) {
+                        if (!plansByNoticeId[noticeId]) {
+                            plansByNoticeId[noticeId] = [];
+                        }
+                        plansByNoticeId[noticeId].push({
+                            plan: planText,
+                            responsible: responsible.trim() || '',
+                            deadline: deadlineValue ? dayjs(deadlineValue).format('YYYY-MM-DD') : null,
+                            evidenceDescription: evidenceDescription.trim(),
+                            evidenceImages: [], // Excel 不上传图片
+                            evidenceAttachments: [] // Excel 不上传附件
+                        });
+                        processedCount++;
+                    }
+                });
+
+                if (processedCount === 0) {
+                    messageApi.warning({ content: '未在Excel中找到有效的证据说明数据（请确保 "Evidence Description" 列已填写）。', key: 'excelRead', duration: 4 });
+                    setIsUploading(false);
+                    return;
+                }
+
+                // 批量更新 Notice
+                const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
+                    const notice = batch.notices.find(n => n.id === noticeId);
+                    if (!notice) {
+                        console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
+                        return null;
+                    }
+
+                    const newHistory = {
+                        type: 'supplier_evidence_submission',
+                        submitter: currentUser.name || currentUser.username,
+                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                        description: '供应商已批量提交完成证据。',
+                        actionPlans: plansByNoticeId[noticeId]
+                    };
+                    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+                    return updateNotice(noticeId, {
+                        status: '待SD关闭', // 统一更新状态
+                        history: [...currentHistory, newHistory]
+                    });
+                });
+
+                await Promise.all(updatePromises.filter(Boolean));
+
+                messageApi.success({ content: `成功处理 ${processedCount} 条证据，已更新 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
+                setActiveCollapseKeys([]);
+
+            } catch (error) {
+                console.error("解析或提交Excel失败:", error);
+                messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
+            } finally {
+                setIsUploading(false);
+            }
+        };
+        reader.onerror = (error) => {
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            setIsUploading(false);
+        };
+        reader.readAsArrayBuffer(file);
+        return false; // 阻止 antd 自动上传
+    };
+
 
     const isAllSelected = sortedNotices.length > 0 && selectedNoticeKeys.length === sortedNotices.length;
     const isIndeterminate = selectedNoticeKeys.length > 0 && selectedNoticeKeys.length < sortedNotices.length;
@@ -218,10 +534,10 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                         />
                     }
                 >
-                    {/* --- 8. 添加批量删除操作栏 --- */}
-
-                    {allowBatchDelete && (
-                        <div style={{ marginBottom: '16px', padding: '0 16px' }}>
+                    {/* --- 9. 核心修改：添加批量操作区域 --- */}
+                    {allowBatchActions && (
+                        <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                            {/* 批量删除区域 */}
                             <Space>
                                 <Checkbox
                                     indeterminate={isIndeterminate}
@@ -248,6 +564,42 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                                 </Popconfirm>
                                 {selectedNoticeKeys.length > 0 && <Text type="secondary">已选择 {selectedNoticeKeys.length} 项</Text>}
                             </Space>
+
+                            {/* 批量行动计划区域 */}
+                            <Space>
+                                <Button icon={<DownloadOutlined />} onClick={handleActionDownloadTemplate}>
+                                    下载行动计划模板
+                                </Button>
+                                <Upload
+                                    beforeUpload={handleActionExcelUpload}
+                                    showUploadList={false}
+                                    accept=".xlsx, .xls"
+                                    disabled={isUploading}
+                                >
+                                    <Button icon={<FileExcelOutlined />} loading={isUploading}>
+                                        上传行动计划
+                                    </Button>
+                                </Upload>
+                            </Space>
+                        </div>
+                    )}
+                    {allowBatchEvidenceUpload && (
+                        <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                            <Space>
+                                <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate}>
+                                    下载证据模板
+                                </Button>
+                                <Upload
+                                    beforeUpload={handleEvidenceExcelUpload}
+                                    showUploadList={false}
+                                    accept=".xlsx, .xls"
+                                    disabled={isUploading}
+                                >
+                                    <Button icon={<FileExcelOutlined />} loading={isUploading}>
+                                        上传证据 (仅文本)
+                                    </Button>
+                                </Upload>
+                            </Space>
                         </div>
                     )}
 
@@ -257,8 +609,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                             <SingleNoticeItem
                                 item={notice}
                                 {...props}
-                                // --- 9. 传递选择相关的 props ---
-                                selectable={allowBatchDelete}
+                                selectable={allowBatchActions} // <-- 使用 allowBatchActions
                                 selected={selectedNoticeKeys.includes(notice.id)}
                                 onSelectChange={handleSelectChange}
                             />
@@ -277,7 +628,6 @@ export const NoticeList = (props) => {
             dataSource={props.data}
             renderItem={item => (
                 item.isBatch
-                    // --- 10. 确保将所有 props (包括 deleteMultipleNotices) 传递给 NoticeBatchItem ---
                     ? <NoticeBatchItem batch={item} {...props} />
                     : <SingleNoticeItem item={item} selectable={false} {...props} />
             )}

@@ -4,7 +4,9 @@ import {
     PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, SolutionOutlined,
     MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
     InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
-    FileAddOutlined // 用于附件 Upload.Dragger 的图标
+    FileAddOutlined, // 用于附件 Upload.Dragger 的图标
+    DownloadOutlined,
+    UploadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 // 3. 移除 mockData 导入
@@ -12,6 +14,9 @@ import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 import { useNotification } from '../../contexts/NotificationContext';
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 import { AttachmentsDisplay } from '../common/AttachmentsDisplay';
+
+import * as ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
@@ -122,10 +127,132 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
         }
     };
 
+    // --- 3. 新增：下载模板函数 ---
+    const handleDownloadTemplate = async () => {
+        messageApi.loading({ content: '正在生成模板...', key: 'template' });
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Action Plan Template');
+
+            // A. 添加问题详情
+            worksheet.mergeCells('A1:C1');
+            worksheet.getCell('A1').value = 'Problem Finding / Deviation';
+            worksheet.getCell('A1').font = { bold: true, size: 14 };
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } }; // Light yellow
+
+            worksheet.mergeCells('A2:C2');
+            const findingText = notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title || 'N/A';
+            worksheet.getCell('A2').value = findingText;
+            worksheet.getCell('A2').alignment = { wrapText: true };
+            worksheet.getRow(2).height = 40;
+
+            worksheet.mergeCells('A3:C3');
+            worksheet.getCell('A3').value = {
+                richText: [
+                    { font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改本行及以上内容。请在下方第 5 行开始填写您的行动计划。' }
+                ]
+            };
+
+            // B. 添加表头
+            worksheet.getRow(5).values = ['Action Plan (必填)', 'Responsible (必填)', 'Deadline (YYYY-MM-DD 必填)'];
+            worksheet.getRow(5).font = { bold: true };
+            worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; // Light blue
+            worksheet.columns = [
+                { key: 'plan', width: 60 },
+                { key: 'responsible', width: 20 },
+                { key: 'deadline', width: 20 },
+            ];
+
+            // C. 添加一个示例行 (可选)
+            // worksheet.getRow(6).values = ['示例：更新操作SOP，并对所有相关人员进行培训。', '张三 (Zhang San)', '2025-12-31'];
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `ActionPlan_Template_${notice.noticeCode}.xlsx`);
+            messageApi.success({ content: '模板已开始下载。', key: 'template' });
+
+        } catch (error) {
+            console.error("生成模板失败:", error);
+            messageApi.error({ content: '模板生成失败，请重试。', key: 'template' });
+        }
+    };
+
+    // --- 4. 新增：处理Excel导入函数 ---
+    const handleExcelUpload = (file) => {
+        messageApi.loading({ content: '正在解析Excel文件...', key: 'excelRead' });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
+
+                const parsedData = [];
+                let hasData = false;
+
+                worksheet.eachRow((row, rowNumber) => {
+                    // 假设前5行是标题和说明，从第6行开始读取数据
+                    if (rowNumber <= 5) return;
+
+                    const plan = row.getCell(1).value?.toString() || '';
+                    const responsible = row.getCell(2).value?.toString() || '';
+                    const deadlineValue = row.getCell(3).value;
+
+                    // 只有当 'Action Plan' 列有内容时才添加
+                    if (plan.trim()) {
+                        hasData = true;
+                        parsedData.push({
+                            plan: plan,
+                            responsible: responsible,
+                            deadline: deadlineValue ? dayjs(deadlineValue) : null
+                        });
+                    }
+                });
+
+                if (!hasData) {
+                    messageApi.warning({ content: '未在Excel中找到有效的行动计划数据。', key: 'excelRead' });
+                    return;
+                }
+
+                form.setFieldsValue({ actionPlans: parsedData });
+                handleFormChange(null, { actionPlans: parsedData }); // 触发表单自动保存
+                messageApi.success({ content: `成功导入 ${parsedData.length} 条行动计划。`, key: 'excelRead' });
+
+            } catch (error) {
+                console.error("解析Excel失败:", error);
+                messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelRead' });
+            }
+        };
+        reader.onerror = (error) => {
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+        };
+        reader.readAsArrayBuffer(file);
+        return false; // 阻止 antd 自动上传
+    };
+
+
     return (
         <div style={actionAreaStyle}>
             <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
             {/* 绑定 handleFinish 和 handleFormChange */}
+            <Space style={{ marginBottom: 16 }}>
+                <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
+                    下载模板
+                </Button>
+                <Upload
+                    beforeUpload={handleExcelUpload}
+                    showUploadList={false}
+                    accept=".xlsx, .xls"
+                >
+                    <Button icon={<UploadOutlined />}>
+                        从Excel导入
+                    </Button>
+                </Upload>
+            </Space>
+            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: '-8px' }}>
+                您可以下载模板，离线填写行动计划后，再导入回系统。
+            </Paragraph>
+            <Divider />
             <Form
                 form={form}
                 layout="vertical"
@@ -496,7 +623,7 @@ export const NoticeDetailModal = ({
                 <EnhancedImageDisplay images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
 
-                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause ) && (
+                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
                     <div style={{ marginTop: '12px' }}>
                         <Space wrap>
                             <Text strong><TagsOutlined /> 历史经验标签(单个):</Text>
@@ -506,7 +633,7 @@ export const NoticeDetailModal = ({
                     </div>
                 )}
 
-                 {(notice?.sdNotice?.details?.product) && (
+                {(notice?.sdNotice?.details?.product) && (
                     <div style={{ marginTop: '12px' }}>
                         <Space wrap>
                             <Text strong><TagsOutlined /> 历史经验标签(批量):</Text>
