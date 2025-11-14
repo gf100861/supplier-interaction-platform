@@ -31,7 +31,7 @@ import NotFoundPage from './Pages/NotFoundPage'
 import EditNoticePage from './Pages/EditNoticePage'; // <-- 1. 导入新页面
 import IntelligentSearchPage from './Pages/IntelligentSearchPage';
 
-import OfflineSharePage from './Pages/OfflineSharePage';
+import { FileSender } from './Pages/OfflineSharePage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -71,7 +71,7 @@ const ThemedApp = () => {
                                                     <Route path="admin" element={<AdminPage />} />
                                                     <Route path="edit-notice/:id" element={<EditNoticePage />} /> {/* <-- 2. 添加新路由 */}
                                                     <Route path="intelligence-search" element={<IntelligentSearchPage />}></Route>
-                                                    <Route path="offline-share" element={<OfflineSharePage />}></Route>
+                                                    <Route path="offline-share" element={< FileSender/>}></Route>
                                                     <Route path="*" element={< NotFoundPage />} />
                                                 </Route>
                                             </Route>

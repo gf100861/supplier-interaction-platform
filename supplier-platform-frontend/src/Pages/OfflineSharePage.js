@@ -1,64 +1,91 @@
-import React, { useState } from 'react';
-import { Card, Typography, Upload, Button, Empty, message, Alert } from 'antd';
-import { ShareAltOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card, Typography, Upload, Button, notification, message, Spin, Space } from 'antd';
+import { ShareAltOutlined, UploadOutlined, InboxOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useNotification } from '../contexts/NotificationContext';
+import { supabase } from '../supabaseClient';
+import { saveAs } from 'file-saver'; // 用于下载文件
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
 const { Dragger } = Upload;
 
-const OfflineSharePage = () => {
+// --- 组件 A: 文件发送器 ---
+// (用于替换您现有的 OfflineSharePage.js 页面内容)
+export const FileSender = () => {
     const [fileList, setFileList] = useState([]);
     const [loading, setLoading] = useState(false);
     const { messageApi } = useNotification();
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
-    const handleFileChange = ({ file, fileList }) => {
-        // --- 1. 核心修正：允许保留多个文件 ---
+    const handleFileChange = ({ fileList }) => {
         setFileList(fileList);
     };
 
-    // --- 核心：Web Share API 的调用逻辑 (此逻辑已支持蓝牙) ---
-    const handleShare = async () => {
-        // --- 2. 核心修正：检查文件列表是否为空 ---
+    const handleUploadAndSync = async () => {
         if (fileList.length === 0) {
-            messageApi.warning('请先选择至少一个要分享的文件！');
+            messageApi.warning('请先选择要同步的文件！');
+            return;
+        }
+        if (!currentUser?.id) {
+            messageApi.error('无法同步：用户未登录。');
             return;
         }
 
-        // --- 3. 核心修正：获取所有要分享的文件 ---
-        const filesToShare = fileList.map(f => f.originFileObj).filter(Boolean);
-        
-        if (filesToShare.length === 0) {
-            messageApi.error('无法获取文件，请重新选择。');
-            return;
-        }
+        setLoading(true);
+        messageApi.loading({ content: '正在同步文件...', key: 'syncing', duration: 0 });
 
-        if (!navigator.share) {
-            messageApi.error('您的浏览器不支持 Web Share API。请尝试在手机或桌面版 Chrome/Edge 上使用此功能。');
-            return;
-        }
-        
-        // --- 4. 核心修正：检查是否能分享多个文件 ---
-        if (navigator.canShare && navigator.canShare({ files: filesToShare })) {
-            setLoading(true);
-            try {
-                // --- 5. 核心修正：分享所有文件 ---
-                await navigator.share({
-                    title: filesToShare.length > 1 ? `${filesToShare.length} 个文件` : filesToShare[0].name,
-                    text: `来自供应商平台的 ${filesToShare.length} 个离线文件分享`,
-                    files: filesToShare,
-                });
-                messageApi.success('文件已成功分享！');
-                setFileList([]); // 分享成功后清空列表
-            } catch (error) {
-                if (error.name !== 'AbortError') { 
-                    console.error('分享失败:', error);
-                    messageApi.error(`分享失败: ${error.message}`);
-                }
-            } finally {
-                setLoading(false);
+        const uploadPromises = fileList.map(async (fileInfo) => {
+            const file = fileInfo.originFileObj;
+            if (!file) {
+                throw new Error(`无法获取文件 ${fileInfo.name}`);
             }
-        } else {
-            messageApi.error('您的浏览器不支持分享这些文件。');
+            
+            // 1. 创建唯一的文件路径，包含用户ID
+            const filePath = `${currentUser.id}/${Date.now()}-${file.name}`;
+
+            // 2. 上传到 Supabase Storage
+            const { error: uploadError } = await supabase.storage
+                .from('file_sync') // 必须匹配 SQL 中创建的 Bucket ID
+                .upload(filePath, file);
+
+            if (uploadError) {
+                throw new Error(`上传 ${file.name} 失败: ${uploadError.message}`);
+            }
+
+            // 3. 在数据库中创建通知记录
+            const { error: insertError } = await supabase
+                .from('user_files') // 必须匹配 SQL 中创建的表
+                .insert({
+                    user_id: currentUser.id,
+                    file_name: file.name,
+                    file_path: filePath,
+                    source_device: 'web' // 假设这是从网页端发送的
+                });
+            
+            if (insertError) {
+                 // （可选）如果数据库插入失败，尝试删除刚上传的文件以进行清理
+                 await supabase.storage.from('file_sync').remove([filePath]);
+                 throw new Error(`上传 ${file.name} 成功，但同步记录失败: ${insertError.message}`);
+            }
+
+            return file.name; // 返回成功的文件名
+        });
+
+        try {
+            const uploadedFiles = await Promise.all(uploadPromises);
+            messageApi.success({ 
+                content: `成功同步 ${uploadedFiles.length} 个文件！`, 
+                key: 'syncing', 
+                duration: 3 
+            });
+            setFileList([]); // 清空列表
+        } catch (error) {
+            messageApi.error({ 
+                content: error.message, 
+                key: 'syncing', 
+                duration: 5 
+            });
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -66,30 +93,21 @@ const OfflineSharePage = () => {
         <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
             <Card>
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                    <Title level={4}>离线文件分享</Title>
+                    <Title level={4}>跨设备文件同步</Title>
                     <Paragraph type="secondary">
-                        此功能用于在现场（如工厂）无互联网连接时，通过您设备的原生分享菜单（包含 蓝牙、AirDrop、Nearby Share或其他应用）将文件发送到手机。
+                        上传文件到您的私有云端。文件将实时推送到您已登录的其他设备（如电脑或手机）。
                     </Paragraph>
-                    
-                    <Alert
-                      message="Beta 功能提示"
-                      description="此离线分享功能依赖于您设备和浏览器的原生支持。它最适用于现代手机浏览器 (Chrome/Safari) 和桌面版 Chrome/Edge。可能会因管理员设置功能受限。"
-                      type="info"
-                      showIcon
-                      style={{ marginBottom: 24, textAlign: 'left' }}
-                    />
                 </div>
                 
                 <Dragger
                     fileList={fileList}
                     onChange={handleFileChange}
                     beforeUpload={() => false} // 阻止自动上传
-                    multiple={true} // --- 6. 核心修正：确保允许多选 ---
+                    multiple={true}
                 >
                     <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                    {/* --- 7. 核心修正：更新提示文本 --- */}
                     <p className="ant-upload-text">点击或拖拽文件到此区域</p>
-                    <p className="ant-upload-hint">选择一个或多个您想要离线发送的文件（如PDF, Excel, 图片等）。</p>
+                    <p className="ant-upload-hint">支持单个或多个文件。文件将被安全存储并同步到您的账户。</p>
                 </Dragger>
 
                 <Button
@@ -98,14 +116,15 @@ const OfflineSharePage = () => {
                     size="large"
                     loading={loading}
                     disabled={fileList.length === 0}
-                    onClick={handleShare}
+                    onClick={handleUploadAndSync}
                     style={{ width: '100%', marginTop: 24 }}
                 >
-                    {loading ? '准备分享中...' : '启动原生分享'}
+                    {loading ? '正在同步...' : '上传并同步'}
                 </Button>
             </Card>
         </div>
     );
 };
 
-export default OfflineSharePage;
+// --- 组件 B: 文件接收器 ---
+// (应放置在您的 MainLayout.js 或其他常驻组件中)

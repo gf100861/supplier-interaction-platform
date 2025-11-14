@@ -14,6 +14,7 @@ import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AlertBell } from './notice/AlertBell';
 import { CrownOutlined } from '@ant-design/icons';
+import { FileReceiver } from '../Pages/FileReceiver';
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
 
@@ -161,8 +162,10 @@ const MainLayout = () => {
                     Supplier Platform ©2025 Created by Louis
                 </Footer>
             </Layout>
+            <FileReceiver />
         </Layout>
     );
 };
 
 export default MainLayout;
+
