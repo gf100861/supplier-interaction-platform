@@ -464,7 +464,7 @@ const BatchNoticeCreationPage = () => {
 
         // 使用与UI完全相同的列配置来生成模板
         const baseColumns = categoryColumnConfig[category] || [];
-        const excelColumns = [...baseColumns, { title: '备注 (Comments)' }, { title: '图片 (Images)' }].map(c => ({
+        const excelColumns = [...baseColumns].map(c => ({
             header: c.title,
             key: c.dataIndex,
             width: c.title.length > 20 ? 50 : 30
@@ -501,9 +501,7 @@ const BatchNoticeCreationPage = () => {
             // --- 核心修正：让期望的表头与下载模板的表头完全一致 ---
             const baseColumns = categoryColumnConfig[globalSettings.category] || [];
             const expectedHeaders = [
-                ...baseColumns.map(col => col.title),
-                '备注 (Comments)',
-                '图片 (Images)' // <--- 把“图片”这一列加回到验证逻辑中
+                ...baseColumns.map(col => col.title)
             ];
             const actualHeadersRaw = (worksheet.getRow(1).values || []);
             // exceljs 的 .values 会包含一个空项在前面，并且可能比实际列数长

@@ -1,26 +1,42 @@
-import React, { useState, useMemo, useEffect } from 'react'; // 1. 确保导入 useEffect
-import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, theme, Popconfirm } from 'antd'; // 2. 确保导入 message
+import React, { useState, useMemo, useEffect } from 'react';
+import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message } from 'antd';
 import {
-    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, SolutionOutlined,
-    MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
-    InboxOutlined, // 用于 Upload.Dragger 的拖拽图标
-    FileAddOutlined, // 用于附件 Upload.Dragger 的图标
-    DownloadOutlined,
-    UploadOutlined
+    PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
+    CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
+    InboxOutlined, 
+    FileAddOutlined,
+    DownloadOutlined // 1. 导入图标
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-// 3. 移除 mockData 导入
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 import { useNotification } from '../../contexts/NotificationContext';
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 import { AttachmentsDisplay } from '../common/AttachmentsDisplay';
-
+// 2. 导入 ExcelJS 和 FileSaver
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
-// 4. 内置 categoryColumnConfig 以移除依赖
+// 3. 将 toPlainText 设为模块级辅助函数
+const toPlainText = (val) => {
+    if (val == null) return '';
+    // 检查 ExcelJS 可能返回的富文本对象
+    if (typeof val === 'object' && val.richText) {
+        return val.richText.map(r => r?.text || '').join('');
+    }
+    // 检查您系统中存储的富文本对象
+    if (typeof val === 'object' && Array.isArray(val.richText)) {
+        return val.richText.map(r => r?.text || '').join('');
+    }
+    if (typeof val === 'object' && typeof val.richText === 'string') {
+        return val.richText;
+    }
+    // 已经是纯文本或数字
+    return String(val);
+};
+
 const categoryColumnConfig = {
     'SEM': [
         { title: 'Criteria n°', dataIndex: 'criteria' },
@@ -35,29 +51,16 @@ const categoryColumnConfig = {
 };
 
 
-// --- 内部辅助组件 ---
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 
 const DynamicDetailsDisplay = ({ notice }) => {
+    // ... (组件保持不变, 确保 toPlainText 在其作用域内或已在外部定义)
     if (!notice?.category || !notice?.sdNotice?.details) return null;
-
     const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(
         col => col.dataIndex !== 'title' && col.dataIndex !== 'description'
     );
-
     if (dynamicFields.length === 0) return null;
-
-    const toPlainText = (val) => {
-        if (val == null) return '';
-        if (typeof val === 'object' && Array.isArray(val.richText)) {
-            return val.richText.map(r => r?.text || '').join('');
-        }
-        if (typeof val === 'object' && typeof val.richText === 'string') {
-            return val.richText;
-        }
-        return String(val);
-    };
 
     return (
         <>
@@ -74,21 +77,18 @@ const DynamicDetailsDisplay = ({ notice }) => {
     );
 };
 
-// --- ✨ 核心修改：PlanSubmissionForm (含自动保存草稿功能) ---
-const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { // 接收 notice prop
-
-    // 定义一个基于通知单 ID 的唯一草稿 Key
+// --- ✨ 4. 核心修改：PlanSubmissionForm (添加导入/导出) ---
+const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
     const draftKey = `actionPlanDraft_${notice?.id}`;
     const { messageApi } = useNotification();
 
-    // [加载草稿] - 组件加载时，尝试从 localStorage 加载草稿
+    // [加载草稿]
     useEffect(() => {
         if (notice?.id) {
             const savedDraft = localStorage.getItem(draftKey);
             if (savedDraft) {
                 try {
                     const draftData = JSON.parse(savedDraft);
-                    // 必须将日期字符串转回 dayjs 对象
                     if (draftData.actionPlans) {
                         draftData.actionPlans = draftData.actionPlans.map(plan => ({
                             ...plan,
@@ -99,14 +99,13 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
                     messageApi.info("已为您加载上次未提交的草稿。");
                 } catch (e) {
                     console.error("加载草稿失败:", e);
-                    localStorage.removeItem(draftKey); // 清理无效草稿
+                    localStorage.removeItem(draftKey);
                 }
             }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [notice?.id, form, draftKey]); // 依赖项 (message 移出)
+    }, [notice?.id, form, draftKey, messageApi]);
 
-    // [自动保存] - 表单内容变化时，自动保存到 localStorage
+    // [自动保存]
     const handleFormChange = (changedValues, allValues) => {
         if (notice?.id) {
             try {
@@ -117,54 +116,62 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
         }
     };
 
-    // [清空草稿] - 提交成功后，清空草稿
+    // [清空草稿]
     const handleFinish = (values) => {
         if (onFinish) {
-            onFinish(values); // 调用父组件传入的 onPlanSubmit
+            onFinish(values);
         }
         if (notice?.id) {
-            localStorage.removeItem(draftKey); // 提交成功，清除草稿
+            localStorage.removeItem(draftKey);
         }
     };
 
-    // --- 3. 新增：下载模板函数 ---
+    // [下载模板]
     const handleDownloadTemplate = async () => {
         messageApi.loading({ content: '正在生成模板...', key: 'template' });
         try {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Action Plan Template');
-
+            
             // A. 添加问题详情
             worksheet.mergeCells('A1:C1');
             worksheet.getCell('A1').value = 'Problem Finding / Deviation';
             worksheet.getCell('A1').font = { bold: true, size: 14 };
-            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } }; // Light yellow
-
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFFDF8E6'} }; 
+            
             worksheet.mergeCells('A2:C2');
-            const findingText = notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title || 'N/A';
+            const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title || 'N/A');
             worksheet.getCell('A2').value = findingText;
             worksheet.getCell('A2').alignment = { wrapText: true };
             worksheet.getRow(2).height = 40;
 
             worksheet.mergeCells('A3:C3');
-            worksheet.getCell('A3').value = {
-                richText: [
-                    { font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改本行及以上内容。请在下方第 5 行开始填写您的行动计划。' }
-                ]
-            };
+            worksheet.getCell('A3').value = { richText: [{font: {bold: true, color: {argb: 'FFFF0000'}}, text: '请勿修改本行及以上内容。'}]};
+            worksheet.mergeCells('A4:C4');
+            worksheet.getCell('A4').value = { richText: [{font: {bold: true, size: 12}, text: '请在下方第 6 行开始填写。每一行代表一个独立的行动项。'}]};
+            worksheet.getRow(4).height = 20;
 
             // B. 添加表头
             worksheet.getRow(5).values = ['Action Plan (必填)', 'Responsible (必填)', 'Deadline (YYYY-MM-DD 必填)'];
             worksheet.getRow(5).font = { bold: true };
-            worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; // Light blue
+            worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; 
             worksheet.columns = [
                 { key: 'plan', width: 60 },
                 { key: 'responsible', width: 20 },
                 { key: 'deadline', width: 20 },
             ];
 
-            // C. 添加一个示例行 (可选)
-            // worksheet.getRow(6).values = ['示例：更新操作SOP，并对所有相关人员进行培训。', '张三 (Zhang San)', '2025-12-31'];
+            // C. 预填表单中已有的数据
+            const currentPlans = form.getFieldValue('actionPlans') || [];
+            currentPlans.forEach(plan => {
+                if (plan && (plan.plan || plan.responsible || plan.deadline)) { // 只添加有内容的行
+                    worksheet.addRow({
+                        plan: plan.plan,
+                        responsible: plan.responsible,
+                        deadline: plan.deadline ? dayjs(plan.deadline).format('YYYY-MM-DD') : ''
+                    });
+                }
+            });
 
             const buffer = await workbook.xlsx.writeBuffer();
             saveAs(new Blob([buffer]), `ActionPlan_Template_${notice.noticeCode}.xlsx`);
@@ -176,7 +183,7 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
         }
     };
 
-    // --- 4. 新增：处理Excel导入函数 ---
+    // [处理Excel导入]
     const handleExcelUpload = (file) => {
         messageApi.loading({ content: '正在解析Excel文件...', key: 'excelRead' });
         const reader = new FileReader();
@@ -191,15 +198,14 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
                 let hasData = false;
 
                 worksheet.eachRow((row, rowNumber) => {
-                    // 假设前5行是标题和说明，从第6行开始读取数据
-                    if (rowNumber <= 5) return;
+                    if (rowNumber <= 5) return; // 跳过前5行
 
-                    const plan = row.getCell(1).value?.toString() || '';
-                    const responsible = row.getCell(2).value?.toString() || '';
+                    const plan = toPlainText(row.getCell(1).value || '');
+                    const responsible = toPlainText(row.getCell(2).value || '');
                     const deadlineValue = row.getCell(3).value;
 
-                    // 只有当 'Action Plan' 列有内容时才添加
-                    if (plan.trim()) {
+                    // --- 核心验证：三项都必须填写 ---
+                    if (plan.trim() && responsible.trim() && deadlineValue) {
                         hasData = true;
                         parsedData.push({
                             plan: plan,
@@ -210,12 +216,12 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
                 });
 
                 if (!hasData) {
-                    messageApi.warning({ content: '未在Excel中找到有效的行动计划数据。', key: 'excelRead' });
+                    messageApi.warning({ content: '未在Excel中找到有效的行动计划数据（请确保 Action Plan, Responsible, Deadline 均已填写）。', key: 'excelRead', duration: 4 });
                     return;
                 }
 
                 form.setFieldsValue({ actionPlans: parsedData });
-                handleFormChange(null, { actionPlans: parsedData }); // 触发表单自动保存
+                handleFormChange(null, { actionPlans: parsedData });
                 messageApi.success({ content: `成功导入 ${parsedData.length} 条行动计划。`, key: 'excelRead' });
 
             } catch (error) {
@@ -224,23 +230,23 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
             }
         };
         reader.onerror = (error) => {
-            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+             messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
         };
         reader.readAsArrayBuffer(file);
-        return false; // 阻止 antd 自动上传
+        return false;
     };
 
 
     return (
         <div style={actionAreaStyle}>
             <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
-            {/* 绑定 handleFinish 和 handleFormChange */}
+            
             <Space style={{ marginBottom: 16 }}>
                 <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
                     下载模板
                 </Button>
-                <Upload
-                    beforeUpload={handleExcelUpload}
+                <Upload 
+                    beforeUpload={handleExcelUpload} 
                     showUploadList={false}
                     accept=".xlsx, .xls"
                 >
@@ -249,15 +255,16 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
                     </Button>
                 </Upload>
             </Space>
-            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: '-8px' }}>
+            <Paragraph type="secondary" style={{fontSize: '12px', marginTop: '-8px'}}>
                 您可以下载模板，离线填写行动计划后，再导入回系统。
             </Paragraph>
             <Divider />
-            <Form
-                form={form}
-                layout="vertical"
-                onFinish={handleFinish}
-                onValuesChange={handleFormChange} // <-- 自动保存触发器
+
+            <Form 
+                form={form} 
+                layout="vertical" 
+                onFinish={handleFinish} 
+                onValuesChange={handleFormChange}
                 autoComplete="off"
             >
                 <Form.List name="actionPlans" initialValue={[{ plan: '', responsible: '', deadline: null }]}>
@@ -289,49 +296,46 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => { //
     );
 };
 
+// --- ✨ 5. 核心修改：EvidencePerActionForm (添加导入/导出) ---
 const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
-
     const { messageApi } = useNotification();
     const draftKey = `evidenceDraft_${notice?.id}`;
 
-    // --- 2. [加载草稿] - 组件加载时，尝试从 localStorage 加载草稿 ---
+    // [加载草稿]
     useEffect(() => {
         if (notice?.id) {
             const savedDraft = localStorage.getItem(draftKey);
             if (savedDraft) {
                 try {
                     const draftData = JSON.parse(savedDraft);
-                    // FileList 数据（作为对象数组）可以直接被 setFieldsValue 恢复
                     form.setFieldsValue(draftData);
                     messageApi.info("已为您加载上次未提交的证据草稿。");
                 } catch (e) {
-                    messageApi.error("加载证据草稿失败:", e);
-                    localStorage.removeItem(draftKey); // 清理无效草稿
+                    console.error("加载证据草稿失败:", e);
+                    localStorage.removeItem(draftKey);
                 }
             }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [notice?.id, form, draftKey]); // 依赖项
+    }, [notice?.id, form, draftKey, messageApi]);
 
-    // --- 3. [自动保存] - 表单内容变化时，自动保存到 localStorage ---
+    // [自动保存]
     const handleFormChange = (changedValues, allValues) => {
         if (notice?.id) {
             try {
-                // 保存表单所有值，包括文件列表（元数据）
                 localStorage.setItem(draftKey, JSON.stringify(allValues));
             } catch (e) {
-                messageApi.warn("保存证据草稿失败 (可能已满):", e);
+                console.warn("保存证据草稿失败 (可能已满):", e);
             }
         }
     };
 
-    // --- 4. [清空草稿] - 提交成功后，清空草稿 ---
+    // [清空草稿]
     const handleFinish = (values) => {
         if (onFinish) {
-            onFinish(values); // 调用父组件传入的 onEvidenceSubmit
+            onFinish(values);
         }
         if (notice?.id) {
-            localStorage.removeItem(draftKey); // 提交成功，清除草稿
+            localStorage.removeItem(draftKey);
         }
     };
 
@@ -341,10 +345,153 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
         return lastPlanEvent?.actionPlans || [];
     }, [notice]);
 
+    // [下载证据模板]
+    const handleDownloadEvidenceTemplate = async () => {
+        messageApi.loading({ content: '正在生成证据模板...', key: 'evidenceTemplate' });
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Evidence Template');
+            
+            // A. 标题和说明
+            worksheet.mergeCells('A1:D1');
+            worksheet.getCell('A1').value = '批量证据提交模板';
+            worksheet.getCell('A1').font = { bold: true, size: 16 };
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFFDF8E6'} };
+
+            worksheet.mergeCells('A2:D2');
+            worksheet.getCell('A2').value = { richText: [{font: {bold: true, color: {argb: 'FFFF0000'}}, text: '请勿修改 A, B, C 列！请仅在 D 列填写“完成情况说明”。'}]};
+            worksheet.mergeCells('A3:D3');
+            worksheet.getCell('A3').value = { richText: [{font: {bold: true, size: 12}, text: '图片和附件仍需进入系统单独上传。'}]};
+
+            // B. 表头
+            worksheet.getRow(5).values = ['Action Plan (供参考)', 'Responsible (供参考)', 'Deadline (供参考)', 'Evidence Description (请填写)'];
+            worksheet.getRow(5).font = { bold: true };
+            const grayHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } };
+            const blueHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
+            worksheet.getCell('A5').fill = grayHeaderFill;
+            worksheet.getCell('B5').fill = grayHeaderFill;
+            worksheet.getCell('C5').fill = grayHeaderFill;
+            worksheet.getCell('D5').fill = blueHeaderFill;
+
+            worksheet.columns = [
+                { key: 'plan', width: 60 },
+                { key: 'responsible', width: 20 },
+                { key: 'deadline', width: 20 },
+                { key: 'description', width: 60 },
+            ];
+
+            // C. 填充已批准的行动计划
+            const grayDataFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+            const currentEvidence = form.getFieldValue('evidence') || [];
+
+            lastApprovedPlans.forEach((plan, index) => {
+                const row = worksheet.addRow({
+                    plan: toPlainText(plan.plan),
+                    responsible: plan.responsible,
+                    deadline: dayjs(plan.deadline).format('YYYY-MM-DD'),
+                    description: currentEvidence[index]?.description || '' // 预填草稿
+                });
+                row.getCell(1).fill = grayDataFill;
+                row.getCell(2).fill = grayDataFill;
+                row.getCell(3).fill = grayDataFill;
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `Evidence_Template_${notice.noticeCode}.xlsx`);
+            messageApi.success({ content: '模板已开始下载。', key: 'evidenceTemplate' });
+
+        } catch (error) {
+            console.error("生成证据模板失败:", error);
+            messageApi.error({ content: '模板生成失败，请重试。', key: 'evidenceTemplate' });
+        }
+    };
+    
+    // [处理证据导入]
+    const handleEvidenceExcelUpload = (file) => {
+        messageApi.loading({ content: '正在解析Excel文件...', key: 'excelRead' });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
+                
+                const parsedData = [];
+                let hasData = false;
+
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 5) return; // 跳过表头
+
+                    // 只读取第4列 (D列) 的证据描述
+                    const description = toPlainText(row.getCell(4).value || '');
+
+                    // 必须保证导入的行数与待办的行动项行数一致
+                    if (rowNumber - 6 < lastApprovedPlans.length) {
+                        // 获取表单中已有的该项数据 (如有)
+                        const existingItem = form.getFieldValue(['evidence', rowNumber - 6]) || {};
+                        parsedData.push({
+                            ...existingItem, // 保留已有的 images/attachments
+                            description: description.trim() || existingItem.description || '' // 优先使用 Excel 的
+                        });
+                        if (description.trim()) {
+                            hasData = true;
+                        }
+                    }
+                });
+                
+                if (!hasData) {
+                     messageApi.warning({ content: '未在Excel中找到任何证据说明。', key: 'excelRead' });
+                     return;
+                }
+
+                form.setFieldsValue({ evidence: parsedData });
+                handleFormChange(null, { evidence: parsedData });
+                messageApi.success({ content: `成功导入 ${parsedData.length} 条证据说明。`, key: 'excelRead' });
+
+            } catch (error) {
+                console.error("解析Excel失败:", error);
+                messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelRead' });
+            }
+        };
+        reader.onerror = (error) => {
+             messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+        };
+        reader.readAsArrayBuffer(file);
+        return false;
+    };
+
+
     return (
-        <Form form={form} layout="vertical" onFinish={handleFinish} onValuesChange={handleFormChange}>
+        <Form 
+            form={form} 
+            layout="vertical" 
+            onFinish={handleFinish} 
+            onValuesChange={handleFormChange}
+        >
             <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
             <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
+            
+            {/* --- 8. 新增：添加导入/导出按钮 --- */}
+            <Space style={{ marginBottom: 16 }}>
+                <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate}>
+                    下载证据模板
+                </Button>
+                <Upload 
+                    beforeUpload={handleEvidenceExcelUpload} 
+                    showUploadList={false}
+                    accept=".xlsx, .xls"
+                >
+                    <Button icon={<UploadOutlined />}>
+                        导入证据说明
+                    </Button>
+                </Upload>
+            </Space>
+            <Paragraph type="secondary" style={{fontSize: '12px', marginTop: '-8px'}}>
+                您可以下载模板，离线填写**证据说明**后，再导入回系统。
+            </Paragraph>
+            <Divider />
+
             <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
                 {lastApprovedPlans.map((plan, index) => (
                     <Card key={index} type="inner" title={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}>
@@ -400,22 +547,10 @@ const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, act
     <div style={actionAreaStyle}>
         <Title level={5}>{title}</Title>
         <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-            <Button
-                type="primary"
-                icon={<CheckCircleOutlined />}
-                onClick={onApprove}
-                style={{ flex: 1 }}
-                size="large"
-            >
+            <Button type="primary" icon={<CheckCircleOutlined />} onClick={onApprove} style={{ flex: 1 }} size="large" >
                 {approveText || '批准'}
             </Button>
-            <Button
-                danger
-                icon={<CloseCircleOutlined />}
-                onClick={onReject}
-                style={{ flex: 1 }}
-                size="large"
-            >
+            <Button danger icon={<CloseCircleOutlined />} onClick={onReject} style={{ flex: 1 }} size="large" >
                 {rejectText || '驳回'}
             </Button>
         </div>
@@ -423,7 +558,6 @@ const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, act
 );
 
 
-// --- 主弹窗组件 ---
 export const NoticeDetailModal = ({
     notice, open, onCancel, currentUser, form,
     onPlanSubmit, onPlanApprove, showPlanRejectionModal,
@@ -432,14 +566,11 @@ export const NoticeDetailModal = ({
     onLikeToggle
 }) => {
     const { token } = theme.useToken();
-
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
 
-    if (!notice) {
-        return null;
-    }
+    if (!notice) return null;
 
     const isLiked = notice.likes && notice.likes.includes(currentUser?.id);
     const isSDOrManager = currentUser?.role === 'SD' || currentUser?.role === 'Manager';
@@ -470,16 +601,6 @@ export const NoticeDetailModal = ({
         border: `1px solid ${token.colorBorderSecondary}`,
     };
 
-    const toPlainText = (val) => {
-        if (val == null) return '';
-        if (typeof val === 'object' && Array.isArray(val.richText)) {
-            return val.richText.map(r => r?.text || '').join('');
-        }
-        if (typeof val === 'object' && typeof val.richText === 'string') {
-            return val.richText;
-        }
-        return String(val);
-    };
     const safeTitle = toPlainText(notice.title || '');
 
     const renderActionArea = () => {
@@ -488,50 +609,39 @@ export const NoticeDetailModal = ({
 
         switch (notice.status) {
             case '待提交Action Plan':
-                return isAssignedSupplier && <PlanSubmissionForm
-                    form={form}
-                    onFinish={onPlanSubmit}
-                    actionAreaStyle={actionAreaStyle}
-                    notice={notice} // <-- 传递 notice
-                />;
-
+                return isAssignedSupplier && <PlanSubmissionForm 
+                                                form={form} 
+                                                onFinish={onPlanSubmit} 
+                                                actionAreaStyle={actionAreaStyle} 
+                                                notice={notice} 
+                                             />;
+            
             case '待SD确认':
-            case '待SD审核计划': { // 1. 添加花括号 {}
+            case '待SD审核计划': { 
                 if (!isSDOrManager) return null;
-
-                // 2. 查找供应商最新提交的计划
-                const lastPlanSubmission = [...(notice.history || [])]
-                    .reverse()
-                    .find(h => h.type === 'supplier_plan_submission');
-
+                const lastPlanSubmission = [...(notice.history || [])].reverse().find(h => h.type === 'supplier_plan_submission');
                 return (
-                    // 3. 将所有内容包裹在 actionAreaStyle 中
                     <div style={actionAreaStyle}>
                         <Title level={5}>审核供应商行动计划</Title>
-
-                        {/* 4. 在这里渲染行动计划详情 */}
                         {lastPlanSubmission ? (
                             <ActionPlanReviewDisplay historyItem={lastPlanSubmission} />
                         ) : (
                             <Text type="danger">错误：未找到供应商提交的行动计划。</Text>
                         )}
-
                         <Divider />
-
-                        {/* 5. 渲染批准/驳回按钮 (移除多余样式) */}
-                        <ApprovalArea
-                            title="" // 标题已在上方，此处留空
-                            onApprove={onPlanApprove}
-                            onReject={showPlanRejectionModal}
-                            actionAreaStyle={{ background: 'none', border: 'none', padding: 0 }}
+                        <ApprovalArea 
+                            title="" 
+                            onApprove={onPlanApprove} 
+                            onReject={showPlanRejectionModal} 
+                            actionAreaStyle={{ background: 'none', border: 'none', padding: 0 }} 
                         />
                     </div>
                 );
             }
-
+            
             case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
-
+            
             case '待SD关闭': {
                 if (!isSDOrManager) return null;
                 const history = notice.history || [];
@@ -596,7 +706,6 @@ export const NoticeDetailModal = ({
             manager_reassignment: "管理员重分配了供应商",
             manager_void: "管理员作废了通知单",
         };
-
         const colorMap = {
             submission: 'blue',
             approval: 'green',
@@ -604,13 +713,8 @@ export const NoticeDetailModal = ({
             reassignment: 'orange',
             void: 'grey',
         };
-
         const key = Object.keys(colorMap).find(k => h.type.includes(k));
-
-        return {
-            text: typeMap[h.type] || "执行了操作",
-            color: colorMap[key] || 'grey'
-        };
+        return { text: typeMap[h.type] || "执行了操作", color: colorMap[key] || 'grey' };
     };
 
 
@@ -632,7 +736,7 @@ export const NoticeDetailModal = ({
                         </Space>
                     </div>
                 )}
-
+                
                 {(notice?.sdNotice?.details?.product) && (
                     <div style={{ marginTop: '12px' }}>
                         <Space wrap>
@@ -655,54 +759,38 @@ export const NoticeDetailModal = ({
 
                 {(notice.history || []).map((h, index) => {
                     const label = getHistoryItemLabel(h);
-
-                    let shouldShowPlanDetails = false;
                     const historyArray = notice.history || [];
 
-                    if (h.type === 'supplier_plan_submission' || h.type === 'supplier_evidence_submission') {
-                        const nextHistoryItem = historyArray[index + 1];
-
-                        if (nextHistoryItem) {
-                            if (nextHistoryItem.type === 'sd_plan_rejection' || nextHistoryItem.type === 'sd_evidence_rejection') {
-                                shouldShowPlanDetails = false;
-                            } else {
-                                shouldShowPlanDetails = true;
-                            }
-                        } else {
-                            shouldShowPlanDetails = true;
-                        }
-                    }
-
-                    // --- 核心修正：只渲染“批准”节点 ---
-                    // 1. 只显示“批准”节点
+                    let historyItemForDisplay = h; 
+                    let shouldRenderItem = false;
+                    
                     if (h.type === 'sd_plan_approval' || h.type === 'sd_closure_approve') {
-                        let historyItemForDisplay = h; // 默认显示当前项的详情
+                        shouldRenderItem = true;
 
-                        // 2. 如果是“批准关闭”，则详情需要替换为“证据提交”的详情
                         if (h.type === 'sd_closure_approve') {
-                            // 寻找此批准节点之前的 *最后一次* 证据提交
-                            const lastEvidenceSubmission = [...historyArray.slice(0, index)] // 只看此节点之前的记录
+                            const lastEvidenceSubmission = [...historyArray.slice(0, index)] 
                                 .reverse()
                                 .find(item => item.type === 'supplier_evidence_submission');
-
+                            
                             if (lastEvidenceSubmission) {
-                                // 检查这个证据提交是否被驳回过
                                 const nextItem = historyArray[historyArray.indexOf(lastEvidenceSubmission) + 1];
                                 if (!nextItem || (nextItem.type !== 'sd_evidence_rejection' && nextItem.type !== 'sd_plan_rejection')) {
                                     historyItemForDisplay = lastEvidenceSubmission;
                                 }
                             }
                         }
-
-                        return (
-                            <Timeline.Item key={index} color={label.color}>
-                                <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
-                                <ActionPlanReviewDisplay historyItem={historyItemForDisplay} />
-                            </Timeline.Item>
-                        );
                     }
 
-                    return null; // 隐藏所有其他节点
+                    if (!shouldRenderItem) {
+                        return null;
+                    }
+
+                    return (
+                        <Timeline.Item key={index} color={label.color}>
+                            <p><b>{h.submitter || '发起人'}</b> 在 {h.time} {label.text}</p>
+                            <ActionPlanReviewDisplay historyItem={historyItemForDisplay} />
+                        </Timeline.Item>
+                    );
                 })}
             </Timeline>
 
