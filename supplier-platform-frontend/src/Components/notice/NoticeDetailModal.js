@@ -616,7 +616,7 @@ export const NoticeDetailModal = ({
                                                 notice={notice} 
                                              />;
             
-            case '待SD确认':
+            case '待SD确认actions':
             case '待SD审核计划': { 
                 if (!isSDOrManager) return null;
                 const lastPlanSubmission = [...(notice.history || [])].reverse().find(h => h.type === 'supplier_plan_submission');
@@ -642,7 +642,7 @@ export const NoticeDetailModal = ({
             case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
             
-            case '待SD关闭': {
+            case '待SD关闭evidence': {
                 if (!isSDOrManager) return null;
                 const history = notice.history || [];
                 const lastEvidenceIndex = [...history].reverse().findIndex(h => h.type === 'supplier_evidence_submission');

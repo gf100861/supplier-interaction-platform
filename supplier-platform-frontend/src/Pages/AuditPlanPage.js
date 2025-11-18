@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 // 1. 引入 Radio 和 Form.Item (虽然 Form.Item 没显式用，但在 Select 内部需要)
 import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, Empty, Avatar, Space, Tooltip, Divider, Spin, Statistic, Row, Col, Radio } from 'antd';
-import { PlusOutlined, UserOutlined, DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined } from '@ant-design/icons';
+import { DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined,CalendarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNavigate } from 'react-router-dom';
@@ -61,6 +61,8 @@ const AuditPlanPage = () => {
     const [selectedSupplierKeys, setSelectedSupplierKeys] = useState([]);
     const [selectedCategoryKeys, setSelectedCategoryKeys] = useState([]);
     const [selectedStatusKey, setSelectedStatusKey] = useState('all'); // 'all', 'pending', 'completed'
+
+    const [rescheduleMonth, setRescheduleMonth] = useState(null);
 
 
     if (currentUser.role === 'Supplier') {
@@ -231,6 +233,36 @@ const AuditPlanPage = () => {
         form.setFieldsValue({ auditor: currentUser?.username || '' });
         setIsModalVisible(true);
     };
+
+      const handleReschedule = async (item) => {
+        if (!rescheduleMonth) {
+            messageApi.error("请选择一个新的月份！");
+            return;
+        }
+        if (rescheduleMonth === item.planned_month) {
+            messageApi.info("月份未改变。");
+            setRescheduleMonth(null); // 重置
+            return;
+        }
+
+        setLoading(true); // 使用页面的主 loading 状态
+        try {
+            const { error } = await supabase
+                .from('audit_plans')
+                .update({ planned_month: rescheduleMonth })
+                .eq('id', item.id);
+            
+            if (error) throw error;
+            messageApi.success(`计划已成功移动到 ${rescheduleMonth}月！`);
+            fetchData(); // 重新加载所有数据
+        } catch (error) {
+            messageApi.error(`计划调整失败: ${error.message}`);
+        } finally {
+            setLoading(false);
+            setRescheduleMonth(null); // 重置
+        }
+    };
+
 
     const handleCancel = () => setIsModalVisible(false);
 
@@ -419,7 +451,7 @@ const AuditPlanPage = () => {
                         </Form.Item>
                     </Col>
                     <Col xs={24} sm={12} md={8} lg={6}>
-                        <Form.Item label="筛选问题类型" style={{ margin: 0 }}>
+                        <Form.Item label="筛选计划项类型" style={{ margin: 0 }}>
                             <Select
                                 mode="multiple"
                                 allowClear
@@ -505,6 +537,25 @@ const AuditPlanPage = () => {
                                                 };
                                                 const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
 
+                                                 const rescheduleTitle = (
+                                                    <div style={{width: 150}}>
+                                                        <Text>移动到:</Text>
+                                                        <Select 
+                                                            placeholder="选择月份" 
+                                                            style={{ width: '100%', marginTop: 8 }}
+                                                            // 当 Select 变化时，更新 state
+                                                            onChange={(value) => setRescheduleMonth(value)}
+                                                        >
+                                                            {months.map((m, i) => (
+                                                                <Option key={i + 1} value={i + 1} disabled={item.planned_month === (i + 1)}>
+                                                                    {m}
+                                                                </Option>
+                                                            ))}
+                                                        </Select>
+                                                    </div>
+                                                );
+
+
                                                 return (
                                                     <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '4px', marginBottom: '4px', borderRadius: '4px', background: item.status === 'completed' ? '#f6ffed' : '#fafafa', border: '1px solid #d9d9d9' }}>
                                                         <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div><div><b>备注:</b> {item.comment || '无'}</div></>}>
@@ -513,7 +564,7 @@ const AuditPlanPage = () => {
                                                             </Text>
                                                         </Tooltip>
                                                         {/* 3. 添加新按钮到 Space --- */}
-                                                        <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
+                                                       <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
                                                             <Tooltip title="查找相关通知单">
                                                                 <Button
                                                                     type="text"
@@ -521,10 +572,31 @@ const AuditPlanPage = () => {
                                                                     icon={<FileTextOutlined />}
                                                                     style={{ color: '#595959' }}
                                                                     onClick={(e) => {
-                                                                        e.stopPropagation(); // 阻止 Popconfirm 触发
+                                                                        e.stopPropagation();
                                                                         handleNavigateToNotices(item);
                                                                     }}
                                                                 />
+                                                            </Tooltip>
+                                                            
+
+                                                              {/* --- 6. 添加“调整计划”按钮 --- */}
+                                                            <Tooltip title="调整计划月份">
+                                                                <Popconfirm
+                                                                    title={rescheduleTitle}
+                                                                    onConfirm={() => handleReschedule(item)}
+                                                                    onCancel={() => setRescheduleMonth(null)} // 取消时重置
+                                                                    okText="移动"
+                                                                    cancelText="取消"
+                                                                    disabled={item.status === 'completed'} // 已完成的不可移动
+                                                                >
+                                                                    <Button 
+                                                                        type="text" 
+                                                                        size="small" 
+                                                                        icon={<CalendarOutlined />} 
+                                                                        style={{ color: '#1890ff' }}
+                                                                        disabled={item.status === 'completed'}
+                                                                    />
+                                                                </Popconfirm>
                                                             </Tooltip>
                                                             <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为待办'}>
                                                                 <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>

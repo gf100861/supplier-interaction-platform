@@ -8,7 +8,8 @@ import {
     AuditOutlined,
     BookOutlined,
     PrinterOutlined,
-    ShareAltOutlined
+    ShareAltOutlined,
+    OpenAIOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -30,24 +31,29 @@ const allMenuItems = [
             { key: '/notices', label: '整改通知单列表', roles: ['SD', 'Manager', 'Supplier'] },
             { key: '/upload', label: '手工导入任务', roles: ['SD', 'Manager'] },
             { key: '/batch-create', label: '批量导入任务', roles: ['SD', 'Manager'] },
-            ,
-            {
-                key: '/intelligence-search',
-                label: 'AI 检索通知单',
-                roles: ['SD', 'Manager', 'Admin']
 
-            }
         ]
     },
-    { 
-      key: '/offline-share', 
-      icon: <ShareAltOutlined />, 
-      label: '离线分享(Beta)', 
-      // 假设只有SD和经理需要这个功能
-      roles: ['SD', 'Manager', 'Admin'] 
+
+    {
+        key: '/intelligence-search',
+        icon: <OpenAIOutlined />,
+        label: 'AI 检索通知单',
+        roles: ['SD', 'Manager', 'Admin']
+
     },
+
     { key: '/analysis', icon: <BookOutlined />, label: '经验使用', roles: ['SD', 'Manager', 'Admin'] },
     { key: '/reports', icon: <PrinterOutlined />, label: '综合报告', roles: ['SD', 'Manager', 'Supplier'] },
+    {
+        key: '/offline-share',
+        icon: <ShareAltOutlined />,
+        label: '离线分享(Beta)',
+        // 假设只有SD和经理需要这个功能
+        roles: ['SD', 'Manager', 'Admin']
+    },
+
+
     { key: '/settings', icon: <UserOutlined />, label: '系统设置和建议', roles: ['SD', 'Manager', 'Supplier'] },
     {
         key: '/admin',
@@ -149,7 +155,7 @@ const MainLayout = () => {
 
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>欢迎您, <Text strong>{userName}</Text></Text>
-                        <AlertBell/>
+                        <AlertBell />
                         <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>登出</Button>
                     </Space>
                 </Header>

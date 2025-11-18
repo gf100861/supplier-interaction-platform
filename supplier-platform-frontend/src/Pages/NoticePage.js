@@ -39,8 +39,8 @@ const NoticePage = () => {
 
 
     const allPossibleStatuses = [
-        '待提交Action Plan', '待供应商关闭', '待SD确认',
-        '待SD关闭', '已完成', '已作废'
+        '待提交Action Plan', '待供应商关闭', '待SD确认actions',
+        '待SD关闭evidence', '已完成', '已作废'
     ];
 
     const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
@@ -372,7 +372,7 @@ const NoticePage = () => {
         const formattedPlans = (values.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline).format('YYYY-MM-DD') : '' }));
         const newHistory = { type: 'supplier_plan_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已提交行动计划。', actionPlans: formattedPlans };
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        await updateNotice(notice.id, { status: '待SD确认', history: [...currentHistory, newHistory] });
+        await updateNotice(notice.id, { status: '待SD确认actions', history: [...currentHistory, newHistory] });
         // 发送提醒
         messageApi.success('行动计划提交成功！');
         handleDetailModalCancel();
@@ -491,7 +491,7 @@ const NoticePage = () => {
 
             // 5. --- 更新数据库中的通知单 ---
             await updateNotice(notice.id, {
-                status: '待SD关闭',
+                status: '待SD关闭evidence',
                 history: [...currentHistory, newHistory]
             });
 
@@ -729,12 +729,12 @@ const NoticePage = () => {
         // SD 和 Manager 的快捷操作
         if (currentUser.role === 'SD' || currentUser.role === 'Manager') {
             // 审批计划阶段（兼容不同文案）
-            if (item.status === '待SD确认' || item.status === '待SD确认计划') {
+            if (item.status === '待SD确认actions' || item.status === '待SD确认actions计划') {
                 actions.push(<Button key="quick_approve_plan" type="link" onClick={(e) => stopPropagationAndRun(e, () => handlePlanApprove(item))}>批准计划</Button>);
                 actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
             }
             // 关闭阶段
-            if (item.status === '待SD关闭') {
+            if (item.status === '待SD关闭evidence') {
                 actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
             }
 
@@ -775,18 +775,18 @@ const NoticePage = () => {
         const tabsConfig = {
             Supplier: [
                 { key: 'pending', label: '待我处理', statuses: ['待提交Action Plan', '待供应商关闭'] },
-                { key: 'review', label: '等待审核', statuses: ['待SD确认', '待SD确认计划', '待SD关闭'] },
+                { key: 'review', label: '等待审核', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ],
             SD: [
                 { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan', '待供应商关闭'] },
-                { key: 'review', label: '待SD确认', statuses: ['待SD确认', '待SD确认计划', '待SD关闭'] },
+                { key: 'review', label: '待SD确认actions', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
             ],
             Manager: [
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses },
-                { key: 'review', label: '待审核', statuses: ['待SD确认', '待SD确认计划', '待SD关闭'] },
+                { key: 'review', label: '待审核', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
                 { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan', '待供应商关闭'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ]

@@ -7,7 +7,143 @@ import { useNotices } from '../contexts/NoticeContext';
 import { supabase } from '../supabaseClient';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotification } from '../contexts/NotificationContext';
+
 const { Title, Paragraph, Text } = Typography;
+const { Option } = Select;
+
+const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
+
+// --- 1. 提取辅助函数到组件外部 ---
+const getPlanIcon = (type) => {
+    switch (type) {
+        case 'audit': return <AuditOutlined style={{ color: '#1890ff' }} />;
+        case 'qrm': return <TeamOutlined style={{ color: '#faad14' }} />;
+        case 'quality_review': return <ReconciliationOutlined style={{ color: '#52c41a' }} />;
+        default: return <CalendarOutlined />;
+    }
+};
+
+// --- 2. 提取 PlanItem 为独立组件 (修复 Bug 的关键) ---
+// 这个组件现在拥有自己的状态，不会因为父组件渲染而被销毁
+const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
+    // 每个计划项维护自己的“目标月份”状态
+    const [targetMonth, setTargetMonth] = useState(null);
+
+    // 确认推迟
+    const handleConfirmReschedule = () => {
+        if (targetMonth) {
+            onReschedule(plan, targetMonth);
+            setTargetMonth(null); // 重置选择
+        }
+    };
+
+    const rescheduleTitle = (
+        <div style={{ width: 150 }} onClick={(e) => e.stopPropagation()}>
+            <Text>移动到:</Text>
+            <Select
+                placeholder="选择月份"
+                style={{ width: '100%', marginTop: 8 }}
+                value={targetMonth}
+                onChange={(value) => setTargetMonth(value)}
+                // 这里的点击阻止冒泡很重要，防止 Select 点击导致 Popconfirm 关闭
+                onClick={(e) => e.stopPropagation()}
+                getPopupContainer={(triggerNode) => triggerNode.parentNode} // 帮助 Select 在 Popconfirm 中正确定位
+            >
+                {months.map((m, i) => (
+                    <Option key={i + 1} value={i + 1} disabled={plan.planned_month === (i + 1)}>
+                        {m}
+                    </Option>
+                ))}
+            </Select>
+        </div>
+    );
+
+    const itemContent = (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            padding: '4px 8px',
+            border: '1px solid #f0f0f0',
+            borderRadius: '4px',
+            marginBottom: '4px',
+            backgroundColor: '#fff'
+        }}>
+            <Space>
+                {getPlanIcon(plan.type)}
+                <div>
+                    <Text strong style={{ fontSize: '12px', display: 'block' }} ellipsis={{ tooltip: plan.supplier_name }}>
+                        {plan.supplier_display_name}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: '11px', display: 'block' }} ellipsis={{ tooltip: `[${plan.category}] - ${plan.auditor}` }}>
+                        {`[${plan.category}] - ${plan.auditor}`}
+                    </Text>
+                </div>
+            </Space>
+            <Space size={0}>
+                <Tooltip title="查找相关通知单">
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<FileTextOutlined />}
+                        style={{ color: '#595959' }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigate(plan);
+                        }}
+                    />
+                </Tooltip>
+
+                <Tooltip title="调整计划月份">
+                    <Popconfirm
+                        title={rescheduleTitle}
+                        onConfirm={handleConfirmReschedule}
+                        onCancel={() => setTargetMonth(null)}
+                        okText="移动"
+                        cancelText="取消"
+                        disabled={plan.status === 'completed'}
+                    >
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<CalendarOutlined />}
+                            style={{ color: '#1890ff' }}
+                            disabled={plan.status === 'completed'}
+                        />
+                    </Popconfirm>
+                </Tooltip>
+
+                <Tooltip title="标记完成/待办">
+                    <Popconfirm
+                        title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`}
+                        onConfirm={() => onMarkComplete(plan.id, plan.status)}
+                    >
+                        <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{ color: 'grey' }} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
+                    </Popconfirm>
+                </Tooltip>
+                <Tooltip title="删除计划">
+                    <Popconfirm
+                        title="确定删除此计划吗?"
+                        onConfirm={() => onDelete(plan.id)}
+                    >
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                </Tooltip>
+            </Space>
+        </div>
+    );
+
+    if (plan.comment && plan.comment.trim()) {
+        return (
+            <Tooltip title={<><b>备注:</b> {plan.comment}</>} placement="topLeft">
+                {itemContent}
+            </Tooltip>
+        );
+    }
+    return itemContent;
+};
+
 
 const DashboardPage = () => {
     const navigate = useNavigate();
@@ -21,12 +157,13 @@ const DashboardPage = () => {
     const [allPlansLoading, setAllPlansLoading] = useState(true);
 
     const { messageApi } = useNotification();
-    const { Option } = Select;
 
     const [planCategories, setPlanCategories] = useState([]);
     const [categoriesLoading, setCategoriesLoading] = useState(true);
     const [selectedPlanCategory, setSelectedPlanCategory] = useState('all');
     const [selectedPlanSupplier, setSelectedPlanSupplier] = useState('all');
+
+    // 注意：移除了 rescheduleMonth 状态，因为它现在由 PlanItem 内部管理
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -40,14 +177,6 @@ const DashboardPage = () => {
         return [];
     }, [currentUser, suppliers]);
 
-    const getPlanIcon = (type) => {
-        switch (type) {
-            case 'audit': return <AuditOutlined style={{ color: '#1890ff' }} />;
-            case 'qrm': return <TeamOutlined style={{ color: '#faad14' }} />;
-            case 'quality_review': return <ReconciliationOutlined style={{ color: '#52c41a' }} />;
-            default: return <CalendarOutlined />;
-        }
-    };
 
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
@@ -92,6 +221,48 @@ const DashboardPage = () => {
             }
         });
     };
+
+    // --- 3. 修改 handleReschedule ---
+    // 现在它接收 item 和 newMonth 两个参数
+    const handleReschedule = async (item, newMonth) => {
+        if (!newMonth) {
+            messageApi.error("请选择一个新的月份！");
+            return;
+        }
+        if (newMonth === item.planned_month) {
+            return;
+        }
+
+        const oldMonth = item.planned_month;
+        const key = `reschedule-${item.id}`;
+
+        // 乐观更新 UI
+        setAllPendingPlans(prevPlans =>
+            prevPlans.map(p =>
+                p.id === item.id ? { ...p, planned_month: newMonth } : p
+            )
+        );
+        messageApi.loading({ content: '正在移动计划...', key });
+
+        try {
+            const { error } = await supabase
+                .from('audit_plans')
+                .update({ planned_month: newMonth })
+                .eq('id', item.id);
+
+            if (error) throw error;
+            messageApi.success({ content: `计划已成功移动到 ${newMonth}月！`, key });
+        } catch (error) {
+            messageApi.error({ content: `计划调整失败: ${error.message}`, key });
+            // 失败回滚
+            setAllPendingPlans(prevPlans =>
+                prevPlans.map(p =>
+                    p.id === item.id ? { ...p, planned_month: oldMonth } : p
+                )
+            );
+        }
+    };
+
 
     // Fetch all users
     useEffect(() => {
@@ -190,7 +361,7 @@ const DashboardPage = () => {
         }, {});
     }, [allUsers]);
 
-    // --- 1. 核心修改：重构 planStatistics `useMemo` ---
+    // --- planStatistics ---
     const planStatistics = useMemo(() => {
         const now = dayjs();
         const currentMonth = now.month() + 1; // 1-12
@@ -199,8 +370,8 @@ const DashboardPage = () => {
         let overduePastPlansCount = 0;
         let pendingCurrentMonthPlansCount = 0;
 
-        const currentAndPastPlansList = []; // 用于 UI 列表 (过往 + 当月)
-        const pendingNextMonthPlansList = []; // 用于 UI 列表 (下月)
+        const currentAndPastPlansList = [];
+        const pendingNextMonthPlansList = [];
 
         allPendingPlans.forEach(plan => {
             const supplier = suppliers.find(s => s.id === plan.supplier_id);
@@ -209,19 +380,16 @@ const DashboardPage = () => {
                 supplier_display_name: supplier?.short_code || plan.supplier_name
             };
 
-            // 桶 1: 过往 (仅用于统计)
             if (enrichedPlan.planned_month < currentMonth) {
                 overduePastPlansCount++;
-                currentAndPastPlansList.push(enrichedPlan); // 添加到 UI 列表
+                currentAndPastPlansList.push(enrichedPlan); // 左侧
             }
-            // 桶 2: 当月 (用于统计 和 UI)
             else if (enrichedPlan.planned_month === currentMonth) {
                 pendingCurrentMonthPlansCount++;
-                currentAndPastPlansList.push(enrichedPlan); // 添加到 UI 列表
+                currentAndPastPlansList.push(enrichedPlan); // 左侧
             }
-            // 桶 3: 下月 (用于统计 和 UI)
             else if (enrichedPlan.planned_month === nextMonth) {
-                pendingNextMonthPlansList.push(enrichedPlan);
+                pendingNextMonthPlansList.push(enrichedPlan); // 右侧
             }
         });
 
@@ -235,17 +403,15 @@ const DashboardPage = () => {
             return true;
         };
 
-        // 过滤用于 UI 显示的列表
         const filteredCurrentAndPastPlansForList = currentAndPastPlansList.filter(filterPlans);
         const filteredNextMonthPlansForList = pendingNextMonthPlansList.filter(filterPlans);
 
         return {
-            overduePastPlans: overduePastPlansCount, // 统计：仅过往
-            pendingCurrentMonthPlans: pendingCurrentMonthPlansCount, // 统计：仅当月
-            pendingNextMonthPlans: pendingNextMonthPlansList.length, // 统计：仅下月
-
-            filteredCurrentAndPastPlansForList, // 列表：过往 + 当月
-            filteredNextMonthPlansForList      // 列表：下月
+            overduePastPlans: overduePastPlansCount,
+            pendingCurrentMonthPlans: pendingCurrentMonthPlansCount,
+            pendingNextMonthPlans: pendingNextMonthPlansList.length,
+            filteredCurrentAndPastPlansForList,
+            filteredNextMonthPlansForList
         };
     }, [allPendingPlans, selectedPlanCategory, selectedPlanSupplier, suppliers]);
 
@@ -271,6 +437,7 @@ const DashboardPage = () => {
         const now = dayjs();
         const startOfMonth = now.startOf('month');
         const thirtyDaysAgo = now.subtract(30, 'day');
+        const thirtyDaysFromNow = now.add(30, 'day');
 
         const getSummaryFromHistory = (history) => {
             const latestPlanSubmission = [...(history || [])].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
@@ -303,6 +470,14 @@ const DashboardPage = () => {
             dayjs(n.createdAt).isAfter(thirtyDaysAgo)
         ).length;
 
+        const pendingEvidenceNext30Days = baseDataWithDeadline.filter(n => {
+            const deadlineDate = dayjs(n.deadline);
+            return n.status === '待供应商关闭' &&
+                n.deadline !== 'N/A' &&
+                deadlineDate.isAfter(now) &&
+                deadlineDate.isBefore(thirtyDaysFromNow);
+        }).length;
+
         const pendingForSupplier = baseDataWithDeadline.filter(n =>
             !['已完成', '已作废'].includes(n.status) &&
             dayjs(n.createdAt).isAfter(thirtyDaysAgo)
@@ -330,14 +505,13 @@ const DashboardPage = () => {
             allOpenIssues,
             supplierActionRequired,
             topImprovement,
-            recentPendingIssues
+            recentPendingIssues,
+            pendingEvidenceNext30Days
         };
 
     }, [notices, allUsers, suppliers, noticesLoading, usersLoading, suppliersLoading, currentUser, managedSuppliers]);
 
     const pageIsLoading = noticesLoading || usersLoading || suppliersLoading || allPlansLoading;
-
-    const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
 
     if (pageIsLoading && !dashboardData) {
         return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
@@ -349,44 +523,72 @@ const DashboardPage = () => {
 
     // --- Supplier View ---
     if (currentUser.role === 'Supplier') {
-        // --- 3. 核心修改：解构新值并更新供应商 UI ---
-        const { allOpenIssues, recentPendingIssues } = dashboardData;
+        const { allOpenIssues, recentPendingIssues, pendingEvidenceNext30Days } = dashboardData;
+
+        const handleStatClick = (statuses, dateRange = null) => {
+            const state = {};
+            if (statuses && statuses.length > 0) {
+                state.preSelectedStatuses = statuses;
+            }
+            if (dateRange && dateRange.length === 2) {
+                state.preSelectedDateRange = dateRange;
+            }
+            navigate('/notices', { state });
+        };
+
         return (
             <div>
                 <Card style={{ marginBottom: 24 }} bordered={false}>
                     <Title level={4} style={{ margin: 0 }}>我的仪表盘</Title>
                     <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>查看与您公司相关的核心问题指标。</Paragraph>
                 </Card>
-                <Row gutter={[10, 10]}>
-                    <Col xs={24} sm={12}>
-                        <Card bordered={false} loading={pageIsLoading}>
+                <Row gutter={[16, 16]}>
+                    <Col xs={24} sm={12} lg={8}>
+                        <Card
+                            hoverable
+                            bordered={false}
+                            loading={pageIsLoading}
+                            onClick={() => handleStatClick(['待提交Action Plan', '待供应商关闭'])}
+                        >
                             <Statistic
-                                title="通知单历史未完成"
+                                title={<Space><ClockCircleOutlined /> 通知单历史未完成</Space>}
                                 value={allOpenIssues}
                                 valueStyle={{ color: '#faad14' }}
-                                prefix={<ClockCircleOutlined />}
                             />
                         </Card>
                     </Col>
-                    <Col xs={24} sm={12}>
-                        <Card bordered={false} loading={pageIsLoading}>
+                    <Col xs={24} sm={12} lg={8}>
+                        <Card
+                            hoverable
+                            bordered={false}
+                            loading={pageIsLoading}
+                            onClick={() => handleStatClick(
+                                ['待提交Action Plan', '待供应商关闭'],
+                                [dayjs().subtract(30, 'day'), dayjs()]
+                            )}
+                        >
                             <Statistic
-                                title="最近30天未完成"
+                                title={<Space><WarningOutlined /> 最近30天未完成</Space>}
                                 value={recentPendingIssues}
                                 valueStyle={{ color: '#f5222d' }}
-                                prefix={<WarningOutlined />}
+                            />
+                        </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={8}>
+                        <Card
+                            hoverable
+                            bordered={false}
+                            loading={pageIsLoading}
+                            onClick={() => handleStatClick(['待供应商关闭'])}
+                        >
+                            <Statistic
+                                title={<Space><ScheduleOutlined /> 未来30天需提交证据</Space>}
+                                value={pendingEvidenceNext30Days}
+                                valueStyle={{ color: '#1890ff' }}
                             />
                         </Card>
                     </Col>
                 </Row>
-                <Card style={{ marginTop: 24 }} bordered={false}>
-                    <Empty description={
-                        <Space direction="vertical">
-                            <Text>所有待办事项，请前往“整改通知单”页面处理。</Text>
-                            <Button type="primary" onClick={() => navigate('/notices')}>立即前往</Button>
-                        </Space>
-                    } />
-                </Card>
             </div>
         );
     }
@@ -399,85 +601,17 @@ const DashboardPage = () => {
         topImprovement
     } = dashboardData;
 
-    // --- 2. 解构 planStatistics ---
     const {
         overduePastPlans,
         pendingCurrentMonthPlans,
-        // pendingNextMonthPlans, // This is just the count
-        filteredCurrentAndPastPlansForList, // <-- 3. 使用这个新列表
+        filteredCurrentAndPastPlansForList,
         filteredNextMonthPlansForList
     } = planStatistics;
 
 
     const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
 
-    const PlanItem = ({ plan }) => {
-        const itemContent = (
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '4px 8px',
-                border: '1px solid #f0f0f0',
-                borderRadius: '4px',
-                marginBottom: '4px',
-                backgroundColor: '#fff'
-            }}>
-                <Space>
-                    {getPlanIcon(plan.type)}
-                    <div>
-                        <Text strong style={{ fontSize: '12px', display: 'block' }} ellipsis={{ tooltip: plan.supplier_name }}>
-                            {plan.supplier_display_name}
-                        </Text>
-                        <Text type="secondary" style={{ fontSize: '11px', display: 'block' }} ellipsis={{ tooltip: `[${plan.category}] - ${plan.auditor}` }}>
-                            {`[${plan.category}] - ${plan.auditor}`}
-                        </Text>
-                    </div>
-                </Space>
-                <Space size={0}>
-                    <Tooltip title="查找相关通知单">
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<FileTextOutlined />}
-                            style={{ color: '#595959' }}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleNavigateToNotices(plan);
-                            }}
-                        />
-                    </Tooltip>
-                    <Tooltip title="标记完成/待办">
-                        <Popconfirm
-                            title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`}
-                            onConfirm={() => handleMarkAsComplete(plan.id, plan.status)}
-                        >
-                            <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{color: 'grey'}} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
-                        </Popconfirm>
-                    </Tooltip>
-                    <Tooltip title="删除计划">
-                        <Popconfirm
-                            title="确定删除此计划吗?"
-                            onConfirm={() => handleDeleteEvent(plan.id)}
-                        >
-                            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                        </Popconfirm>
-                    </Tooltip>
-                </Space>
-            </div>
-        );
-
-        if (plan.comment && plan.comment.trim()) {
-            return (
-                <Tooltip title={<><b>备注:</b> {plan.comment}</>} placement="topLeft">
-                    {itemContent}
-                </Tooltip>
-            );
-        }
-        return itemContent;
-    };
-
+    const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
 
     return (
         <div>
@@ -491,16 +625,16 @@ const DashboardPage = () => {
                     <Card bordered={false} loading={pageIsLoading || allPlansLoading} style={{ height: '100%' }} title="核心指标 (通知单 & 计划)">
                         <Row gutter={[16, 24]}>
                             <Col xs={12} sm={12}>
-                                <Statistic title="本月已关闭通知单" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
+                                <Statistic title="本月已关闭 (通知)" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
                             </Col>
                             <Col xs={12} sm={12}>
-                                <Statistic title="所有未关闭通知单" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
+                                <Statistic title="所有未关闭 (通知)" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
                             </Col>
                             <Col xs={12} sm={12}>
-                                <Statistic title="过往未完成计划" value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} />
+                                <Statistic title="过往未完成 (计划)" value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} />
                             </Col>
                             <Col xs={12} sm={12}>
-                                <Statistic title="本月待办计划" value={pendingCurrentMonthPlans} valueStyle={{ color: 'black' }} prefix={<ScheduleOutlined />} />
+                                <Statistic title="本月待办 (计划)" value={pendingCurrentMonthPlans} valueStyle={{ color: '#faad14' }} prefix={<ScheduleOutlined />} />
                             </Col>
                         </Row>
                     </Card>
@@ -541,7 +675,6 @@ const DashboardPage = () => {
                             }
                         >
                             <Row gutter={16}>
-                                {/* --- 4. 核心修改：更新左侧列 --- */}
                                 <Col span={12}>
                                     <Title level={5} style={{ marginTop: 0 }}>
                                         当月及过往待办 ({filteredCurrentAndPastPlansForList.length})
@@ -551,7 +684,16 @@ const DashboardPage = () => {
                                             <List
                                                 itemLayout="horizontal"
                                                 dataSource={filteredCurrentAndPastPlansForList}
-                                                renderItem={(plan) => <PlanItem plan={plan} />}
+                                                // 传递 PlanItem 需要的回调
+                                                renderItem={(plan) => (
+                                                    <PlanItem
+                                                        plan={plan}
+                                                        onMarkComplete={handleMarkAsComplete}
+                                                        onDelete={handleDeleteEvent}
+                                                        onNavigate={handleNavigateToNotices}
+                                                        onReschedule={handleReschedule}
+                                                    />
+                                                )}
                                                 pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
                                             />
                                         ) : (
@@ -559,7 +701,6 @@ const DashboardPage = () => {
                                         )}
                                     </div>
                                 </Col>
-                                {/* --- 5. 核心修改：更新右侧列 (保持下月) --- */}
                                 <Col span={12}>
                                     <Title level={5} style={{ marginTop: 0 }}>
                                         {dayjs().add(1, 'month').format('M')}月待办 ({filteredNextMonthPlansForList.length})
@@ -569,7 +710,15 @@ const DashboardPage = () => {
                                             <List
                                                 itemLayout="horizontal"
                                                 dataSource={filteredNextMonthPlansForList}
-                                                renderItem={(plan) => <PlanItem plan={plan} />}
+                                                renderItem={(plan) => (
+                                                    <PlanItem
+                                                        plan={plan}
+                                                        onMarkComplete={handleMarkAsComplete}
+                                                        onDelete={handleDeleteEvent}
+                                                        onNavigate={handleNavigateToNotices}
+                                                        onReschedule={handleReschedule}
+                                                    />
+                                                )}
                                                 pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
                                             />
                                         ) : (
@@ -626,7 +775,7 @@ const DashboardPage = () => {
                                 <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
                                     {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || '无详细描述'}
                                 </Paragraph>
-                                {/* <Divider style={{ margin: '12px 0' }} /> */}
+                                <Divider style={{ margin: '12px 0' }} />
                                 <Space align="center">
                                     <StarOutlined style={{ color: '#ffc53d' }} />
                                     <Text strong>{topImprovement.likes?.length || 0} 个赞</Text>
@@ -652,4 +801,3 @@ const DashboardPage = () => {
 };
 
 export default DashboardPage;
-

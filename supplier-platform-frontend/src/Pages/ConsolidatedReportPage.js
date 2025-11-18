@@ -35,8 +35,8 @@ const allPossibleStatuses = [
 
     '待提交Action Plan',
     '待供应商关闭',
-    '待SD确认',
-    '待SD关闭',
+    '待SD确认actions',
+    '待SD关闭evidence',
     '已完成',
     '已作废'
 
@@ -112,8 +112,8 @@ const getStatusColor = (status) => {
     if (!status) return 'default';
     if (status.includes('完成')) return 'success';
     if (status.includes('作废')) return 'default';
-    if (status.includes('待SD关闭')) return 'purple';
-    if (status.includes('待SD确认')) return 'green';
+    if (status.includes('待SD关闭evidence')) return 'purple';
+    if (status.includes('待SD确认actions')) return 'green';
     if (status.includes('待提交Action Plan')) return 'blue';
     if (status.includes('待供应商关闭')) return 'yellow';
     return 'default';
@@ -187,6 +187,7 @@ const ConsolidatedReportPage = () => {
         const noticesWithDetails = filteredNotices.map(notice => {
             const actions = [];
             const findings = [];
+            const details =notice?.sdNotice?.details
             notice.history?.forEach(h => {
                 if (h.type === 'supplier_plan_submission' && h.actionPlans) {
                     h.actionPlans.forEach(plan => {
@@ -201,6 +202,7 @@ const ConsolidatedReportPage = () => {
             });
 
             return {
+                details,
                 ...notice,
                 ...getSummaryFromHistory(notice.history || []),
                 actions,
@@ -242,19 +244,34 @@ const ConsolidatedReportPage = () => {
     const generateColumnsForCategory = (category) => {
 
         const baseColumns = [
-            { title: 'Parma ID', dataIndex: ['supplier', 'parmaId'], key: 'parma_id', width: 100, sorter: (a, b) => getNestedValue(a, ['supplier', 'parmaId']).localeCompare(getNestedValue(b, ['supplier', 'parmaId'])), },
+            { title: 'Parma', dataIndex: ['supplier', 'parmaId'], key: 'parma_id', width: 100, sorter: (a, b) => getNestedValue(a, ['supplier', 'parmaId']).localeCompare(getNestedValue(b, ['supplier', 'parmaId'])), },
             {
                 title: '供应商', dataIndex: ['supplier', 'shortCode'], key: 'supplier', width: 120,
                 render: (shortCode, record) => (shortCode || 'N/A'),
                 sorter: (a, b) => getNestedValue(a, ['supplier', 'shortCode']).localeCompare(getNestedValue(b, ['supplier', 'shortCode'])),
             },
-            { title: '状态', dataIndex: 'status', key: 'status', width: 150, render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag> },
+            { title: '状态', dataIndex: 'status', key: 'status', width: 100, render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag> },
 
+            //修改成process
+              {
+                title: 'PROCESS/QUESTIONS',
+                dataIndex: ['details', 'title'],
+                key: 'process',
+                width: 250,
+             
+            },
+               {
+                title: 'FINDINGS / DEVIATIONS',
+                dataIndex: ['details', 'description'],
+                key: 'process',
+                width: 300,
+             
+            },
             {
                 title: '行动计划',
                 dataIndex: 'actions',
                 key: 'actions',
-                width: 250,
+                width: 300,
                 render: (actions) => {
                     if (!actions || actions.length === 0) {
                         return <Text type="secondary">N/A</Text>;
@@ -272,7 +289,7 @@ const ConsolidatedReportPage = () => {
                 title: '发现项 / 证据',
                 dataIndex: 'findings',
                 key: 'findings',
-                width: 250,
+                width: 300,
                 render: (findings) => {
                     if (!findings || findings.length === 0) {
                         return <Text type="secondary">N/A</Text>;
@@ -286,12 +303,12 @@ const ConsolidatedReportPage = () => {
                     );
                 }
             },
-            { title: '创建时间', dataIndex: ['sdNotice', 'createTime'], key: 'createTime', width: 120, render: (time) => dayjs(time).format('YYYY-MM-DD'), sorter: (a, b) => dayjs(a.createdAt).diff(dayjs(b.createdAt)) },
+            { title: '创建时间', dataIndex: ['sdNotice', 'createTime'], key: 'createTime', width: 150, render: (time) => dayjs(time).format('YYYY-MM-DD'), sorter: (a, b) => dayjs(a.createdAt).diff(dayjs(b.createdAt)) },
             {
                 title: '预计完成',
                 dataIndex: 'deadline',
                 key: 'deadline',
-                width: 120,
+                width: 150,
                 // Add sorter for dates, handling 'N/A'
                 sorter: (a, b) => {
                     const dateA = a.deadline !== 'N/A' ? dayjs(a.deadline) : dayjs('1970-01-01');
@@ -359,7 +376,7 @@ const ConsolidatedReportPage = () => {
                 { title: '供应商', dataIndex: 'assignedSupplierName' },
                 { title: '状态', dataIndex: 'status' },
                 { title: '创建时间', dataIndex: ['sdNotice', 'createTime'] },
-                { title: '预计时间', dataIndex: ['sdNotice', 'createTime'] },
+                { title: '预计时间',  dataIndex: 'deadline', },
             ];
             const dynamicColumns = [];
             const allHeaders = [...dynamicColumns, ...baseColumns];
@@ -499,7 +516,7 @@ const ConsolidatedReportPage = () => {
                             <ImageScroller images={detailsModal.notice.sdNotice.images} title="初始图片" />
                             <AttachmentsDisplay attachments={detailsModal.notice.sdNotice.attachments} />
                             <Divider style={{ margin: '16px 0' }} />
-                            <Text type="secondary">由 {detailsModal.notice.creator?.name || 'N/A'} 于 {dayjs(detailsModal.notice.sdNotice.createTime).format('YYYY-MM-DD')} 发起</Text>
+                            <Text type="secondary">由 {detailsModal.notice.creator?.username || 'N/A'} 于 {dayjs(detailsModal.notice.sdNotice.createTime).format('YYYY-MM-DD')} 发起</Text>
                         </Card>
                         <Divider />
                         <Title level={5}>处理历史</Title>

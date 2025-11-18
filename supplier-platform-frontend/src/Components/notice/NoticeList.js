@@ -22,10 +22,10 @@ const getStatusTag = (status) => {
         case '待供应商关闭':
             color = 'warning'; // 橙色
             break;
-        case '待SD确认':
+        case '待SD确认actions':
              color = 'red'; 
              break; 
-        case '待SD关闭':
+        case '待SD关闭evidence':
         case '待SD审核计划':
             color = 'purple'; // 紫色
             break;
@@ -368,7 +368,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                     const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
                     return updateNotice(noticeId, {
-                        status: '待SD确认',
+                        status: '待SD确认actions',
                         history: [...currentHistory, newHistory]
                     });
                 });
@@ -542,7 +542,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                     const currentHistory = Array.isArray(notice.history) ? notice.history : [];
                     
                     return updateNotice(noticeId, { 
-                        status: '待SD关闭',
+                        status: '待SD关闭evidence',
                         history: [...currentHistory, newHistory] 
                     });
                 });
