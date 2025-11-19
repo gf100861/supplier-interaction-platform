@@ -136,14 +136,14 @@ const ProblemAnalysisPage = () => {
         messageApi.loading({ content: '正在生成Excel文件...', key: 'exporting' });
         
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('审核Checklist');
+        const worksheet = workbook.addWorksheet('经验库');
         worksheet.columns = [
             { header: '供应商', key: 'supplier', width: 30 },
             { header: '日期', key: 'date', width: 15 },
             { header: '关联案例编号', key: 'caseCode', width: 20 },
+            { header: 'PRODUCT', key: 'product', width: 20 },
             { header: 'PROCESS/QUESTIONS', key: 'process', width: 60 },
             { header: 'FINDINGS/DEVIATIONS', key: 'finding', width: 60 },
-            { header: 'PRODUCT', key: 'product', width: 20 },
             { header: '问题来源', key: 'source', width: 20 },
             { header: '造成原因', key: 'cause', width: 20 },
         ];
@@ -163,7 +163,7 @@ const ProblemAnalysisPage = () => {
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), '审核Checklist.xlsx');
+        saveAs(new Blob([buffer]), '历史经验.xlsx');
         messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
     };
 
@@ -180,7 +180,7 @@ const ProblemAnalysisPage = () => {
         <div>
             <Card style={{ marginBottom: 24 }} bordered={false}>
                 <Title level={4} style={{ margin: 0 }}>经验使用中心</Title>
-                <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>从历史数据中学习，生成审核清单。</Paragraph>
+                <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>从历史数据中学习，防止重复错误发生。</Paragraph>
                 
                 <Space direction="vertical" style={{ width: '100%', marginTop: 16 }}>
                     {/* --- 5. 核心修改：更新筛选器布局 --- */}
@@ -272,9 +272,10 @@ const ProblemAnalysisPage = () => {
                 <List
                     header={
                         <Row gutter={16} style={{ padding: '0 16px', backgroundColor: '#fafafa' }}>
+                              <Col span={4}><Text strong>PRODUCT</Text></Col>
                             <Col span={10}><Text strong>PROCESS / QUESTIONS</Text></Col>
                             <Col span={10}><Text strong>FINDINGS / DEVIATIONS</Text></Col>
-                            <Col span={4}><Text strong>PRODUCT</Text></Col>
+                          
                         </Row>
                     }
                     dataSource={filteredNotices}
@@ -290,6 +291,11 @@ const ProblemAnalysisPage = () => {
                             <List.Item style={{ padding: '12px 16px' }}>
                                 <div style={{ width: '100%' }}>
                                     <Row gutter={16}>
+                                           <Col span={4}>
+                                            <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
+                                                {productText}
+                                            </Paragraph>
+                                        </Col>
                                         <Col span={10}>
                                             <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
                                                 {processText}
@@ -300,16 +306,12 @@ const ProblemAnalysisPage = () => {
                                                 {findingText}
                                             </Paragraph>
                                         </Col>
-                                        <Col span={4}>
-                                            <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
-                                                {productText}
-                                            </Paragraph>
-                                        </Col>
+                                     
                                     </Row>
-                                    <Divider style={{ margin: '8px 0' }} />
+                                
                                     <Space>
                                         <Tag color="cyan">{supplierShortCode}</Tag>
-                                        <Tag>{dayjs(item.createdAt).format('YYYY-MM-DD')}</Tag>
+                                        {/* <Tag>{dayjs(item.createdAt).format('YYYY-MM-DD')}</Tag> */}
                                         <Button 
                                             type="link" 
                                             size="small" 

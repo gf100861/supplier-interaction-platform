@@ -598,7 +598,7 @@ const AuditPlanPage = () => {
                                                                     />
                                                                 </Popconfirm>
                                                             </Tooltip>
-                                                            <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为待办'}>
+                                                            <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为未完成'}>
                                                                 <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>
                                                                     <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#7d92a7ff' : '#8c8c8c' }}>
                                                                         {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}

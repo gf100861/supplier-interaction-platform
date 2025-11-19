@@ -48,7 +48,7 @@ const allMenuItems = [
     {
         key: '/offline-share',
         icon: <ShareAltOutlined />,
-        label: '离线分享(Beta)',
+        label: '文件互传',
         // 假设只有SD和经理需要这个功能
         roles: ['SD', 'Manager', 'Admin']
     },
