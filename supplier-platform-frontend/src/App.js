@@ -30,7 +30,7 @@ import ResetPasswordPage from './Pages/ResetPasswordPage';
 import NotFoundPage from './Pages/NotFoundPage'
 import EditNoticePage from './Pages/EditNoticePage'; // <-- 1. 导入新页面
 import IntelligentSearchPage from './Pages/IntelligentSearchPage';
-
+import MobileTransferPage from './Pages/MobileTransferPage';
 import { FileSender } from './Pages/OfflineSharePage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
@@ -72,6 +72,7 @@ const ThemedApp = () => {
                                                     <Route path="edit-notice/:id" element={<EditNoticePage />} /> {/* <-- 2. 添加新路由 */}
                                                     <Route path="intelligence-search" element={<IntelligentSearchPage />}></Route>
                                                     <Route path="offline-share" element={< FileSender/>}></Route>
+                                                    <Route path="/mobile-transfer" element={<MobileTransferPage />} />
                                                     <Route path="*" element={< NotFoundPage />} />
                                                 </Route>
                                             </Route>

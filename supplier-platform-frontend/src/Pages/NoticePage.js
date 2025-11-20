@@ -79,23 +79,40 @@ const NoticePage = () => {
     }, [currentUser, suppliers]);
 
     // --- 7. (核心) 添加 useEffect 以接收来自 AuditPlanPage 的 state ---
-    useEffect(() => {
+      useEffect(() => {
         const passedState = location.state;
-        if (passedState && passedState.preSelectedSupplierId && passedState.preSelectedMonth && passedState.preSelectedYear) {
-            const { preSelectedSupplierId, preSelectedMonth, preSelectedYear } = passedState;
+        if (passedState) {
+            // 情况 A: 来自年度计划 (AuditPlanPage)，包含供应商、月份和年份
+            if (passedState.preSelectedSupplierId && passedState.preSelectedMonth && passedState.preSelectedYear) {
+                const { preSelectedSupplierId, preSelectedMonth, preSelectedYear } = passedState;
 
-            // 1. 应用供应商筛选
-            setSelectedSuppliers([preSelectedSupplierId]);
+                // 1. 应用供应商筛选
+                setSelectedSuppliers([preSelectedSupplierId]);
 
-            // 2. 应用月份筛选
-            const targetDate = dayjs(`${preSelectedYear}-${preSelectedMonth}-01`);
-            setDateRange([targetDate.startOf('month'), targetDate.endOf('month')]);
+                // 2. 应用月份筛选
+                const targetDate = dayjs(`${preSelectedYear}-${preSelectedMonth}-01`);
+                setDateRange([targetDate.startOf('month'), targetDate.endOf('month')]);
 
-            // 3. 提示用户
-            messageApi.info(`已为您筛选 ${preSelectedYear}年${preSelectedMonth}月 ${suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || ''} 的相关通知单。`);
+                // 3. 提示用户
+                messageApi.info(`已为您筛选 ${preSelectedYear}年${preSelectedMonth}月 ${suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || ''} 的相关通知单。`);
 
-            // 4. (关键) 清除 state，防止刷新时保留筛选
-            navigate(location.pathname, { replace: true, state: {} });
+                // 4. 清除 state
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+            // 情况 B: 来自仪表盘预警 (DashboardPage)，仅包含供应商 ID
+            else if (passedState.preSelectedSupplierId) {
+                const { preSelectedSupplierId } = passedState;
+                
+                // 1. 应用供应商筛选
+                setSelectedSuppliers([preSelectedSupplierId]);
+                
+                // 2. 提示用户
+                const supplierName = suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || '该供应商';
+                messageApi.info(`已为您筛选 ${supplierName} 的相关通知单。`);
+
+                // 3. 清除 state
+                navigate(location.pathname, { replace: true, state: {} });
+            }
         }
     }, [location.state, navigate, messageApi, suppliers]); // 依赖 suppliers 以确保名称能正确显示
 

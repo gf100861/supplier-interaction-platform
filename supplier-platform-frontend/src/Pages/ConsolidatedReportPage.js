@@ -18,8 +18,27 @@ const { RangePicker } = DatePicker;
 const { Search } = Input;
 const { Panel } = Collapse;
 
-// Helper components and functions (no changes here)
+// 1. 辅助函数：安全地将可能为对象的富文本转换为纯文本
+const toPlainText = (val) => {
+    if (val == null) return '';
+    // 检查 ExcelJS 可能返回的富文本对象
+    if (typeof val === 'object' && val.richText) {
+        return val.richText.map(r => r?.text || '').join('');
+    }
+    // 检查您系统中存储的富文本对象
+    if (typeof val === 'object' && Array.isArray(val.richText)) {
+        return val.richText.map(r => r?.text || '').join('');
+    }
+    if (typeof val === 'object' && typeof val.richText === 'string') {
+        return val.richText;
+    }
+    // 已经是纯文本或数字
+    return String(val);
+};
+
+// Helper components and functions
 const getHistoryItemDetails = (historyItem) => {
+    if (!historyItem) return { color: 'grey', text: '未知操作' };
     switch (historyItem.type) {
         case 'supplier_plan_submission': return { color: 'blue', text: '提交了行动计划' };
         case 'sd_plan_approval': return { color: 'green', text: '批准了行动计划' };
@@ -27,23 +46,28 @@ const getHistoryItemDetails = (historyItem) => {
         case 'supplier_evidence_submission': return { color: 'blue', text: '提交了完成证据' };
         case 'sd_evidence_approval': return { color: 'green', text: '审核通过了证据' };
         case 'sd_evidence_rejection': return { color: 'red', text: '退回了提交的证据' };
-        default: return { color: 'grey', text: '执行了未知操作' };
+        // --- 新增类型支持 ---
+        case 'sd_evidence_item_approval': return { color: 'cyan', text: '批准了单条证据' };
+        case 'sd_notice_edit': return { color: 'orange', text: '修改了通知单内容' };
+        case 'manager_reassignment': return { color: 'orange', text: '重分配了供应商' };
+        case 'manager_void': return { color: 'grey', text: '作废了通知单' };
+        case 'sd_closure_approve': return { color: 'green', text: '批准关闭通知单' };
+        default: return { color: 'grey', text: '执行了操作' };
     }
 };
 
 const allPossibleStatuses = [
-
     '待提交Action Plan',
     '待供应商关闭',
     '待SD确认actions',
     '待SD关闭evidence',
     '已完成',
     '已作废'
-
 ]
 
 const getSummaryFromHistory = (history) => {
-    const latestPlanSubmission = [...(history || [])].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
+    const safeHistory = Array.isArray(history) ? history : [];
+    const latestPlanSubmission = [...safeHistory].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
     let latestDeadline = 'N/A';
     if (latestPlanSubmission) {
         const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
@@ -51,7 +75,7 @@ const getSummaryFromHistory = (history) => {
             latestDeadline = dayjs.max(deadlines).format('YYYY-MM-DD');
         }
     }
-    const lastApproval = [...(history || [])].reverse().find(h => h.type.includes('_approval') || h.type.includes('_rejection'));
+    const lastApproval = [...safeHistory].reverse().find(h => h.type.includes('_approval') || h.type.includes('_rejection'));
     return {
         deadline: latestDeadline,
         lastApprover: lastApproval?.submitter || 'N/A',
@@ -71,7 +95,7 @@ const ImageScroller = ({ images, title }) => {
     return (<div style={{ marginTop: 12 }}><Text strong><PictureOutlined /> {title}:</Text><div style={{ position: 'relative', marginTop: 8 }}><Image.PreviewGroup items={images.map(img => img.url || img.thumbUrl)}><Image height={250} style={{ objectFit: 'contain', width: '100%', backgroundColor: '#f0f2f5', borderRadius: '8px' }} src={images[currentIndex].url || images[currentIndex].thumbUrl} /></Image.PreviewGroup>{images.length > 1 && (<><Button shape="circle" icon={<LeftOutlined />} onClick={goToPrevious} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)' }} /><Button shape="circle" icon={<RightOutlined />} onClick={goToNext} style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }} /><Tag style={{ position: 'absolute', bottom: 16, right: 16 }}>{currentIndex + 1} / {images.length}</Tag></>)}</div></div>);
 };
 
-// --- ✨ 核心修正 1: 添加用于在 Modal 中显示详情的组件 ---
+// --- ✨ 核心修正: 确保 ActionPlanReviewDisplay 不会因数据问题崩溃 ---
 const ActionPlanReviewDisplay = ({ historyItem }) => {
     if (!historyItem || !Array.isArray(historyItem.actionPlans) || historyItem.actionPlans.length === 0) {
         return <Text type="secondary">（无行动计划详情）</Text>;
@@ -79,30 +103,33 @@ const ActionPlanReviewDisplay = ({ historyItem }) => {
 
     return (
         <Collapse defaultActiveKey={['0']} style={{ marginTop: '12px' }} size="small">
-            {historyItem.actionPlans.map((plan, index) => (
-                <Panel
-                    key={index}
-                    header={<Text strong>{`行动项 #${index + 1}: ${plan.plan}`}</Text>}
-                >
-                    <Space size="large" wrap>
-                        <Text type="secondary"><PersonIcon style={{ marginRight: 8 }} />负责人: {plan.responsible || '未指定'}</Text>
-                        <Text type="secondary"><CalendarOutlined style={{ marginRight: 8 }} />截止日期: {dayjs(plan.deadline).format('YYYY-MM-DD') || '未指定'}</Text>
-                    </Space>
+            {historyItem.actionPlans.map((plan, index) => {
+                if (!plan) return null; // 防止 plan 为空
+                return (
+                    <Panel
+                        key={index}
+                        header={<Text strong>{`行动项 #${index + 1}: ${toPlainText(plan.plan)}`}</Text>}
+                    >
+                        <Space size="large" wrap>
+                            <Text type="secondary"><PersonIcon style={{ marginRight: 8 }} />负责人: {toPlainText(plan.responsible) || '未指定'}</Text>
+                            <Text type="secondary"><CalendarOutlined style={{ marginRight: 8 }} />截止日期: {plan.deadline ? dayjs(plan.deadline).format('YYYY-MM-DD') : '未指定'}</Text>
+                        </Space>
 
-                    {historyItem.type === 'supplier_evidence_submission' && (
-                        <>
-                            <Divider style={{ margin: '12px 0' }} />
-                            <Paragraph>
-                                <Text strong>完成情况说明:</Text>
-                                <br />
-                                <Text type="secondary">{plan.evidenceDescription || "（供应商未提供文字说明）"}</Text>
-                            </Paragraph>
-                            <ImageScroller images={plan.evidenceImages} title="图片证据" />
-                            <AttachmentsDisplay attachments={plan.evidenceAttachments} />
-                        </>
-                    )}
-                </Panel>
-            ))}
+                        {historyItem.type === 'supplier_evidence_submission' && (
+                            <>
+                                <Divider style={{ margin: '12px 0' }} />
+                                <Paragraph>
+                                    <Text strong>完成情况说明:</Text>
+                                    <br />
+                                    <Text type="secondary">{toPlainText(plan.evidenceDescription) || "（供应商未提供文字说明）"}</Text>
+                                </Paragraph>
+                                <ImageScroller images={plan.evidenceImages} title="图片证据" />
+                                <AttachmentsDisplay attachments={plan.evidenceAttachments} />
+                            </>
+                        )}
+                    </Panel>
+                );
+            })}
         </Collapse>
     );
 };
@@ -122,7 +149,6 @@ const getStatusColor = (status) => {
 
 const getNestedValue = (obj, path) => {
     if (!path) return obj;
-    // If path is a string like 'status', convert to array
     const pathArray = Array.isArray(path) ? path : [path];
     return pathArray.reduce((acc, key) => (acc && acc[key] != null) ? acc[key] : '', obj);
 };
@@ -148,14 +174,11 @@ const ConsolidatedReportPage = () => {
             if (!supplierCompanyId) return [];
             accessibleData = notices.filter(n => n.assignedSupplierId === supplierCompanyId);
         } else if (currentUser?.role === 'Manager' || currentUser?.role === 'Admin') {
-            // Manager 和 Admin 可以看到所有通知
             accessibleData = notices;
         } else if (currentUser?.role === 'SD') {
-            // SD 只能看到自己创建的通知 (如果需要看所有, 此处改为 accessibleData = notices;)
             const supplierDevelopmentId = currentUser.id;
             accessibleData = notices.filter(n => n.creator?.id === supplierDevelopmentId);
         } else {
-             // 其他未知角色看不到任何通知
             accessibleData = [];
         }
 
@@ -187,26 +210,29 @@ const ConsolidatedReportPage = () => {
         const noticesWithDetails = filteredNotices.map(notice => {
             const actions = [];
             const findings = [];
-            const details =notice?.sdNotice?.details
-            notice.history?.forEach(h => {
+            const details = notice?.sdNotice?.details || {};
+            const safeHistory = notice.history || [];
+            
+            safeHistory.forEach(h => {
                 if (h.type === 'supplier_plan_submission' && h.actionPlans) {
                     h.actionPlans.forEach(plan => {
-                        actions.push(plan.plan);
+                        actions.push(toPlainText(plan.plan)); 
                     });
                 }
                 if (h.type === 'supplier_evidence_submission' && h.actionPlans) {
                     h.actionPlans.forEach(plan => {
-                        findings.push(plan.evidenceDescription || 'N/A');
+                        findings.push(toPlainText(plan.evidenceDescription) || 'N/A'); 
                     });
                 }
             });
 
             return {
+                ...notice, // 先解构原始 notice
                 details,
-                ...notice,
-                ...getSummaryFromHistory(notice.history || []),
+                ...getSummaryFromHistory(safeHistory),
                 actions,
                 findings,
+                history: safeHistory // 显式确保 history 存在
             };
         });
 
@@ -242,7 +268,6 @@ const ConsolidatedReportPage = () => {
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
 
     const generateColumnsForCategory = (category) => {
-
         const baseColumns = [
             { title: 'Parma', dataIndex: ['supplier', 'parmaId'], key: 'parma_id', width: 100, sorter: (a, b) => getNestedValue(a, ['supplier', 'parmaId']).localeCompare(getNestedValue(b, ['supplier', 'parmaId'])), },
             {
@@ -258,14 +283,14 @@ const ConsolidatedReportPage = () => {
                 dataIndex: ['details', 'title'],
                 key: 'process',
                 width: 250,
-             
+                render: (text) => toPlainText(text)
             },
                {
                 title: 'FINDINGS / DEVIATIONS',
                 dataIndex: ['details', 'description'],
                 key: 'process',
                 width: 300,
-             
+                render: (text) => toPlainText(text)
             },
             {
                 title: '行动计划',
@@ -323,12 +348,12 @@ const ConsolidatedReportPage = () => {
             key: configCol.dataIndex,
             width: 200,
             ellipsis: true,
-            render: (text) => <Tooltip title={text}>{text}</Tooltip>,
+            render: (text) => <Tooltip title={toPlainText(text)}>{toPlainText(text)}</Tooltip>,
             sorter: (a, b) => {
-                const valA = getNestedValue(a, ['sdNotice', 'details', configCol.dataIndex]);
-                const valB = getNestedValue(b, ['sdNotice', 'details', configCol.dataIndex]);
+                const valA = toPlainText(getNestedValue(a, ['sdNotice', 'details', configCol.dataIndex]));
+                const valB = toPlainText(getNestedValue(b, ['sdNotice', 'details', configCol.dataIndex]));
                 // Handle numbers and text
-                if (typeof valA === 'number' && typeof valB === 'number') {
+                if (!isNaN(valA) && !isNaN(valB)) {
                     return valA - valB;
                 }
                 return String(valA).localeCompare(String(valB));
@@ -356,7 +381,6 @@ const ConsolidatedReportPage = () => {
         workbook.creator = 'SD Platform';
         workbook.created = new Date();
 
-        // 定义通用样式
         const headerStyle = {
             font: { bold: true, color: { argb: 'FFFFFFFF' } },
             fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } },
@@ -364,52 +388,53 @@ const ConsolidatedReportPage = () => {
             border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
         };
 
-        console.log(notices)
 
-        // 3. --- 遍历每个类别，分别为其创建一个工作表 ---
         for (const category of categories) {
-            const worksheet = workbook.addWorksheet(category.substring(0, 30)); // Sheet名不能超过31个字符
+            const worksheet = workbook.addWorksheet(category.substring(0, 30)); 
 
-            // --- 动态生成表头 ---
-            const baseColumns = [
-                { title: 'ParmaId', dataIndex: ['supplier', 'parmaId'] },
-                { title: '供应商', dataIndex: 'assignedSupplierName' },
-                { title: '状态', dataIndex: 'status' },
-                { title: '创建时间', dataIndex: ['sdNotice', 'createTime'] },
-                { title: '预计时间',  dataIndex: 'deadline', },
+            worksheet.columns = [
+                { header: 'ParmaId', key: 'parmaId', width: 15 },
+                { header: '供应商', key: 'supplierName', width: 25 },
+                { header: '状态', key: 'status', width: 15 },
+                { header: '创建时间', key: 'createTime', width: 15 },
+                { header: '预计时间', key: 'deadline', width: 15 },
+                { header: 'PROCESS/QUESTIONS', key: 'process', width: 40 },
+                { header: 'FINDINGS/DEVIATIONS', key: 'finding', width: 40 },
+                { header: '行动计划', key: 'actions', width: 50 },
+                { header: '发现项/证据', key: 'evidence', width: 50 },
             ];
-            const dynamicColumns = [];
-            const allHeaders = [...dynamicColumns, ...baseColumns];
 
-            worksheet.columns = allHeaders.map(col => ({
-                header: col.title,
-                key: col.dataIndex.toString(), // key 必须是字符串
-                width: col.title.length > 15 ? 40 : 25,
-            }));
-
-            // 应用表头样式
             worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
                 cell.s = headerStyle;
             });
 
-            // --- 准备并添加行数据 ---
             const rows = groupedData[category].map(notice => {
-                const rowData = {};
-                allHeaders.forEach(col => {
-                    const key = col.dataIndex.toString();
-                    // 处理嵌套数据路径
-                    if (Array.isArray(col.dataIndex)) {
-                        rowData[key] = col.dataIndex.reduce((obj, key) => (obj && obj[key] !== 'undefined') ? obj[key] : '', notice);
-                    } else {
-                        rowData[key] = notice[col.dataIndex];
-                    }
-                });
-                return rowData;
+                return {
+                    parmaId: notice.supplier?.parmaId || '',
+                    supplierName: notice.assignedSupplierName || '',
+                    status: notice.status || '',
+                    createTime: notice.sdNotice?.createTime ? dayjs(notice.sdNotice.createTime).format('YYYY-MM-DD') : '',
+                    deadline: notice.deadline || '',
+                    
+                    process: toPlainText(notice.details?.title || notice.details?.process || notice.details?.parameter || notice.title),
+                    
+                    finding: toPlainText(notice.details?.description || notice.details?.finding),
+                    
+                    actions: Array.isArray(notice.actions) ? notice.actions.join('\n') : '',
+                    
+                    evidence: Array.isArray(notice.findings) ? notice.findings.join('\n') : '',
+                };
             });
-            worksheet.addRows(rows);
+
+            rows.forEach(row => {
+                const addedRow = worksheet.addRow(row);
+                addedRow.eachCell({ includeEmpty: true }, (cell) => {
+                    cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true }; 
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                });
+            });
         }
 
-        // 4. --- 生成并下载文件 ---
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
@@ -501,7 +526,7 @@ const ConsolidatedReportPage = () => {
             </div>
 
             <Modal
-                title={`详情: ${detailsModal.notice?.title || ''}`}
+                title={`详情: ${toPlainText(detailsModal.notice?.title || '')}`}
                 open={detailsModal.visible}
                 onCancel={handleDetailsCancel}
                 footer={null}
@@ -510,9 +535,12 @@ const ConsolidatedReportPage = () => {
             >
                 {detailsModal.notice && (
                     <>
+                    {
+                        console.log('eee',detailsModal)
+                    }
                         <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
                         <Card size="small" type="inner">
-                            <Paragraph><strong>问题描述:</strong> {detailsModal.notice.sdNotice.description || "N/A"}</Paragraph>
+                            <Paragraph><strong>问题描述:</strong> {toPlainText(detailsModal.notice.sdNotice.description || detailsModal.notice.sdNotice.details?.finding || "N/A")}</Paragraph>
                             <ImageScroller images={detailsModal.notice.sdNotice.images} title="初始图片" />
                             <AttachmentsDisplay attachments={detailsModal.notice.sdNotice.attachments} />
                             <Divider style={{ margin: '16px 0' }} />
@@ -523,11 +551,12 @@ const ConsolidatedReportPage = () => {
                         <Timeline>
                             {(detailsModal.notice.history || []).map((h, index) => {
                                 const details = getHistoryItemDetails(h);
+                              
                                 return (
                                     <Timeline.Item key={index} color={details.color}>
                                         <p><b>{h.submitter}</b> {details.text} <Text type="secondary"> @ {dayjs(h.time).format('YYYY-MM-DD HH:mm')}</Text></p>
 
-                                        {h.description && <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0 16px' }}>{h.description}</Paragraph>}
+                                        {h.description && <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0 16px' }}>{toPlainText(h.description)}</Paragraph>}
 
                                         {/* --- ✨ 核心修正 2: 在 Modal 的 Timeline 中使用 ActionPlanReviewDisplay --- */}
                                         {(h.type === 'supplier_plan_submission' || h.type === 'supplier_evidence_submission') && h.actionPlans && h.actionPlans.length > 0 && (
@@ -545,4 +574,3 @@ const ConsolidatedReportPage = () => {
 };
 
 export default ConsolidatedReportPage;
-

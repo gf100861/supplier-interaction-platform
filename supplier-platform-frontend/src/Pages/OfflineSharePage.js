@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Card, Typography, Upload, Button, notification, message, Spin, Space, Modal, Alert, List, Popconfirm, Avatar } from 'antd'; // 1. 导入 List, Popconfirm
+import { Card, Typography, Upload, Button, notification, message, Spin, Space, Modal, Alert, List, Popconfirm, Avatar, DatePicker, Input } from 'antd';
 import { ShareAltOutlined, UploadOutlined, InboxOutlined, DownloadOutlined, QrcodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons'; // 2. 导入新图标
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
@@ -8,6 +8,8 @@ import dayjs from 'dayjs'; // 3. 导入 dayjs 用于格式化日期
 
 const { Title, Paragraph, Text } = Typography;
 const { Dragger } = Upload;
+const { RangePicker } = DatePicker; // 2. 解构 RangePicker
+const { Search } = Input; // 3. 解构 Search
 
 // 4. 提取 QR 码加载器 (保持不变)
 const loadQrCodeScript = () => {
@@ -39,6 +41,10 @@ export const FileSender = () => {
     // --- 6. 新增 State 用于显示已同步的文件列表 ---
     const [syncedFiles, setSyncedFiles] = useState([]);
     const [filesLoading, setFilesLoading] = useState(true);
+
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const [dateRange, setDateRange] = useState(null);
 
     // --- 7. (来自 FileReceiver) 下载文件的函数 ---
     // (注意：此版本 *不会* 在下载后删除记录)
@@ -99,13 +105,17 @@ export const FileSender = () => {
 
 
     // --- 9. useEffect Hook，用于在弹窗打开时生成 QR 码 ---
-    useEffect(() => {
-        if (isQrModalVisible && qrCodeRef.current) {
+   useEffect(() => {
+        if (isQrModalVisible && qrCodeRef.current && currentUser?.id) { // 确保拿到 currentUser.id
             loadQrCodeScript().then(() => {
                 if (window.QRious) {
+                    // 构建移动端专属链接
+                    // 例如: https://your-domain.com/mobile-transfer?uid=user_123
+                    const mobileUrl = `${window.location.origin}/mobile-transfer?uid=${currentUser.id}`;
+
                     new window.QRious({
                         element: qrCodeRef.current,
-                        value: window.location.href,
+                        value: mobileUrl, // 使用新链接
                         size: 256,
                         level: 'H'
                     });
@@ -115,7 +125,7 @@ export const FileSender = () => {
                 messageApi.error("无法加载二维码生成器，请刷新页面重试。");
             });
         }
-    }, [isQrModalVisible, messageApi]);
+    }, [isQrModalVisible, messageApi, currentUser]); // 添加 currentUser 依赖
 
     // --- 10. useEffect Hook，用于加载初始文件 + 监听实时变化 ---
     useEffect(() => {
@@ -275,6 +285,24 @@ export const FileSender = () => {
         }
     };
 
+    const filteredFiles = useMemo(() => {
+        return syncedFiles.filter(file => {
+            // 搜索过滤
+            const matchesSearch = file.file_name.toLowerCase().includes(searchTerm.toLowerCase());
+
+            // 日期过滤
+            let matchesDate = true;
+            if (dateRange && dateRange[0] && dateRange[1]) {
+                const fileDate = dayjs(file.created_at);
+                // 使用 startOf 和 endOf 确保涵盖所选日期的全天
+                matchesDate = fileDate.isAfter(dateRange[0].startOf('day')) && 
+                              fileDate.isBefore(dateRange[1].endOf('day'));
+            }
+
+            return matchesSearch && matchesDate;
+        });
+    }, [syncedFiles, searchTerm, dateRange]);
+
     return (
         <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
             <Card>
@@ -328,35 +356,50 @@ export const FileSender = () => {
             </Card>
 
             {/* --- 11. 新增：显示已同步文件的卡片 --- */}
-            <Card title="已同步的文件" style={{ marginTop: 24 }}>
+           <Card 
+                title={
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span>已同步的文件 ({filteredFiles.length})</span>
+                        {/* 筛选控件 */}
+                        <Space size="small" style={{ fontWeight: 'normal' }}>
+                            <Search
+                                placeholder="搜索文件名"
+                                allowClear
+                                onSearch={setSearchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ width: 200 }}
+                            />
+                            <RangePicker 
+                                onChange={setDateRange} 
+                                style={{ width: 240 }}
+                                placeholder={['开始日期', '结束日期']}
+                            />
+                        </Space>
+                    </div>
+                } 
+                style={{ marginTop: 24 }}
+            >
                 <List
                     loading={filesLoading}
-                    dataSource={syncedFiles}
+                    dataSource={filteredFiles} // 使用过滤后的数据
+                    pagination={{ pageSize: 5 }} // 添加分页
                     renderItem={(file) => (
                         <List.Item
                             actions={[
-                                <Button type="link" icon={<DownloadOutlined />} onClick={() => handleDownload(file)}>
-                                    下载
-                                </Button>,
-                                <Popconfirm
-                                    title="确定删除此文件吗？"
-                                    description="文件将从云端永久删除。"
-                                    onConfirm={() => handleDelete(file)}
-                                    okText="删除"
-                                    cancelText="取消"
-                                >
+                                <Button type="link" icon={<DownloadOutlined />} onClick={() => handleDownload(file)}>下载</Button>,
+                                <Popconfirm title="确定删除此文件吗？" description="文件将从云端永久删除。" onConfirm={() => handleDelete(file)} okText="删除" cancelText="取消">
                                     <Button danger type="link" icon={<DeleteOutlined />} />
                                 </Popconfirm>
                             ]}
                         >
                             <List.Item.Meta
-                                avatar={<Avatar icon={<FileTextOutlined />} />}
-                                title={<Text>{file.file_name}</Text>}
+                                avatar={<Avatar icon={<FileTextOutlined />} style={{ backgroundColor: '#1890ff' }} />}
+                                title={<Text strong>{file.file_name}</Text>}
                                 description={`同步于: ${dayjs(file.created_at).format('YYYY-MM-DD HH:mm')}`}
                             />
                         </List.Item>
                     )}
-                    locale={{ emptyText: "您的云同步列表为空。" }}
+                    locale={{ emptyText: "没有找到符合条件的文件。" }}
                 />
             </Card>
 

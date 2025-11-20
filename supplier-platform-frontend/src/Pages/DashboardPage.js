@@ -747,7 +747,8 @@ const DashboardPage = () => {
                                     />
                                     <Button
                                         type="link"
-                                        onClick={() => navigate('/notices', { state: { preSelectedSupplier: item.id } })}
+                                        // --- 核心修改：将 key 改为 preSelectedSupplierId 以保持一致性 ---
+                                        onClick={() => navigate('/notices', { state: { preSelectedSupplierId: item.id } })}
                                     >
                                         去处理
                                     </Button>
