@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider, DatePicker, Tooltip, theme // 1. 引入 DatePicker
 } from 'antd';
-import { EditOutlined,  StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
+import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 
@@ -66,6 +66,8 @@ const NoticePage = () => {
     const [selectedSuppliers, setSelectedSuppliers] = useState([]);
     const [dateRange, setDateRange] = useState(null);
 
+    const [viewMode, setViewMode] = useState('grouped');
+
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
@@ -79,7 +81,7 @@ const NoticePage = () => {
     }, [currentUser, suppliers]);
 
     // --- 7. (核心) 添加 useEffect 以接收来自 AuditPlanPage 的 state ---
-      useEffect(() => {
+    useEffect(() => {
         const passedState = location.state;
         if (passedState) {
             // 情况 A: 来自年度计划 (AuditPlanPage)，包含供应商、月份和年份
@@ -102,10 +104,10 @@ const NoticePage = () => {
             // 情况 B: 来自仪表盘预警 (DashboardPage)，仅包含供应商 ID
             else if (passedState.preSelectedSupplierId) {
                 const { preSelectedSupplierId } = passedState;
-                
+
                 // 1. 应用供应商筛选
                 setSelectedSuppliers([preSelectedSupplierId]);
-                
+
                 // 2. 提示用户
                 const supplierName = suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || '该供应商';
                 messageApi.info(`已为您筛选 ${supplierName} 的相关通知单。`);
@@ -241,7 +243,21 @@ const NoticePage = () => {
 
 
     // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
+    // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
     const groupedNotices = useMemo(() => {
+        // --- 9. 新增：如果选择的是“打散/列表”模式，直接返回 ---
+        if (viewMode === 'flat') {
+            const flatList = [...searchedNotices];
+            // 对打散列表进行排序
+            flatList.sort((a, b) => {
+                const timeA = dayjs(a.sdNotice?.createTime);
+                const timeB = dayjs(b.sdNotice?.createTime);
+                return listSortOrder === 'asc' ? timeA.diff(timeB) : timeB.diff(timeA);
+            });
+            return flatList;
+        }
+
+        // --- 分组模式逻辑 (保持不变) ---
         const batchGroups = {}; // 用于存放真正的批量任务
         const dailyGroups = {}; // 用于存放按“供应商+日期”分组的单个任务
 
@@ -281,7 +297,7 @@ const NoticePage = () => {
 
         const combinedList = [...batchItems, ...dailyItems];
 
-        // 排序逻辑 (保持不变)
+        // 排序逻辑
         const getSortableDate = (item) => {
             const dateStr = item.isBatch ? item.representative.sdNotice?.createTime : item.sdNotice?.createTime;
             return dayjs(dateStr || 0);
@@ -294,7 +310,7 @@ const NoticePage = () => {
         }
 
         return combinedList;
-    }, [searchedNotices, listSortOrder]); // <-- 确保依赖项正确
+    }, [searchedNotices, listSortOrder, viewMode]); // <-- 9. 添加 viewMode 依赖
 
 
     useEffect(() => {
@@ -333,7 +349,7 @@ const NoticePage = () => {
         const history = notice.history || [];
         const lastHistory = history[history.length - 1];
 
-        console.log('通知单',notice)
+        console.log('通知单', notice)
 
         // 逻辑修正：检查 '计划被驳回' 的情况（兼容不同状态文案）
         if (notice.status === '待提交Action Plan' && lastHistory?.type === 'sd_plan_rejection') {
@@ -796,7 +812,8 @@ const NoticePage = () => {
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ],
             SD: [
-                { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan', '待供应商关闭'] },
+                { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan'] },
+                 { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
                 { key: 'review', label: '待SD确认actions', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
@@ -842,6 +859,15 @@ const NoticePage = () => {
                     <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单</Paragraph></div>
 
                     <Space wrap>
+                        <Radio.Group
+                            value={viewMode}
+                            onChange={(e) => setViewMode(e.target.value)}
+                            buttonStyle="solid"
+                            optionType="button"
+                        >
+                            <Radio.Button value="grouped"><AppstoreOutlined /> 分组</Radio.Button>
+                            <Radio.Button value="flat"><BarsOutlined /> 列表</Radio.Button>
+                        </Radio.Group>
                         {isSDManagerOrAdmin && (
                             <Select
                                 mode="multiple"
@@ -890,14 +916,15 @@ const NoticePage = () => {
                             options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
                             maxTagCount="responsive"
                         />
+                           
                         <Search
-                            placeholder="可用;；@,，分隔关键词"
+                            placeholder="搜索通知单：可用;；@,，分隔关键词"
                             allowClear
                             onSearch={setSearchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            style={{ width: 220 }}
+                            style={{ width: 360 }}
                         />
-                        <Tooltip title="按创建日期升序">
+                         <Tooltip title="按创建日期升序">
                             <Button
                                 icon={<SortAscendingOutlined />}
                                 onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
@@ -911,6 +938,7 @@ const NoticePage = () => {
                                 type={listSortOrder === 'desc' ? 'primary' : 'default'}
                             />
                         </Tooltip>
+                    
                     </Space>
                 </div>
             </Card>

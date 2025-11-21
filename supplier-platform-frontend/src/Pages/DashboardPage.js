@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm } from 'antd';
-import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, FileTextOutlined } from '@ant-design/icons';
+import React, { useState, useMemo, useEffect, useRef } from 'react'; // 1. 引入 useRef
+import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm, Tour } from 'antd'; // 2. 引入 Tour
+import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, FileTextOutlined, QuestionCircleOutlined } from '@ant-design/icons'; // 3. 引入 QuestionCircleOutlined
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
@@ -163,7 +163,12 @@ const DashboardPage = () => {
     const [selectedPlanCategory, setSelectedPlanCategory] = useState('all');
     const [selectedPlanSupplier, setSelectedPlanSupplier] = useState('all');
 
-    // 注意：移除了 rescheduleMonth 状态，因为它现在由 PlanItem 内部管理
+    // --- 4. Tour 相关的 Refs 和 State ---
+    const refCoreMetrics = useRef(null);
+    const refMonthlyPlan = useRef(null);
+    const refWarnings = useRef(null);
+    const refHighlights = useRef(null);
+    const [openTour, setOpenTour] = useState(false);
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -511,6 +516,35 @@ const DashboardPage = () => {
 
     }, [notices, allUsers, suppliers, noticesLoading, usersLoading, suppliersLoading, currentUser, managedSuppliers]);
 
+
+    const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
+
+    const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
+
+    // --- 5. 定义 Tour 步骤 ---
+    const tourSteps = [
+        {
+            title: '核心指标',
+            description: '这里展示了当前月份及历史累计的关键业务指标，包括已关闭通知单、未关闭通知单及计划完成情况。',
+            target: () => refCoreMetrics.current,
+        },
+        ...(isSDManagerOrAdmin ? [{
+            title: '月度计划概览',
+            description: 'SD 和 经理可以在此处查看和管理月度审计、QRM会议等计划的执行进度。',
+            target: () => refMonthlyPlan.current,
+        }] : []),
+        {
+            title: '行动预警',
+            description: '系统会自动筛选出近30天内未处理的紧急事项，点击“去处理”可快速跳转并筛选出对应供应商的通知单。',
+            target: () => refWarnings.current,
+        },
+        {
+            title: '亮点展示',
+            description: '展示近期获得点赞最多的优秀整改案例，供大家学习参考。',
+            target: () => refHighlights.current,
+        },
+    ];
+
     const pageIsLoading = noticesLoading || usersLoading || suppliersLoading || allPlansLoading;
 
     if (pageIsLoading && !dashboardData) {
@@ -521,7 +555,7 @@ const DashboardPage = () => {
         return <div style={{ padding: 24 }}><Empty description="无法加载仪表盘数据，请稍后重试或联系管理员。" /></div>;
     }
 
-    // --- Supplier View ---
+    // --- Supplier View (供应商视图) ---
     if (currentUser.role === 'Supplier') {
         const { allOpenIssues, recentPendingIssues, pendingEvidenceNext30Days } = dashboardData;
 
@@ -609,194 +643,207 @@ const DashboardPage = () => {
     } = planStatistics;
 
 
-    const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
-
-    const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
-
     return (
         <div>
             <Card style={{ marginBottom: 24 }} bordered={false}>
-                <Title level={4} style={{ margin: 0 }}>运营仪表盘</Title>
-                <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>监控关键绩效指标 (KPI) 与行动预警。</Paragraph>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <Title level={4} style={{ margin: 0 }}>运营仪表盘</Title>
+                        <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>监控关键绩效指标 (KPI) 与行动预警。</Paragraph>
+                    </div>
+                     {/* 6. 添加 Tour 触发按钮 */}
+                    <Button icon={<QuestionCircleOutlined />} onClick={() => setOpenTour(true)}>功能引导</Button>
+                </div>
             </Card>
 
             <Row gutter={[24, 24]} align="stretch">
                 <Col xs={24} md={isSDManagerOrAdmin ? 12 : 24} lg={12}>
-                    <Card bordered={false} loading={pageIsLoading || allPlansLoading} style={{ height: '100%' }} title="核心指标 (通知单 & 计划)">
-                        <Row gutter={[16, 24]}>
-                            <Col xs={12} sm={12}>
-                                <Statistic title="本月已关闭 (通知)" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
-                            </Col>
-                            <Col xs={12} sm={12}>
-                                <Statistic title="所有未关闭 (通知)" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
-                            </Col>
-                            <Col xs={12} sm={12}>
-                                <Statistic title="过往未完成 (计划)" value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} />
-                            </Col>
-                            <Col xs={12} sm={12}>
-                                <Statistic title="本月待办 (计划)" value={pendingCurrentMonthPlans} valueStyle={{ color: '#faad14' }} prefix={<ScheduleOutlined />} />
-                            </Col>
-                        </Row>
-                    </Card>
+                    <div ref={refCoreMetrics} style={{ height: '100%' }}>
+                        <Card bordered={false} loading={pageIsLoading || allPlansLoading} style={{ height: '100%' }} title="核心指标 (通知单 & 计划)">
+                            <Row gutter={[16, 24]}>
+                                <Col xs={12} sm={12}>
+                                    <Statistic title="本月已关闭 (通知)" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
+                                </Col>
+                                <Col xs={12} sm={12}>
+                                    <Statistic title="所有未关闭 (通知)" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
+                                </Col>
+                                <Col xs={12} sm={12}>
+                                    <Statistic title="过往未完成 (计划)" value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} />
+                                </Col>
+                                <Col xs={12} sm={12}>
+                                    <Statistic title="本月待办 (计划)" value={pendingCurrentMonthPlans} valueStyle={{ color: '#faad14' }} prefix={<ScheduleOutlined />} />
+                                </Col>
+                            </Row>
+                        </Card>
+                    </div>
                 </Col>
 
                 {isSDManagerOrAdmin && (
                     <Col xs={24} md={12} lg={12}>
-                        <Card
-                            title="月度计划概览"
-                            bordered={false}
-                            loading={allPlansLoading || categoriesLoading}
-                            style={{ height: '100%' }}
-                            extra={
-                                <Space wrap>
-                                    <Select
-                                        size="small"
-                                        style={{ width: 120 }}
-                                        placeholder="按供应商"
-                                        value={selectedPlanSupplier}
-                                        onChange={setSelectedPlanSupplier}
-                                        options={[
-                                            { value: 'all', label: '所有供应商' },
-                                            ...managedSuppliers.map(s => ({ value: s.id, label: s.short_code }))
-                                        ]}
-                                    />
-                                    <Select
-                                        size="small"
-                                        style={{ width: 120 }}
-                                        placeholder="按类型"
-                                        value={selectedPlanCategory}
-                                        onChange={setSelectedPlanCategory}
-                                        options={[
-                                            { value: 'all', label: '所有类型' },
-                                            ...planCategories.map(c => ({ value: c.name, label: c.name }))
-                                        ]}
-                                    />
-                                </Space>
-                            }
-                        >
-                            <Row gutter={16}>
-                                <Col span={12}>
-                                    <Title level={5} style={{ marginTop: 0 }}>
-                                        当月及过往待办 ({filteredCurrentAndPastPlansForList.length})
-                                    </Title>
-                                    <div>
-                                        {filteredCurrentAndPastPlansForList.length > 0 ? (
-                                            <List
-                                                itemLayout="horizontal"
-                                                dataSource={filteredCurrentAndPastPlansForList}
-                                                // 传递 PlanItem 需要的回调
-                                                renderItem={(plan) => (
-                                                    <PlanItem
-                                                        plan={plan}
-                                                        onMarkComplete={handleMarkAsComplete}
-                                                        onDelete={handleDeleteEvent}
-                                                        onNavigate={handleNavigateToNotices}
-                                                        onReschedule={handleReschedule}
-                                                    />
-                                                )}
-                                                pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
-                                            />
-                                        ) : (
-                                            <Empty description="暂无积压计划。" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
-                                        )}
-                                    </div>
-                                </Col>
-                                <Col span={12}>
-                                    <Title level={5} style={{ marginTop: 0 }}>
-                                        {dayjs().add(1, 'month').format('M')}月待办 ({filteredNextMonthPlansForList.length})
-                                    </Title>
-                                    <div>
-                                        {filteredNextMonthPlansForList.length > 0 ? (
-                                            <List
-                                                itemLayout="horizontal"
-                                                dataSource={filteredNextMonthPlansForList}
-                                                renderItem={(plan) => (
-                                                    <PlanItem
-                                                        plan={plan}
-                                                        onMarkComplete={handleMarkAsComplete}
-                                                        onDelete={handleDeleteEvent}
-                                                        onNavigate={handleNavigateToNotices}
-                                                        onReschedule={handleReschedule}
-                                                    />
-                                                )}
-                                                pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
-                                            />
-                                        ) : (
-                                            <Empty description="下月暂无计划。" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
-                                        )}
-                                    </div>
-                                </Col>
-                            </Row>
-                        </Card>
+                        <div ref={refMonthlyPlan} style={{ height: '100%' }}>
+                            <Card
+                                title="月度计划概览"
+                                bordered={false}
+                                loading={allPlansLoading || categoriesLoading}
+                                style={{ height: '100%' }}
+                                extra={
+                                    <Space wrap>
+                                        <Select
+                                            size="small"
+                                            style={{ width: 120 }}
+                                            placeholder="按供应商"
+                                            value={selectedPlanSupplier}
+                                            onChange={setSelectedPlanSupplier}
+                                            options={[
+                                                { value: 'all', label: '所有供应商' },
+                                                ...managedSuppliers.map(s => ({ value: s.id, label: s.short_code }))
+                                            ]}
+                                        />
+                                        <Select
+                                            size="small"
+                                            style={{ width: 120 }}
+                                            placeholder="按类型"
+                                            value={selectedPlanCategory}
+                                            onChange={setSelectedPlanCategory}
+                                            options={[
+                                                { value: 'all', label: '所有类型' },
+                                                ...planCategories.map(c => ({ value: c.name, label: c.name }))
+                                            ]}
+                                        />
+                                    </Space>
+                                }
+                            >
+                                <Row gutter={16}>
+                                    <Col span={12}>
+                                        <Title level={5} style={{ marginTop: 0 }}>
+                                            当月及过往待办 ({filteredCurrentAndPastPlansForList.length})
+                                        </Title>
+                                        <div>
+                                            {filteredCurrentAndPastPlansForList.length > 0 ? (
+                                                <List
+                                                    itemLayout="horizontal"
+                                                    dataSource={filteredCurrentAndPastPlansForList}
+                                                    // 传递 PlanItem 需要的回调
+                                                    renderItem={(plan) => (
+                                                        <PlanItem
+                                                            plan={plan}
+                                                            onMarkComplete={handleMarkAsComplete}
+                                                            onDelete={handleDeleteEvent}
+                                                            onNavigate={handleNavigateToNotices}
+                                                            onReschedule={handleReschedule}
+                                                        />
+                                                    )}
+                                                    pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
+                                                />
+                                            ) : (
+                                                <Empty description="暂无积压计划。" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
+                                            )}
+                                        </div>
+                                    </Col>
+                                    <Col span={12}>
+                                        <Title level={5} style={{ marginTop: 0 }}>
+                                            {dayjs().add(1, 'month').format('M')}月待办 ({filteredNextMonthPlansForList.length})
+                                        </Title>
+                                        <div>
+                                            {filteredNextMonthPlansForList.length > 0 ? (
+                                                <List
+                                                    itemLayout="horizontal"
+                                                    dataSource={filteredNextMonthPlansForList}
+                                                    renderItem={(plan) => (
+                                                        <PlanItem
+                                                            plan={plan}
+                                                            onMarkComplete={handleMarkAsComplete}
+                                                            onDelete={handleDeleteEvent}
+                                                            onNavigate={handleNavigateToNotices}
+                                                            onReschedule={handleReschedule}
+                                                        />
+                                                    )}
+                                                    pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
+                                                />
+                                            ) : (
+                                                <Empty description="下月暂无计划。" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
+                                            )}
+                                        </div>
+                                    </Col>
+                                </Row>
+                            </Card>
+                        </div>
                     </Col>
                 )}
             </Row>
 
             <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
                 <Col xs={24} lg={12}>
-                    <Card title="行动预警：近30天待处理 (通知单)" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
-                        <List
-                            itemLayout="horizontal"
-                            dataSource={supplierActionRequired}
-                            renderItem={(item) => (
-                                <List.Item>
-                                    <List.Item.Meta
-                                        avatar={<Avatar style={{ backgroundColor: '#ff4d4f' }} icon={<UserOutlined />} />}
-                                        title={<Text strong>{item.name}</Text>}
-                                        description={`${item.count} 项待处理`}
-                                    />
-                                    <Button
-                                        type="link"
-                                        // --- 核心修改：将 key 改为 preSelectedSupplierId 以保持一致性 ---
-                                        onClick={() => navigate('/notices', { state: { preSelectedSupplierId: item.id } })}
-                                    >
-                                        去处理
-                                    </Button>
-                                </List.Item>
-                            )}
-                            locale={{ emptyText: <Empty description="太棒了！近30天内没有积压任务。" /> }}
-                        />
-                    </Card>
+                    <div ref={refWarnings} style={{ height: '100%' }}>
+                        <Card title="行动预警：近30天待处理 (通知单)" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                            <List
+                                itemLayout="horizontal"
+                                dataSource={supplierActionRequired}
+                                renderItem={(item) => (
+                                    <List.Item>
+                                        <List.Item.Meta
+                                            avatar={<Avatar style={{ backgroundColor: '#ff4d4f' }} icon={<UserOutlined />} />}
+                                            title={<Text strong>{item.name}</Text>}
+                                            description={`${item.count} 项待处理`}
+                                        />
+                                        <Button
+                                            type="link"
+                                            // --- 核心修改：将 key 改为 preSelectedSupplierId 以保持一致性 ---
+                                            onClick={() => navigate('/notices', { state: { preSelectedSupplierId: item.id } })}
+                                        >
+                                            去处理
+                                        </Button>
+                                    </List.Item>
+                                )}
+                                locale={{ emptyText: <Empty description="太棒了！近30天内没有积压任务。" /> }}
+                            />
+                        </Card>
+                    </div>
                 </Col>
                 <Col xs={24} lg={12}>
-                    <Card title="亮点展示：近期最受欢迎改善 (通知单)" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
-                        {topImprovement ? (
-                            <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                    <Space wrap size="small">
-                                        <Tag color="gold">来自: {topImprovement.supplier?.short_code || '未知'}</Tag>
-                                        {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
-                                        {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
+                    <div ref={refHighlights} style={{ height: '100%' }}>
+                        <Card title="亮点展示：近期最受欢迎改善 (通知单)" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                            {topImprovement ? (
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                        <Space wrap size="small">
+                                            <Tag color="gold">来自: {topImprovement.supplier?.short_code || '未知'}</Tag>
+                                            {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
+                                            {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
+                                        </Space>
+                                        <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>
+                                            查看详情
+                                        </Button>
+                                    </div>
+                                    <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
+                                    <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
+                                        {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || '无详细描述'}
+                                    </Paragraph>
+                                    <Divider style={{ margin: '12px 0' }} />
+                                    <Space align="center">
+                                        <StarOutlined style={{ color: '#ffc53d' }} />
+                                        <Text strong>{topImprovement.likes?.length || 0} 个赞</Text>
+                                        <Avatar.Group maxCount={5} size="small" style={{ marginLeft: 8 }}>
+                                            {(topImprovement.likes || []).map(userId => (
+                                                <Tooltip key={userId} title={userLookup[userId]?.username || '未知用户'}>
+                                                    <Avatar style={{ backgroundColor: '#1890ff' }}>
+                                                        {userLookup[userId]?.username?.[0]?.toUpperCase() || '?'}
+                                                    </Avatar>
+                                                </Tooltip>
+                                            ))}
+                                        </Avatar.Group>
                                     </Space>
-                                    <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>
-                                        查看详情
-                                    </Button>
                                 </div>
-                                <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
-                                <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
-                                    {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || '无详细描述'}
-                                </Paragraph>
-                                <Divider style={{ margin: '12px 0' }} />
-                                <Space align="center">
-                                    <StarOutlined style={{ color: '#ffc53d' }} />
-                                    <Text strong>{topImprovement.likes?.length || 0} 个赞</Text>
-                                    <Avatar.Group maxCount={5} size="small" style={{ marginLeft: 8 }}>
-                                        {(topImprovement.likes || []).map(userId => (
-                                            <Tooltip key={userId} title={userLookup[userId]?.username || '未知用户'}>
-                                                <Avatar style={{ backgroundColor: '#1890ff' }}>
-                                                    {userLookup[userId]?.username?.[0]?.toUpperCase() || '?'}
-                                                </Avatar>
-                                            </Tooltip>
-                                        ))}
-                                    </Avatar.Group>
-                                </Space>
-                            </div>
-                        ) : (
-                            <Empty description="近期暂无获得点赞的改善案例。" />
-                        )}
-                    </Card>
+                            ) : (
+                                <Empty description="近期暂无获得点赞的改善案例。" />
+                            )}
+                        </Card>
+                    </div>
                 </Col>
             </Row>
+
+            {/* 7. 渲染 Tour 组件 */}
+            <Tour open={openTour} onClose={() => setOpenTour(false)} steps={tourSteps} />
         </div>
     );
 };
