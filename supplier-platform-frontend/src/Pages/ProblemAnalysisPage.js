@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Typography, Input, Select, List, Empty, Spin, Tag, Button, Divider, Space, Row, Col, DatePicker, message } from 'antd';
-import { BookOutlined, CheckSquareOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Card, Typography, Input, Select, List, Empty, Spin, Tag, Button, Divider, Space, Row, Col, DatePicker, message, Modal } from 'antd';
+import { BookOutlined, CheckSquareOutlined, SearchOutlined, DownloadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
+import { supabase } from '../supabaseClient';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import dayjs from 'dayjs';
@@ -16,6 +17,16 @@ const { RangePicker } = DatePicker;
 
 const RECENT_SUPPLIERS_KEY_PREFIX = 'recentAnalysisSuppliers';
 
+// --- 核心配置：定义后端 API 地址 ---
+const isDev = process.env.NODE_ENV === 'development';
+
+// 1. 本地开发时，指向本地后端端口 (通常是 3001)
+// 2. 生产环境时，填入你部署后的 Vercel 后端域名
+//    !!! 重要：请将下方的 URL 替换为你实际部署的后端 Vercel 域名 !!!
+const API_BASE_URL = isDev 
+    ? 'http://localhost:3001' 
+    : 'https://supplier-interaction-platform-fwcc.vercel.app/'; 
+
 const ProblemAnalysisPage = () => {
     const currentUser = JSON.parse(localStorage.getItem('user'));
     const { notices, loading } = useNotices();
@@ -23,13 +34,16 @@ const ProblemAnalysisPage = () => {
     const { messageApi } = useNotification();
     const navigate = useNavigate();
 
-    // --- 1. 核心修改：为筛选器 state 添加 source 和 cause ---
+    // --- 1. 使用 useModal Hook 解决弹窗不显示的问题 ---
+    // contextHolder 必须插入到 JSX 中
+    const [modal, contextHolder] = Modal.useModal();
+
     const [filters, setFilters] = useState({
         supplier: [],
         dateRange: null,
         keyword: '',
-        source: [], // 问题来源
-        cause: []   // 造成原因
+        source: [], 
+        cause: []   
     });
     
     const RECENT_SUPPLIERS_KEY = useMemo(() => {
@@ -40,9 +54,11 @@ const ProblemAnalysisPage = () => {
 
     const [recentSuppliers, setRecentSuppliers] = useState([]);
 
-    if (currentUser.role === 'Supplier') {
-        navigate('/');
-    }
+    useEffect(() => {
+        if (currentUser?.role === 'Supplier') {
+            navigate('/');
+        }
+    }, [currentUser, navigate]);
 
     useEffect(() => {
         const saved = localStorage.getItem(RECENT_SUPPLIERS_KEY);
@@ -51,7 +67,6 @@ const ProblemAnalysisPage = () => {
         }
     }, [RECENT_SUPPLIERS_KEY]);
 
-    // --- 2. 核心修改：重新引入 useMemo 来提取所有唯一的标签 ---
     const { uniqueSources, uniqueCauses } = useMemo(() => {
         const sources = new Set();
         const causes = new Set();
@@ -79,16 +94,13 @@ const ProblemAnalysisPage = () => {
         localStorage.setItem(RECENT_SUPPLIERS_KEY, JSON.stringify(updatedRecent));
     };
     
-    // --- 3. 核心修改：更新筛选逻辑 ---
     const filteredNotices = useMemo(() => {
-        const { supplier, dateRange, keyword, source, cause } = filters; // <-- 获取新筛选器
+        const { supplier, dateRange, keyword, source, cause } = filters; 
         
         return notices.filter(notice => {
-            // 供应商筛选
             if (supplier.length > 0 && !supplier.includes(notice.assignedSupplierId)) {
                 return false;
             }
-            // 日期筛选
             if (dateRange && dateRange[0] && dateRange[1]) {
                 const createTime = dayjs(notice.createdAt);
                 if (!createTime.isAfter(dateRange[0].startOf('day')) || !createTime.isBefore(dateRange[1].endOf('day'))) {
@@ -96,7 +108,6 @@ const ProblemAnalysisPage = () => {
                 }
             }
             
-            // 关键词筛选
             const lowerCaseKeyword = keyword.toLowerCase();
             if (lowerCaseKeyword) {
                 const processText = notice.title || '';
@@ -112,27 +123,154 @@ const ProblemAnalysisPage = () => {
                 }
             }
 
-            // --- 4. 核心修改：添加标签筛选逻辑 ---
-            // 问题来源筛选
             if (source.length > 0 && !source.includes(notice.sdNotice?.problemSource)) {
                 return false;
             }
-            // 造成原因筛选
             if (cause.length > 0 && !cause.includes(notice.sdNotice?.cause)) {
                 return false;
             }
-            // --- 筛选结束 ---
 
             return true;
         });
-    }, [notices, filters]); // 'filters' 依赖已包含所有新 state
+    }, [notices, filters]); 
 
-    // (Excel 导出逻辑已包含 source 和 cause, 无需修改)
+    // --- 真实发送邮件的函数 (修复版) ---
+    const sendSecurityEmail = async (managersAndAdmins, supplierCount) => {
+        const recipients = managersAndAdmins.map(u => u.email).filter(Boolean);
+        
+        if (recipients.length === 0) {
+            console.warn('没有找到接收警报的管理员邮箱。');
+            return;
+        }
+
+        try {
+            messageApi.loading({ content: '正在向管理员发送安全警报邮件...', key: 'sending_email' });
+
+            // 确保路径正确，使用上面定义的 API_BASE_URL
+            const endpoint = `${API_BASE_URL}/api/send-alert-email`;
+            console.log('Calling Email API:', endpoint);
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    recipients: recipients,
+                    supplierCount: supplierCount,
+                    user: currentUser.username || currentUser.email || 'Unknown User',
+                    timestamp: dayjs().format('YYYY-MM-DD HH:mm:ss')
+                })
+            });
+
+            // --- 核心修复：先检查内容类型，避免解析 HTML 报错 ---
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '后端返回错误');
+                }
+                messageApi.success({ content: '安全警报邮件已成功发送。', key: 'sending_email', duration: 3 });
+            } else {
+                // 如果返回的不是 JSON (比如是 404 HTML 页面)，说明找错了地址
+                // const text = await response.text(); 
+                // console.error('Non-JSON response:', text.substring(0, 200)); 
+                
+                // 给用户更清晰的错误提示
+                throw new Error(`无法连接到邮件服务 (API 404)。请确认后端服务已部署，且地址配置正确：${API_BASE_URL}`);
+            }
+
+        } catch (error) {
+            console.error('发送邮件 API 调用失败:', error);
+            messageApi.warning({ 
+                content: `邮件发送失败: ${error.message}`, 
+                key: 'sending_email', 
+                duration: 5 
+            });
+        }
+    };
+
+    const triggerSecurityAlert = async (supplierCount) => {
+        try {
+            // 1. 获取 Admin 和 Manager 用户
+            const { data: managersAndAdmins, error: userError } = await supabase
+                .from('users')
+                .select('id, email, role')
+                .in('role', ['Admin', 'Manager']);
+
+            if (userError) throw userError;
+
+            const alertMessage = `[安全警告] 用户 ${currentUser.username || currentUser.email} 尝试批量下载 ${supplierCount} 家供应商的数据，已触发风控拦截。`;
+
+            // 2. 插入 Alerts 表 (系统内通知)
+            const alertsToInsert = managersAndAdmins.map(user => ({
+                creator_id: currentUser.id,
+                target_user_id: user.id,
+                message: alertMessage,
+                link: '/admin', 
+                is_read: false,
+                created_at: new Date().toISOString()
+            }));
+
+            if (alertsToInsert.length > 0) {
+                const { error: alertError } = await supabase
+                    .from('alerts')
+                    .insert(alertsToInsert);
+                if (alertError) throw alertError;
+            }
+
+            // 3. 触发邮件发送 (真实调用)
+            await sendSecurityEmail(managersAndAdmins, supplierCount);
+
+            console.log('Security alert processed.');
+
+        } catch (error) {
+            console.error('Failed to trigger security alert:', error);
+            messageApi.error('警报系统异常，请联系管理员。');
+        }
+    };
+
     const handleExportExcel = async () => {
         if (filteredNotices.length === 0) {
             messageApi.warning('没有可导出的数据。');
             return;
         }
+
+        // --- 核心修正：Set 计数逻辑与空值处理 ---
+        // 即使没有 ID，我们用 "Unknown" 占位，确保它被计为 1 个实体，而不是被 filter 扔掉
+        const supplierIdentifiers = filteredNotices.map(n => 
+            n.assignedSupplierId || n.assigned_supplier_id || n.assignedSupplierName || 'Unknown_Supplier'
+        );
+            
+        const uniqueSuppliersInResult = new Set(supplierIdentifiers).size;
+        
+        // --- 设置下载限制 ---
+        const DOWNLOAD_LIMIT = 8; 
+        
+        console.log(`[安全检查] 涉及供应商数量: ${uniqueSuppliersInResult}, 限制: ${DOWNLOAD_LIMIT}`);
+
+        if (uniqueSuppliersInResult > DOWNLOAD_LIMIT) {
+            // --- 核心修正：使用 hook 返回的 modal 实例 ---
+            modal.warning({
+                title: '数据下载受限',
+                icon: <ExclamationCircleOutlined style={{ color: 'red' }} />,
+                content: (
+                    <div>
+                        <p>您正在尝试一次性导出 <b>{uniqueSuppliersInResult}</b> 家供应商的数据。</p>
+                        <p>为了数据安全，单次导出允许的最大供应商数量为 <b>{DOWNLOAD_LIMIT}</b> 家。</p>
+                        <br />
+                        <Text type="danger" strong>系统已拦截此操作，并自动向管理员发送了安全警报邮件。</Text>
+                    </div>
+                ),
+                okText: '我知道了',
+                onOk: () => {
+                    triggerSecurityAlert(uniqueSuppliersInResult);
+                }
+            });
+            return; // ⛔️ 必须 return，阻止后续下载代码执行
+        }
+
+        // --- 如果通过检查，继续下载 ---
         messageApi.loading({ content: '正在生成Excel文件...', key: 'exporting' });
         
         const workbook = new ExcelJS.Workbook();
@@ -178,12 +316,14 @@ const ProblemAnalysisPage = () => {
 
     return (
         <div>
+            {/* 2. 务必在此处渲染 contextHolder，否则弹窗无法显示 */}
+            {contextHolder}
+            
             <Card style={{ marginBottom: 24 }} bordered={false}>
                 <Title level={4} style={{ margin: 0 }}>经验使用中心</Title>
                 <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>从历史数据中学习，防止重复错误发生。</Paragraph>
                 
                 <Space direction="vertical" style={{ width: '100%', marginTop: 16 }}>
-                    {/* --- 5. 核心修改：更新筛选器布局 --- */}
                     <Row gutter={[16, 16]}>
                         <Col xs={24} md={12} lg={6}>
                             <Select 
@@ -251,7 +391,7 @@ const ProblemAnalysisPage = () => {
                                     {recentSuppliers.map(supplierId => (
                                         <Button 
                                             key={supplierId} 
-                                            size="small"
+                                            size="small" 
                                             onClick={() => handleSupplierFilterChange([supplierId])}
                                         >
                                             {getSupplierShortCode(supplierId)}
@@ -291,22 +431,22 @@ const ProblemAnalysisPage = () => {
                             <List.Item style={{ padding: '12px 16px' }}>
                                 <div style={{ width: '100%' }}>
                                     <Row gutter={16}>
-                                           <Col span={4}>
-                                            <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
-                                                {productText}
-                                            </Paragraph>
-                                        </Col>
-                                        <Col span={10}>
-                                            <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
-                                                {processText}
-                                            </Paragraph>
-                                        </Col>
-                                        <Col span={10}>
-                                            <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
-                                                {findingText}
-                                            </Paragraph>
-                                        </Col>
-                                     
+                                                <Col span={4}>
+                                                <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
+                                                    {productText}
+                                                </Paragraph>
+                                            </Col>
+                                            <Col span={10}>
+                                                <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
+                                                    {processText}
+                                                </Paragraph>
+                                            </Col>
+                                            <Col span={10}>
+                                                <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
+                                                    {findingText}
+                                                </Paragraph>
+                                            </Col>
+                                           
                                     </Row>
                                 
                                     <Space>

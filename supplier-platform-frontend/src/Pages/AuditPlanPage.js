@@ -432,49 +432,54 @@ const AuditPlanPage = () => {
                 </div>
                 <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计、QRM会议与质量评审的整体进度。</Paragraph>
                 <Divider style={{ margin: '16px 0' }} />
-                <Row gutter={[16, 16]} align="bottom">
+              <Row gutter={[16, 20]} align="middle"> 
                     <Col xs={24} sm={12} md={8} lg={6}>
-                        <Form.Item label="筛选供应商" style={{ margin: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选供应商:</span>
                             <Select
                                 mode="multiple"
                                 allowClear
                                 placeholder="选择供应商 (默认全部)"
                                 value={selectedSupplierKeys}
                                 onChange={setSelectedSupplierKeys}
-                                style={{ width: '100%' }}
+                                style={{ flex: 1, width: 0 }} // width: 0 配合 flex: 1 确保在 flex 容器中正确缩放
                                 options={managedSuppliers.map(s => ({ label: s.short_code, value: s.id }))}
                                 filterOption={(input, option) =>
                                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                                 }
                                 maxTagCount="responsive"
                             />
-                        </Form.Item>
+                        </div>
                     </Col>
                     <Col xs={24} sm={12} md={8} lg={6}>
-                        <Form.Item label="筛选计划项类型" style={{ margin: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>计划类型:</span>
                             <Select
                                 mode="multiple"
                                 allowClear
                                 placeholder="选择类型 (默认全部)"
                                 value={selectedCategoryKeys}
                                 onChange={setSelectedCategoryKeys}
-                                style={{ width: '100%' }}
+                                style={{ flex: 1, width: 0 }}
                                 options={categories.map(c => ({ label: c.name, value: c.name }))}
                                 maxTagCount="responsive"
                             />
-                        </Form.Item>
+                        </div>
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <Form.Item label="筛选状态" style={{ margin: 3 }}>
+                    <Col xs={24} sm={12} md={8} lg={8}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选状态:</span>
                             <Radio.Group
                                 value={selectedStatusKey}
                                 onChange={(e) => setSelectedStatusKey(e.target.value)}
+                                buttonStyle="solid"
+                                style={{ flexShrink: 0 }} // 防止按钮组被压缩
                             >
                                 <Radio.Button value="all">全部</Radio.Button>
                                 <Radio.Button value="pending">待办</Radio.Button>
                                 <Radio.Button value="completed">已完成</Radio.Button>
                             </Radio.Group>
-                        </Form.Item>
+                        </div>
                     </Col>
                 </Row>
 

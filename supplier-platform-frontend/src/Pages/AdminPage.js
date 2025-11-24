@@ -2,26 +2,26 @@ import React, { useState, useEffect, useMemo } from 'react'; // 引入 useMemo
 import { useNavigate } from 'react-router-dom';
 
 import {
-    Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider // 引入 Radio
+    Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider, List, Avatar, Image, Empty, Tooltip, Row, Col
 } from 'antd';
-import { EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined,MessageOutlined, BookOutlined } from '@ant-design/icons';
+import { EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, MessageOutlined, BookOutlined, PaperClipOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, StopOutlined, ExclamationCircleOutlined, SaveOutlined, FilterOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
 
-const { Title, Paragraph, Text} = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
-const { Search,TextArea } = Input; // 从 Input 中解构 Search
+const { Search, TextArea } = Input; // 从 Input 中解构 Search
 
 
-const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix','alarm'];
-const feedbackStatusColors = {
-    new: 'blue',
-    acked: 'purple',
-    resolved: 'success',
-    wontfix: 'yellow',
-    alarm : 'red'
+const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix', 'alarm'];
+const feedbackStatusConfig = {
+    new: { color: 'blue', label: '新反馈', icon: <ClockCircleOutlined /> },
+    acked: { color: 'purple', label: '已确认', icon: <ExclamationCircleOutlined /> },
+    resolved: { color: 'success', label: '已解决', icon: <CheckCircleOutlined /> },
+    wontfix: { color: 'default', label: '不予处理', icon: <StopOutlined /> },
+    alarm: { color: 'red', label: '紧急报警', icon: <CloseCircleOutlined /> }
 };
 
 
@@ -35,9 +35,13 @@ const AdminPage = () => {
     const [logs, setLogs] = useState([]);
     const { messageApi, notificationApi } = useNotification();
 
-    // --- ✨ 新增：搜索和筛选的状态 ---
+    // --- Notice Filter States ---
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('全部');
+
+    // --- Feedback Filter States (新增) ---
+    const [feedbackStatusFilter, setFeedbackStatusFilter] = useState('all');
+    const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState('all');
 
     // --- Modal States ---
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -51,15 +55,18 @@ const AdminPage = () => {
 
     const [feedbackList, setFeedbackList] = useState([]); // 2. State for feedback
     const [feedbackLoading, setFeedbackLoading] = useState(true); // 3. Loading state for feedback
-      const [feedbackResponses, setFeedbackResponses] = useState({}); // 1. State for admin responses
+    const [feedbackResponses, setFeedbackResponses] = useState({}); // 1. State for admin responses
 
     const currentUser = JSON.parse(localStorage.getItem('user'));
 
-      const navigate = useNavigate();
+    const navigate = useNavigate();
 
-  if (currentUser.role !== 'Admin') {
-      navigate('/'); // 跳转到初始页面
-    }
+    useEffect(() => {
+        if (currentUser?.role !== 'Admin') {
+            navigate('/'); // 跳转到初始页面
+        }
+    }, [currentUser, navigate]);
+
     const filteredNotices = useMemo(() => {
         return notices.filter(notice => {
             // 状态筛选逻辑
@@ -75,8 +82,15 @@ const AdminPage = () => {
         });
     }, [notices, searchTerm, statusFilter]); // 当这三个值任意一个变化时，重新计算
 
-    // --- Data Fetching ---
-  
+    // --- Feedback Filter Logic (新增) ---
+    const filteredFeedbackList = useMemo(() => {
+        return feedbackList.filter(item => {
+            const statusMatch = feedbackStatusFilter === 'all' || item.status === feedbackStatusFilter;
+            const categoryMatch = feedbackCategoryFilter === 'all' || item.category === feedbackCategoryFilter;
+            return statusMatch && categoryMatch;
+        });
+    }, [feedbackList, feedbackStatusFilter, feedbackCategoryFilter]);
+
 
     // --- Data Fetching ---
     const fetchData = async () => {
@@ -112,7 +126,22 @@ const AdminPage = () => {
             setUsers(usersData || []);
             setAllSuppliers(suppliersData.map(s => ({ key: s.id, title: s.name })) || []);
             setNotices(noticesData || []);
-            setFeedbackList(feedbackData || []); // Set feedback data
+            
+            // Process feedback data to ensure images/attachments are arrays
+            const processedFeedback = (feedbackData || []).map(item => ({
+                ...item,
+                // Ensure these are arrays even if null in DB
+                images: Array.isArray(item.images) ? item.images : [],
+                attachments: Array.isArray(item.attachments) ? item.attachments : []
+            }));
+            setFeedbackList(processedFeedback);
+            
+            // Initialize responses state
+            const initialResponses = {};
+            processedFeedback.forEach(item => {
+                if (item.admin_response) initialResponses[item.id] = item.admin_response;
+            });
+            setFeedbackResponses(initialResponses);
 
         } catch (error) {
             messageApi.error(`数据加载失败: ${error.message}`);
@@ -318,7 +347,7 @@ const AdminPage = () => {
     };
 
 
-     const handleFeedbackStatusChange = async (feedbackId, newStatus) => {
+    const handleFeedbackStatusChange = async (feedbackId, newStatus) => {
         messageApi.loading({ content: '正在更新状态...', key: `feedback-${feedbackId}` });
         try {
             const { error } = await supabase
@@ -333,21 +362,19 @@ const AdminPage = () => {
             setFeedbackList(prevList => prevList.map(item =>
                 item.id === feedbackId ? { ...item, status: newStatus } : item
             ));
-            // Optional: Refetch all data if needed, but local update is faster
-            // fetchData();
         } catch (error) {
             messageApi.error({ content: `状态更新失败: ${error.message}`, key: `feedback-${feedbackId}`, duration: 3 });
         }
     };
 
-       const handleResponseChange = (feedbackId, value) => {
+    const handleResponseChange = (feedbackId, value) => {
         setFeedbackResponses(prev => ({
             ...prev,
             [feedbackId]: value
         }));
     };
 
-        const handleSaveFeedbackResponse = async (feedbackId) => {
+    const handleSaveFeedbackResponse = async (feedbackId) => {
         const responseText = feedbackResponses[feedbackId];
         // Check if the response actually changed from what's in the DB to avoid unnecessary updates
         const currentFeedbackItem = feedbackList.find(item => item.id === feedbackId);
@@ -363,12 +390,31 @@ const AdminPage = () => {
                 .eq('id', feedbackId);
             if (error) throw error;
             messageApi.success({ content: '回复已保存！', key: `response-${feedbackId}`, duration: 2 });
-             // Update the main feedback list state as well
-             setFeedbackList(prevList => prevList.map(item =>
+            // Update the main feedback list state as well
+            setFeedbackList(prevList => prevList.map(item =>
                 item.id === feedbackId ? { ...item, admin_response: responseText } : item
             ));
         } catch (error) {
             messageApi.error({ content: `回复保存失败: ${error.message}`, key: `response-${feedbackId}`, duration: 3 });
+        }
+    };
+
+    // --- 8. 删除反馈逻辑 (新增) ---
+    const handleDeleteFeedback = async (feedbackId) => {
+        messageApi.loading({ content: '正在删除反馈...', key: `delete-${feedbackId}` });
+        try {
+            const { error } = await supabase
+                .from('feedback')
+                .delete()
+                .eq('id', feedbackId);
+
+            if (error) throw error;
+
+            messageApi.success({ content: '反馈已删除！', key: `delete-${feedbackId}`, duration: 2 });
+            // Update local state
+            setFeedbackList(prevList => prevList.filter(item => item.id !== feedbackId));
+        } catch (error) {
+            messageApi.error({ content: `删除失败: ${error.message}`, key: `delete-${feedbackId}`, duration: 3 });
         }
     };
 
@@ -427,32 +473,6 @@ const AdminPage = () => {
         },
     ];
 
-     const feedbackColumns = [
-         { title: '提交用户', dataIndex: ['user', 'username'], key: 'username', width: 150, render: (username) => username || <Text type="secondary">未知用户</Text> },
-         { title: '反馈内容', dataIndex: 'content', key: 'content', ellipsis: true },
-         { title: '类别', dataIndex: 'category', key: 'category', width: 120, render: (cat) => cat || <Text type="secondary">无</Text> },
-         { title: '状态', dataIndex: 'status', key: 'status', width: 130, render: (status, record) => ( <Select value={status || 'new'} size="small" style={{ width: '100%' }} onChange={(value) => handleFeedbackStatusChange(record.id, value)}> {feedbackStatuses.map(s => (<Option key={s} value={s}> <Tag color={feedbackStatusColors[s] || 'default'}>{s}</Tag> </Option> ))} </Select> ) },
-         // --- 7. Add Admin Response Column ---
-         {
-            title: '管理员回复',
-            dataIndex: 'admin_response',
-            key: 'admin_response',
-            width: 250, // Adjust width as needed
-            render: (text, record) => (
-                <TextArea
-                    value={feedbackResponses[record.id] || ''}
-                    onChange={(e) => handleResponseChange(record.id, e.target.value)}
-                    onBlur={() => handleSaveFeedbackResponse(record.id)} // Save on blur
-                    placeholder="输入回复或备注..."
-                    autoSize={{ minRows: 1, maxRows: 4 }}
-                />
-            )
-         },
-         { title: '提交时间', dataIndex: 'created_at', key: 'created_at', width: 160, render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm') },
-         { title: '操作', key: 'action', width: 80, render: (_, record) => ( <Popconfirm title="确定删除此反馈吗?" onConfirm={async () => { /* delete logic */ }}> <Button danger type="link" size="small" icon={<DeleteOutlined />} /> </Popconfirm> ) }
-    ];
-
-
     const logColumns = [
         { title: '时间戳', dataIndex: 'timestamp', key: 'timestamp' },
         {
@@ -484,9 +504,7 @@ const AdminPage = () => {
                     <TabPane tab={<Space><UserSwitchOutlined />用户与供应商管理</Space>} key="1">
                         <Table columns={userColumns} dataSource={users} rowKey="id" />
                     </TabPane>
-                    {/* --- ✨ 新增的标签页 --- */}
                     <TabPane tab={<Space><AppstoreAddOutlined />通知单管理</Space>} key="2">
-                        {/* --- ✨ 新增：搜索和筛选的 UI 组件 --- */}
                         <Space style={{ marginBottom: 16 }}>
                             <Search
                                 placeholder="搜索通知单号、标题、供应商..."
@@ -505,20 +523,200 @@ const AdminPage = () => {
                                 <Radio.Button value="已作废">已作废</Radio.Button>
                             </Radio.Group>
                         </Space>
-
-                        {/* --- ✨ 修改：dataSource 使用过滤后的数据 --- */}
                         <Table columns={noticeColumns} dataSource={filteredNotices} rowKey="id" />
                     </TabPane>
 
-                      <TabPane tab={<Space><MessageOutlined />用户反馈</Space>} key="3">
-                        <Table columns={feedbackColumns} dataSource={feedbackList} rowKey="id" loading={feedbackLoading} />
+                    <TabPane tab={<Space><MessageOutlined />用户反馈</Space>} key="3">
+                        {/* --- 筛选控制栏 (新增) --- */}
+                        <Card bordered={false} style={{ marginBottom: 16, backgroundColor: '#fafafa' }} bodyStyle={{ padding: '12px 24px' }}>
+                            <Row gutter={24} align="middle">
+                                <Col>
+                                    <Space>
+                                        <FilterOutlined />
+                                        <Text strong>筛选:</Text>
+                                    </Space>
+                                </Col>
+                                <Col>
+                                    <Space>
+                                        <span>状态:</span>
+                                        <Select 
+                                            value={feedbackStatusFilter} 
+                                            onChange={setFeedbackStatusFilter} 
+                                            style={{ width: 120 }}
+                                            bordered={false}
+                                        >
+                                            <Option value="all">全部状态</Option>
+                                            {feedbackStatuses.map(s => (
+                                                <Option key={s} value={s}>{feedbackStatusConfig[s]?.label || s}</Option>
+                                            ))}
+                                        </Select>
+                                    </Space>
+                                </Col>
+                                <Col>
+                                    <Space>
+                                        <span>分类:</span>
+                                        <Select 
+                                            value={feedbackCategoryFilter} 
+                                            onChange={setFeedbackCategoryFilter} 
+                                            style={{ width: 120 }}
+                                            bordered={false}
+                                        >
+                                            <Option value="all">全部分类</Option>
+                                            <Option value="bug_report">系统缺陷 (Bug)</Option>
+                                            <Option value="feature_request">功能建议</Option>
+                                            <Option value="general_feedback">一般性反馈</Option>
+                                        </Select>
+                                    </Space>
+                                </Col>
+                                <Col style={{ marginLeft: 'auto' }}>
+                                    <Text type="secondary">共 {filteredFeedbackList.length} 条反馈</Text>
+                                </Col>
+                            </Row>
+                        </Card>
+
+                        <List
+                            grid={{ gutter: 16, column: 1 }}
+                            dataSource={filteredFeedbackList} // 使用过滤后的数据源
+                            loading={feedbackLoading}
+                            renderItem={item => (
+                                <List.Item key={item.id}>
+                                    <Card
+                                        style={{ width: '100%', borderColor: '#f0f0f0' }}
+                                        bodyStyle={{ padding: '20px' }}
+                                        hoverable
+                                    >
+                                        <List.Item.Meta
+                                            avatar={
+                                                <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
+                                            }
+                                            title={
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                                                    <Space>
+                                                        <Text strong style={{ fontSize: 16 }}>{item.user?.username || '未知用户'}</Text>
+                                                        <Tag color={item.category === 'Bug' ? 'red' : 'blue'}>{item.category || '一般反馈'}</Tag>
+                                                        <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}</Text>
+                                                    </Space>
+                                                    <Select
+                                                        value={item.status || 'new'}
+                                                        size="small"
+                                                        style={{ width: 140 }}
+                                                        onChange={(value) => handleFeedbackStatusChange(item.id, value)}
+                                                        bordered={false}
+                                                        className="status-select"
+                                                    >
+                                                        {feedbackStatuses.map(s => {
+                                                            const config = feedbackStatusConfig[s] || { color: 'default', label: s };
+                                                            return (
+                                                                <Option key={s} value={s}>
+                                                                    <Tag color={config.color} style={{ marginRight: 0 }}>
+                                                                        {config.icon} {config.label}
+                                                                    </Tag>
+                                                                </Option>
+                                                            )
+                                                        })}
+                                                    </Select>
+                                                </div>
+                                            }
+                                        />
+                                        
+                                        <div style={{ paddingLeft: 48, marginTop: 12 }}>
+                                            <Paragraph style={{ fontSize: 15, lineHeight: 1.6 }}>
+                                                {item.content}
+                                            </Paragraph>
+
+                                            {/* 图片展示区域 - 九宫格样式 */}
+                                            {item.images && item.images.length > 0 && (
+                                                <div style={{ marginTop: 16 }}>
+                                                    <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>附图 ({item.images.length})</Text>
+                                                    <Image.PreviewGroup>
+                                                        <Space size={8} wrap>
+                                                            {item.images.map((img, idx) => {
+                                                                // --- 核心修正：智能兼容 URL 字符串或 Antd Upload 对象 ---
+                                                                const imgSrc = typeof img === 'object' ? (img.url || img.thumbUrl || img.response?.url) : img;
+                                                                return (
+                                                                    <Image
+                                                                        key={idx}
+                                                                        width={100}
+                                                                        height={100}
+                                                                        src={imgSrc}
+                                                                        style={{ objectFit: 'cover', borderRadius: 8, border: '1px solid #f0f0f0' }}
+                                                                        fallback="https://via.placeholder.com/100x100?text=Image+Error"
+                                                                    />
+                                                                );
+                                                            })}
+                                                        </Space>
+                                                    </Image.PreviewGroup>
+                                                </div>
+                                            )}
+
+                                            {/* 附件展示区域 */}
+                                            {item.attachments && item.attachments.length > 0 && (
+                                                <div style={{ marginTop: 16 }}>
+                                                    <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>附件 ({item.attachments.length})</Text>
+                                                    <Space wrap>
+                                                        {item.attachments.map((file, idx) => {
+                                                            // --- 核心修正：智能兼容 URL 字符串或 Antd Upload 对象 ---
+                                                            const fileUrl = typeof file === 'object' ? (file.url || file.response?.url) : file;
+                                                            const fileName = typeof file === 'object' ? file.name : `附件 ${idx + 1}`;
+                                                            
+                                                            return (
+                                                                <Button 
+                                                                    key={idx} 
+                                                                    icon={<PaperClipOutlined />} 
+                                                                    size="small" 
+                                                                    onClick={() => window.open(fileUrl, '_blank')}
+                                                                >
+                                                                    {fileName}
+                                                                </Button>
+                                                            );
+                                                        })}
+                                                    </Space>
+                                                </div>
+                                            )}
+
+                                            {/* 管理员回复区域 */}
+                                            <div style={{ marginTop: 24, backgroundColor: '#fafafa', padding: 16, borderRadius: 8, border: '1px solid #f0f0f0' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                    <Text strong style={{ color: '#595959' }}><MessageOutlined /> 管理员回复</Text>
+                                                    {feedbackResponses[item.id] !== item.admin_response && (
+                                                        <Text type="warning" style={{ fontSize: 12 }}>* 未保存</Text>
+                                                    )}
+                                                </div>
+                                                <TextArea
+                                                    value={feedbackResponses[item.id] || ''}
+                                                    onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                                                    placeholder="在此输入处理意见或回复..."
+                                                    autoSize={{ minRows: 2, maxRows: 6 }}
+                                                    style={{ marginBottom: 8, backgroundColor: '#fff' }}
+                                                />
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <Popconfirm title="确定删除此反馈吗?" onConfirm={() => handleDeleteFeedback(item.id)}>
+                                                        <Button type="text" danger size="small" icon={<DeleteOutlined />} style={{ float: 'left' }}>删除</Button>
+                                                    </Popconfirm>
+                                                    <Button 
+                                                        type="primary" 
+                                                        size="small" 
+                                                        icon={<SaveOutlined />} 
+                                                        onClick={() => handleSaveFeedbackResponse(item.id)}
+                                                        disabled={feedbackResponses[item.id] === item.admin_response}
+                                                    >
+                                                        保存回复
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Card>
+                                </List.Item>
+                            )}
+                            locale={{ emptyText: <Empty description="暂无用户反馈" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+                        />
                     </TabPane>
 
                     <TabPane tab={<Space><FileTextOutlined />系统日志</Space>} key="4">
                         <Table columns={logColumns} dataSource={logs} rowKey="id" />
                     </TabPane>
-                      <TabPane tab={<Space><BookOutlined />开发文档</Space>} key="5">
-                         <Typography>
+                    <TabPane tab={<Space><BookOutlined />开发文档</Space>} key="5">
+                        <Typography>
                             <Title level={4}>系统开发文档</Title>
                             <Paragraph>
                                 这里是开发文档的占位符内容。您可以将您的 Markdown 文件内容或通过其他方式获取的文档信息渲染在这里。
@@ -530,19 +728,19 @@ const AdminPage = () => {
                                 <li>后端/数据库: Supabase (PostgreSQL, Auth, Edge Functions)</li>
                                 {/* Add more details */}
                             </ul>
-                             <Title level={5}>主要功能模块</Title>
-                             <Paragraph>
-                                 - 用户认证与权限管理<br/>
-                                 - 通知单创建、流转与管理<br/>
-                                 - 供应商管理与分配<br/>
-                                 - 历史经验标签<br/>
-                                 - 报表与统计<br/>
-                                 - 实时提醒<br/>
-                                 - 管理后台<br/>
-                                 - (待开发) 智能检索与AI打标签
-                             </Paragraph>
-                             {/* Add more sections like Deployment, API Reference etc. */}
-                         </Typography>
+                            <Title level={5}>主要功能模块</Title>
+                            <Paragraph>
+                                - 用户认证与权限管理<br />
+                                - 通知单创建、流转与管理<br />
+                                - 供应商管理与分配<br />
+                                - 历史经验标签<br />
+                                - 报表与统计<br />
+                                - 实时提醒<br />
+                                - 管理后台<br />
+                                - (待开发) 智能检索与AI打标签
+                            </Paragraph>
+                            {/* Add more sections like Deployment, API Reference etc. */}
+                        </Typography>
                     </TabPane>
 
                 </Tabs>
@@ -612,7 +810,7 @@ const AdminPage = () => {
                         >
                             <Select showSearch placeholder="搜索并选择供应商" filterOption={(input, option) => option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0}>
                                 {allSuppliers.map(s => (
-                                    <Option key={s.id} value={s.id}>{s.name}</Option>
+                                    <Option key={s.id} value={s.id}>{s.title}</Option>
                                 ))}
                             </Select>
                         </Form.Item>
