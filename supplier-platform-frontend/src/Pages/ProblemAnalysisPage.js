@@ -23,9 +23,11 @@ const isDev = process.env.NODE_ENV === 'development';
 // 1. 本地开发时，指向本地后端端口 (通常是 3001)
 // 2. 生产环境时，填入你部署后的 Vercel 后端域名
 //    !!! 重要：请将下方的 URL 替换为你实际部署的后端 Vercel 域名 !!!
-const API_BASE_URL = isDev 
-    ? 'http://localhost:3001' 
-    : 'https://supplier-interaction-platform-fwcc.vercel.app/'; 
+// const API_BASE_URL = isDev 
+//     ? 'http://localhost:3001' 
+//     : 'https://supplier-interaction-platform-fwcc.vercel.app/'; 
+
+const API_BASE_URL ='https://supplier-interaction-platform-backe.vercel.app/'
 
 const ProblemAnalysisPage = () => {
     const currentUser = JSON.parse(localStorage.getItem('user'));
@@ -196,7 +198,7 @@ const ProblemAnalysisPage = () => {
             const { data: managersAndAdmins, error: userError } = await supabase
                 .from('users')
                 .select('id, email, role')
-                .in('role', ['Admin', 'Manager']);
+                .in('role', ['Admin']);
 
             if (userError) throw userError;
 
@@ -245,7 +247,7 @@ const ProblemAnalysisPage = () => {
         const uniqueSuppliersInResult = new Set(supplierIdentifiers).size;
         
         // --- 设置下载限制 ---
-        const DOWNLOAD_LIMIT = 8; 
+        const DOWNLOAD_LIMIT = 1; 
         
         console.log(`[安全检查] 涉及供应商数量: ${uniqueSuppliersInResult}, 限制: ${DOWNLOAD_LIMIT}`);
 
