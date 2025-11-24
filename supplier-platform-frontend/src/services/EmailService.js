@@ -1,7 +1,7 @@
 // supplier-platform-frontend/src/services/EmailService.js
 
 // 请替换为您实际的后端地址 (不要带 /api，因为后端路由会处理)
-const API_BASE_URL = 'https://supplier-interaction-platform-backend.vercel.app.js'; 
+const API_BASE_URL = 'https://supplier-interaction-platform-backend.vercel.app/'; 
 
 export const EmailService = {
     /**
@@ -9,7 +9,7 @@ export const EmailService = {
      */
     async send({ to, subject, html }) {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/send-email`, {
+            const response = await fetch(`${API_BASE_URL}/api/send-email.js`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ to, subject, html })
