@@ -27,7 +27,7 @@ const isDev = process.env.NODE_ENV === 'development';
 //     ? 'http://localhost:3001' 
 //     : 'https://supplier-interaction-platform-fwcc.vercel.app/'; 
 
-const API_BASE_URL ='https://supplier-interaction-platform-backe.vercel.app/'
+const API_BASE_URL ='https://supplier-interaction-platform-backe.vercel.app/api'
 
 const ProblemAnalysisPage = () => {
     const currentUser = JSON.parse(localStorage.getItem('user'));

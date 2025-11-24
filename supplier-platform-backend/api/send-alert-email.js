@@ -3,8 +3,11 @@ const cors = require('cors');
 
 // 初始化 CORS 中间件 - 允许跨域
 const corsMiddleware = cors({
-    origin: '*', // 生产环境建议改为您的前端域名
+   origin: '*', // 允许所有来源，生产环境建议指定具体域名
     methods: ['POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    optionsSuccessStatus: 200
 });
 
 // 辅助函数：在 Serverless 环境中运行中间件
@@ -21,7 +24,7 @@ function runMiddleware(req, res, fn) {
 
 module.exports = async (req, res) => {
     // 1. 运行 CORS
-    await runMiddleware(req, res, corsMiddleware);
+  await runMiddleware(req, res, corsMiddleware);
 
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
