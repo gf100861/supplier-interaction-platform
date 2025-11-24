@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-
+import { EmailService } from '../services/EmailService';
 const NoticeContext = createContext();
 
 // --- 辅助函数：将 snake_case 转换为 camelCase (保持不变) ---
@@ -22,6 +22,35 @@ const convertKeysToCamelCase = (obj) => {
     }
     return obj;
 };
+
+const addNotices = async (newNoticesArray) => {
+        try {
+            const { data, error } = await supabase.from('notices').insert(newNoticesArray).select();
+            if (error) throw error;
+
+            // --- 新增：触发邮件通知 ---
+            // 注意：这里需要获取供应商的邮箱。
+            // 假设我们可以在 supplier 表里查到，或者 newNoticesArray 里包含了 supplierId
+            // 这是一个异步操作，不应阻塞 UI，所以不加 await 或放在 setTimeout 里
+            newNoticesArray.forEach(async (notice) => {
+                // 这里需要额外查一下供应商的邮箱 (contact_email)
+                // 简单起见，假设您有一个 fetchUserBySupplierId 的方法或者从缓存取
+                const { data: supplierUsers } = await supabase
+                    .from('users')
+                    .select('email')
+                    .eq('supplier_id', notice.assigned_supplier_id);
+                
+                if (supplierUsers && supplierUsers.length > 0) {
+                    const emails = supplierUsers.map(u => u.email);
+                    EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code);
+                }
+            });
+
+        } catch (err) {
+            console.error("创建通知单失败:", err);
+            throw err;
+        }
+    };
 
 export const NoticeProvider = ({ children }) => {
     const [notices, setNotices] = useState([]);
@@ -78,20 +107,51 @@ export const NoticeProvider = ({ children }) => {
 
 
     // --- 4. 重写 updateNotice 函数，使用 Supabase API ---
-    const updateNotice = async (noticeId, updates) => {
+  const updateNotice = async (noticeId, updates) => {
         try {
-            console.log('[NoticeContext.updateNotice] request', { noticeId, updates });
             const { data, error } = await supabase
                 .from('notices')
                 .update(updates)
                 .eq('id', noticeId)
-                .select('*')
+                .select(`*, creator:users(email), supplier:suppliers(id)`) // 多查询一点信息
                 .single();
+            
             if (error) throw error;
+            
+            // --- 新增：根据状态变化触发邮件 ---
+            const newStatus = updates.status;
+            
+            // A. 供应商提交了计划 -> 通知 SD (creator)
+            if (newStatus === '待SD确认actions') {
+                const sdEmail = data.creator?.email; 
+                if (sdEmail) {
+                    EmailService.notifySDPlanSubmitted(sdEmail, data.assigned_supplier_name, data.title);
+                }
+            }
 
-            // 乐观更新：立即在本地状态中合并更新，避免等待实时推送
-            console.log('[NoticeContext.updateNotice] response', data);
+            // B. SD 审核结果 (批准/驳回) -> 通知供应商
+            // 假设我们在 updates 里能判断出是批准还是驳回，或者根据 status 字符串
+            if (newStatus === '待供应商关闭' || newStatus === '待提交Action Plan') {
+                 // 查找供应商的所有用户邮箱
+                 const { data: supUsers } = await supabase
+                    .from('users')
+                    .select('email')
+                    .eq('supplier_id', data.assigned_supplier_id);
+                 
+                 if (supUsers) {
+                     const emails = supUsers.map(u => u.email);
+                     const resultText = newStatus === '待供应商关闭' ? '计划已批准，请上传证据' : '计划被驳回，请修改';
+                     // 获取最新的驳回原因 (如果有)
+                     const lastHistory = data.history[data.history.length -1];
+                     const comment = lastHistory?.description || '';
+                     
+                     EmailService.notifySupplierAuditResult(emails, data.title, resultText, comment);
+                 }
+            }
+            
+            // 更新本地状态...
             setNotices(prev => prev.map(n => n.id === noticeId ? { ...n, ...convertKeysToCamelCase(data) } : n));
+
         } catch (err) {
             console.error("更新通知单失败:", err);
             throw err;

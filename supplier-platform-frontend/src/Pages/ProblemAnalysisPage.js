@@ -27,7 +27,7 @@ const isDev = process.env.NODE_ENV === 'development';
 //     ? 'http://localhost:3001' 
 //     : 'https://supplier-interaction-platform-fwcc.vercel.app/'; 
 
-const API_BASE_URL ='https://supplier-interaction-platform-backe.vercel.app/api'
+const API_BASE_URL ='https://supplier-interaction-platform-backend.vercel.app'
 
 const ProblemAnalysisPage = () => {
     const currentUser = JSON.parse(localStorage.getItem('user'));
@@ -149,7 +149,7 @@ const ProblemAnalysisPage = () => {
             messageApi.loading({ content: '正在向管理员发送安全警报邮件...', key: 'sending_email' });
 
             // 确保路径正确，使用上面定义的 API_BASE_URL
-            const endpoint = `${API_BASE_URL}/api/send-alert-email`;
+            const endpoint = `${API_BASE_URL}/api/send-alert-email.js`;
             console.log('Calling Email API:', endpoint);
 
             const response = await fetch(endpoint, {
