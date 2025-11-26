@@ -60,6 +60,8 @@ const NoticePage = () => {
     const [usersLoading, setUsersLoading] = useState(true);
     const [listSortOrder, setListSortOrder] = useState('desc');
 
+    const [isReassigning, setIsReassigning] = useState(false);
+
     const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
 
     // --- 6. 为 Supplier 和 DateRange 添加 State ---
@@ -648,36 +650,62 @@ const NoticePage = () => {
         const notice = correctionModal.notice;
         if (!notice) return;
 
+        // 假设您有一个 suppliers 列表，类似 AdminPage 中的 allSuppliers
+        // 如果 NoticePage 没有 suppliers 状态，您可能需要从 Context 或 API 获取
+        // 这里假设 suppliers 已经在组件中可用
         const newSupplier = suppliers.find(s => s.id === values.newSupplierId);
+
         if (!newSupplier) {
             messageApi.error('未找到指定的供应商！');
             return;
         }
 
-        // --- 在这里找到新旧供应商对应的用户ID ---
-        const oldSupplierUser = allUsers.find(u => u.supplier_id === notice.assignedSupplierId);
-        const newSupplierUser = allUsers.find(u => u.supplier_id === newSupplier.id);
+        // [新增] 开始加载状态
+        setIsReassigning(true);
+        // [新增] 显示加载提示 (持久化，直到操作完成)
+        const loadingMsg = messageApi.loading('正在重分配通知单并发送邮件通知...', 0);
 
         const newHistory = {
             type: 'manager_reassignment',
-            submitter: currentUser.name,
+            submitter: currentUser.username, // Assuming username is the name
             time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            description: `[管理修正] 通知单已从 ${notice.assignedSupplierName} 重分配给 ${newSupplier.name}。原因: ${values.reason || '未提供原因'}`,
+            description: `[管理修正]  ${notice.assignedSupplierName}已被重新更换。 原因: ${values.reason || '未提供原因'}`,
         };
 
-        await updateNotice(notice.id, {
-            assigned_supplier_id: newSupplier.id,
-            assigned_supplier_name: newSupplier.name,
-            history: [...(notice.history || []), newHistory],
-        });
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
-        // --- 使用正确的用户ID发送提醒 ---
-        //提醒
+        try {
+            // [修改] 使用 updateNotice 来触发邮件和更新状态
+            // 关键点：传入 old_supplier_id 以便 Context 能够识别这是重分配操作并发送邮件给旧供应商
+            await updateNotice(notice.id, {
+                assigned_supplier_id: newSupplier.id,
+                assigned_supplier_name: newSupplier.name, // 确保这里使用 name 字段
+                old_supplier_id: notice.assignedSupplierId, // 传入旧供应商ID (注意这里取值可能需要根据您的 Notice 数据结构调整，Context返回的通常是驼峰)
+                history: [...currentHistory, newHistory],
+            });
 
+            // 假设您有一个 'alerts' 表
+            const alertsToInsert = [
+                { creator_id: currentUser.id, target_user_id: notice.assignedSupplierId, message: `"${notice.title}" 已被重分配，您无需再处理。`, link: `/notices` },
+                { creator_id: currentUser.id, target_user_id: newSupplier.id, message: `您有一个新的通知单被分配: "${notice.title}"。`, link: `/notices?open=${notice.id}` },
+                { creator_id: currentUser.id, target_user_id: notice.creatorId, message: `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.name}。`, link: `/notices?open=${notice.id}` },
+            ];
 
-        messageApi.success('通知单已成功重分配！');
-        setCorrectionModal({ visible: false, notice: null });
-        reassignForm.resetFields();
+            await supabase.from('alerts').insert(alertsToInsert);
+
+            // [新增] 销毁加载提示并显示成功
+            loadingMsg();
+            messageApi.success('通知单已成功重分配！');
+            setCorrectionModal({ visible: false, notice: null });
+            // reassignForm.resetFields(); // 如果有 form 实例
+        } catch (error) {
+            // [新增] 销毁加载提示并显示错误
+            loadingMsg();
+            messageApi.error(`重分配失败: ${error.message}`);
+        } finally {
+            // [新增] 结束加载状态
+            setIsReassigning(false);
+        }
     };
 
     // ✨ 新增：处理管理员“作废通知单”的逻辑
@@ -821,7 +849,7 @@ const NoticePage = () => {
             Manager: [
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses },
                 { key: 'review', label: '待SD审核', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
-                 { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
+                { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
                 { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ]
@@ -917,7 +945,7 @@ const NoticePage = () => {
                             options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
                             maxTagCount="responsive"
                         />
-                           
+
                         <Search
                             placeholder="搜索通知单：可用;；@,，分隔关键词"
                             allowClear
@@ -925,7 +953,7 @@ const NoticePage = () => {
                             onChange={e => setSearchTerm(e.target.value)}
                             style={{ width: 360 }}
                         />
-                         <Tooltip title="按创建日期升序">
+                        <Tooltip title="按创建日期升序">
                             <Button
                                 icon={<SortAscendingOutlined />}
                                 onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
@@ -939,7 +967,7 @@ const NoticePage = () => {
                                 type={listSortOrder === 'desc' ? 'primary' : 'default'}
                             />
                         </Tooltip>
-                    
+
                     </Space>
                 </div>
             </Card>

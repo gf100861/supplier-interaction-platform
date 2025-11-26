@@ -8,6 +8,8 @@ import { EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
+// [新增] 引入 useNotices
+import { useNotices } from '../contexts/NoticeContext';
 
 const { Title, Paragraph, Text } = Typography;
 const { TabPane } = Tabs;
@@ -30,10 +32,13 @@ const AdminPage = () => {
     // --- State Management ---
     const [users, setUsers] = useState([]);
     const [allSuppliers, setAllSuppliers] = useState([]);
-    const [notices, setNotices] = useState([]);
+    // [修改] 不再使用本地的 notices state，改用 context 中的 notices
+    // const [notices, setNotices] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [logs, setLogs] = useState([]);
     const { messageApi, notificationApi } = useNotification();
+    // [新增] 使用 context 中的 updateNotice 和 notices
+    const { notices, updateNotice, loading: noticesLoading } = useNotices();
 
     // --- Notice Filter States ---
     const [searchTerm, setSearchTerm] = useState('');
@@ -74,9 +79,9 @@ const AdminPage = () => {
 
             // 搜索词筛选逻辑
             const searchMatch = searchTerm === '' ||
-                notice.notice_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                notice.noticeCode.toLowerCase().includes(searchTerm.toLowerCase()) || // 注意：Context返回的是驼峰 noticeCode
                 notice.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                notice.assigned_supplier_name.toLowerCase().includes(searchTerm.toLowerCase());
+                (notice.assignedSupplierName || '').toLowerCase().includes(searchTerm.toLowerCase()); // 注意：Context返回的是驼峰 assignedSupplierName
 
             return statusMatch && searchMatch;
         });
@@ -97,10 +102,10 @@ const AdminPage = () => {
         setLoading(true);
         setFeedbackLoading(true); // Start feedback loading
         try {
-            // Fetch users, suppliers, notices (existing logic)
+            // Fetch users, suppliers (notices are now from context)
             const usersPromise = supabase.from('users').select(`id, username, email, phone, role, managed_suppliers:sd_supplier_assignments(supplier_id)`).in('role', ['SD', 'Manager']);
             const suppliersPromise = supabase.from('suppliers').select('id, name');
-            const noticesPromise = supabase.from('notices').select('*').order('created_at', { ascending: false });
+            // const noticesPromise = supabase.from('notices').select('*').order('created_at', { ascending: false }); // Context handles this
             // --- 4. Fetch Feedback Data ---
             const feedbackPromise = supabase
                 .from('feedback')
@@ -114,18 +119,18 @@ const AdminPage = () => {
             const [
                 { data: usersData, error: usersError },
                 { data: suppliersData, error: suppliersError },
-                { data: noticesData, error: noticesError },
+                // { data: noticesData, error: noticesError },
                 { data: feedbackData, error: feedbackError } // Destructure feedback results
-            ] = await Promise.all([usersPromise, suppliersPromise, noticesPromise, feedbackPromise]);
+            ] = await Promise.all([usersPromise, suppliersPromise, feedbackPromise]);
 
             if (usersError) throw usersError;
             if (suppliersError) throw suppliersError;
-            if (noticesError) throw noticesError;
+            // if (noticesError) throw noticesError;
             if (feedbackError) throw feedbackError; // Check for feedback error
 
             setUsers(usersData || []);
             setAllSuppliers(suppliersData.map(s => ({ key: s.id, title: s.name })) || []);
-            setNotices(noticesData || []);
+            // setNotices(noticesData || []); // Context handles this
             
             // Process feedback data to ensure images/attachments are arrays
             const processedFeedback = (feedbackData || []).map(item => ({
@@ -182,7 +187,13 @@ const AdminPage = () => {
         const notice = correctionModal.notice;
         if (!notice) return;
 
-        const newSupplier = allSuppliers.find(s => s.id === values.newSupplierId);
+        const newSupplier = allSuppliers.find(s => s.key === values.newSupplierId); // Check if you use 'key' or 'id' in allSuppliers objects. In fetchData you map to {key, title}.
+        // Wait, looking at fetchData: setAllSuppliers(suppliersData.map(s => ({ key: s.id, title: s.name })) || []);
+        // So the objects in allSuppliers have 'key' and 'title', NOT 'id'.
+        // But in handleReassignment you are doing: const newSupplier = allSuppliers.find(s => s.id === values.newSupplierId);
+        // This will return undefined because 's' has 'key', not 'id'.
+        
+        // FIX: Use s.key instead of s.id
         if (!newSupplier) {
             messageApi.error('未找到指定的供应商！');
             return;
@@ -197,28 +208,32 @@ const AdminPage = () => {
 
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
-        const { error } = await supabase.from('notices').update({
-            assigned_supplier_id: newSupplier.id,
-            assigned_supplier_name: newSupplier.name,
-            history: [...currentHistory, newHistory],
-        }).eq('id', notice.id);
+        try {
+            // [修改] 使用 updateNotice 来触发邮件和更新状态
+            // 关键点：传入 old_supplier_id 以便 Context 能够识别这是重分配操作并发送邮件给旧供应商
+            await updateNotice(notice.id, {
+                assigned_supplier_id: newSupplier.key, // Use key as id
+                assigned_supplier_name: newSupplier.title, // Use title as name
+                old_supplier_id: notice.assignedSupplierId, // 传入旧供应商ID
+                history: [...currentHistory, newHistory],
+            });
 
-        if (error) {
+            // 假设您有一个 'alerts' 表
+            const alertsToInsert = [
+                { creator_id: currentUser.id, target_user_id: notice.assignedSupplierId, message: `"${notice.title}" 已被重分配，您无需再处理。`, link: `/notices` },
+                { creator_id: currentUser.id, target_user_id: newSupplier.key, message: `您有一个新的通知单被分配: "${notice.title}"。`, link: `/notices?open=${notice.id}` },
+                { creator_id: currentUser.id, target_user_id: notice.creatorId, message: `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.title}。`, link: `/notices?open=${notice.id}` },
+            ];
+            // 处理 alerts 的潜在冲突（如果您之前遇到过 409 错误）
+            // 如果 alerts 表 ID 自增有问题，记得在 Supabase SQL Editor 修复序列
+            await supabase.from('alerts').insert(alertsToInsert);
+
+            messageApi.success('通知单已成功重分配！');
+            handleCorrectionCancel();
+            // fetchData(); // Context 会自动更新，不需要手动 fetch
+        } catch (error) {
             messageApi.error(`重分配失败: ${error.message}`);
-            return;
         }
-
-        // 假设您有一个 'alerts' 表
-        const alertsToInsert = [
-            { creator_id: currentUser.id, target_user_id: notice.assigned_supplier_id, message: `"${notice.title}" 已被重分配，您无需再处理。`, link: `/notices` },
-            { creator_id: currentUser.id, target_user_id: newSupplier.id, message: `您有一个新的通知单被分配: "${notice.title}"。`, link: `/notices?open=${notice.id}` },
-            { creator_id: currentUser.id, target_user_id: notice.creator_id, message: `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.name}。`, link: `/notices?open=${notice.id}` },
-        ];
-        await supabase.from('alerts').insert(alertsToInsert);
-
-        messageApi.success('通知单已成功重分配！');
-        handleCorrectionCancel();
-        fetchData(); // 重新加载数据
     };
 
     // --- ✨ 适配后的“作废”逻辑 ---
@@ -235,26 +250,28 @@ const AdminPage = () => {
 
         const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
-        const { error } = await supabase.from('notices').update({
-            status: '已作废',
-            history: [...currentHistory, newHistory],
-        }).eq('id', notice.id);
+        try {
+            // [核心修改] 使用 updateNotice 替代直接的 supabase.update
+            // 这将触发 NoticeContext 中定义的邮件发送逻辑 (场景6)
+            await updateNotice(notice.id, {
+                status: '已作废',
+                history: [...currentHistory, newHistory],
+            });
 
-        if (error) {
+            // 假设您有一个 'alerts' 表
+            const alertsToInsert = [
+                { creator_id: currentUser.id, target_user_id: notice.assignedSupplierId, message: `"${notice.title}" 已被作废，您无需再处理。`, link: `/notices` },
+                { creator_id: currentUser.id, target_user_id: notice.creatorId, message: `您创建的 "${notice.title}" 已被作废。`, link: `/notices?open=${notice.id}` },
+            ];
+            
+            await supabase.from('alerts').insert(alertsToInsert);
+
+            messageApi.warning('通知单已作废！');
+            handleCorrectionCancel();
+            // fetchData(); // Context 会自动更新
+        } catch (error) {
             messageApi.error(`作废失败: ${error.message}`);
-            return;
         }
-
-        // 假设您有一个 'alerts' 表
-        const alertsToInsert = [
-            { creator_id: currentUser.id, target_user_id: notice.assigned_supplier_id, message: `"${notice.title}" 已被作废，您无需再处理。`, link: `/notices` },
-            { creator_id: currentUser.id, target_user_id: notice.creator_id, message: `您创建的 "${notice.title}" 已被作废。`, link: `/notices?open=${notice.id}` },
-        ];
-        await supabase.from('alerts').insert(alertsToInsert);
-
-        messageApi.warning('通知单已作废！');
-        handleCorrectionCancel();
-        fetchData(); // 重新加载数据
     };
 
 
@@ -447,10 +464,11 @@ const AdminPage = () => {
 
 
     const noticeColumns = [
-        { title: '通知单号', dataIndex: 'notice_code', key: 'notice_code', width: 150 },
+        // 注意：Context 返回的数据是驼峰命名，所以这里 dataIndex 需要修改
+        { title: '通知单号', dataIndex: 'noticeCode', key: 'noticeCode', width: 150 }, 
         { title: '标题', dataIndex: 'title', key: 'title' },
         { title: '类型', dataIndex: 'category', key: 'category', width: 100 },
-        { title: '当前供应商', dataIndex: 'assigned_supplier_name', key: 'assigned_supplier_name' },
+        { title: '当前供应商', dataIndex: 'assignedSupplierName', key: 'assignedSupplierName' },
         {
             title: '状态', dataIndex: 'status', key: 'status', render: (status) => {
                 let color = 'geekblue';
@@ -460,7 +478,7 @@ const AdminPage = () => {
                 return <Tag color={color}>{status}</Tag>
             }
         },
-        { title: '创建时间', dataIndex: 'created_at', key: 'created_at', render: (text) => dayjs(text).format('YYYY-MM-DD') },
+        { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', render: (text) => dayjs(text).format('YYYY-MM-DD') },
         {
             title: '操作',
             key: 'action',
@@ -490,7 +508,7 @@ const AdminPage = () => {
         { title: '信息', dataIndex: 'message', key: 'message' },
     ];
 
-    if (loading) {
+    if (loading || noticesLoading) {
         return <Spin size="large" style={{ display: 'block', marginTop: '50px' }} />;
     }
 
@@ -795,7 +813,7 @@ const AdminPage = () => {
                 footer={null} // We will use Form's button
             >
                 <Paragraph>
-                    正在处理通知单: <Text strong>{correctionModal.notice?.notice_code}</Text> - <Text>{correctionModal.notice?.title}</Text>
+                    正在处理通知单: <Text strong>{correctionModal.notice?.noticeCode}</Text> - <Text>{correctionModal.notice?.title}</Text>
                 </Paragraph>
                 <Form
                     form={correctionForm}
@@ -808,9 +826,17 @@ const AdminPage = () => {
                             label="选择新的供应商"
                             rules={[{ required: true, message: '请选择一个新的供应商！' }]}
                         >
-                            <Select showSearch placeholder="搜索并选择供应商" filterOption={(input, option) => option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0}>
+                            <Select 
+                                showSearch 
+                                placeholder="搜索并选择供应商" 
+                                filterOption={(input, option) => 
+                                    (option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                                getPopupContainer={triggerNode => triggerNode.parentNode}
+                            >
                                 {allSuppliers.map(s => (
-                                    <Option key={s.id} value={s.id}>{s.title}</Option>
+                                    // Ensure we use s.key as value because that's how we mapped it in fetchData
+                                    <Option key={s.key} value={s.key}>{s.title}</Option>
                                 ))}
                             </Select>
                         </Form.Item>

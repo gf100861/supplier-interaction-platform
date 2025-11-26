@@ -64,6 +64,19 @@ module.exports = async (req, res) => {
 
     } catch (error) {
         console.error('Email Error:', error);
+         if (error.response && error.response.includes('quota exceeded')) {
+            // 这里您可以选择：
+            // 1. 记录到数据库的 alerts 表，通知管理员
+            // 2. 尝试切换到备用账号（如果有实现的话）
+            
+            console.error('CRITICAL: Email quota exceeded for today.');
+            
+            return res.status(429).json({ 
+                error: 'Email quota exceeded', 
+                message: '系统邮件发送量已达今日上限，请联系管理员。' 
+            });
+        }
+
         return res.status(500).json({ error: error.message });
     }
 };
