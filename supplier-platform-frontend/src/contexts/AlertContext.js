@@ -1,79 +1,173 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { useNotification } from './NotificationContext'; // 用于弹出通知
 
 const AlertContext = createContext();
 
 export const AlertProvider = ({ children }) => {
     const [alerts, setAlerts] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(true);
-    const { notificationApi } = useNotification();
-    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
-    // 1. 在组件加载时，获取所有“未读”的提醒
-    useEffect(() => {
-        if (!currentUser?.id) {
+    // 获取当前用户信息
+    const getCurrentUser = () => {
+        const userStr = localStorage.getItem('user');
+        return userStr ? JSON.parse(userStr) : null;
+    };
+
+    // 辅助函数：根据 alerts 数组计算未读数量
+    const calculateUnreadCount = (alertsList) => {
+        return (alertsList || []).filter(a => !a.is_read).length;
+    };
+
+    const fetchAlerts = useCallback(async () => {
+        const user = getCurrentUser();
+        if (!user) {
+            setAlerts([]);
+            setUnreadCount(0);
             setLoading(false);
             return;
         }
 
-        const fetchInitialAlerts = async () => {
-            setLoading(true);
-            const { data, error } = await supabase
+        try {
+            // 只获取发送给当前登录用户的通知
+            let query = supabase
                 .from('alerts')
                 .select('*')
-                .eq('is_read', false)
+                .eq('target_user_id', user.id) 
                 .order('created_at', { ascending: false });
 
-            if (error) {
-                console.error("获取提醒失败:", error);
-            } else {
-                setAlerts(data || []);
-            }
+            const { data, error } = await query;
+
+            if (error) throw error;
+
+            setAlerts(data || []);
+            setUnreadCount(calculateUnreadCount(data));
+        } catch (error) {
+            console.error("Error fetching alerts:", error);
+        } finally {
             setLoading(false);
-        };
-        fetchInitialAlerts();
-    }, [currentUser?.id]);
+        }
+    }, []);
 
-    // 2. 核心：使用 Supabase Realtime 监听 'alerts' 表
+    // 标记单个通知为已读
+    const markAsRead = async (alertId) => {
+        try {
+            // 1. 先乐观更新前端状态
+            setAlerts(prev => {
+                const newAlerts = prev.map(a => a.id === alertId ? { ...a, is_read: true } : a);
+                setUnreadCount(calculateUnreadCount(newAlerts));
+                return newAlerts;
+            });
+
+            // 2. 再发送请求到后端
+            const { error } = await supabase
+                .from('alerts')
+                .update({ is_read: true })
+                .eq('id', alertId);
+
+            if (error) {
+                console.error("Error marking alert as read (DB):", error);
+                fetchAlerts(); 
+                throw error;
+            }
+        } catch (error) {
+            console.error("Error marking alert as read:", error);
+        }
+    };
+
+    // 标记所有通知为已读
+    const markAllAsRead = async () => {
+        const user = getCurrentUser();
+        if (!user) return;
+
+        try {
+            setAlerts(prev => {
+                const newAlerts = prev.map(a => ({ ...a, is_read: true }));
+                setUnreadCount(0);
+                return newAlerts;
+            });
+
+            const { error } = await supabase
+                .from('alerts')
+                .update({ is_read: true })
+                .eq('target_user_id', user.id)
+                .eq('is_read', false);
+
+            if (error) {
+                console.error("Error marking all alerts as read (DB):", error);
+                fetchAlerts();
+                throw error;
+            }
+        } catch (error) {
+            console.error("Error marking all alerts as read:", error);
+        }
+    };
+
+    // --- 新增：删除单个通知 ---
+    const deleteAlert = async (alertId) => {
+        try {
+            // 1. 乐观更新：先从 UI 移除
+            setAlerts(prev => {
+                const newAlerts = prev.filter(a => a.id !== alertId);
+                setUnreadCount(calculateUnreadCount(newAlerts)); // 重新计算未读数
+                return newAlerts;
+            });
+
+            // 2. 后端删除
+            const { error } = await supabase
+                .from('alerts')
+                .delete()
+                .eq('id', alertId);
+
+            if (error) {
+                console.error("Error deleting alert (DB):", error);
+                fetchAlerts(); // 失败兜底
+                throw error;
+            }
+        } catch (error) {
+            console.error("Error deleting alert:", error);
+        }
+    };
+
+    // 实时订阅逻辑
     useEffect(() => {
-        if (!currentUser?.id) return;
+        fetchAlerts();
 
-        // 监听 'alerts' 表中所有新的“插入” (INSERT) 事件
-        const channel = supabase.channel('public:alerts')
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'alerts' },
+        const user = getCurrentUser();
+        if (!user) return;
+
+        const channel = supabase.channel(`public:alerts:target_user_id=eq.${user.id}`)
+            .on('postgres_changes', 
+                { 
+                    event: 'INSERT', 
+                    schema: 'public', 
+                    table: 'alerts', 
+                    filter: `target_user_id=eq.${user.id}` 
+                }, 
                 (payload) => {
-                    // Supabase Realtime 会自动应用 RLS 策略
-                    // 因此，我们只会收到“发给我们”的提醒
-                    const newAlert = payload.new;
-                    
-                    // 在前端 state 中增加这条新提醒
-                    setAlerts(prevAlerts => [newAlert, ...prevAlerts]);
-                    
-                    // 弹出桌面通知
-                    notificationApi.info({
-                        message: newAlert.creator_name ? `${newAlert.creator_name} 发来了新提醒` : '您有一条新提醒',
-                        description: newAlert.message,
-                        placement: 'bottomRight',
+                    setAlerts(prev => {
+                        const newAlerts = [payload.new, ...prev];
+                        setUnreadCount(calculateUnreadCount(newAlerts));
+                        return newAlerts;
                     });
                 }
             )
             .subscribe();
 
-        // 组件卸载时，清理订阅
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [currentUser?.id, notificationApi]);
+    }, [fetchAlerts]);
 
-    // 3. (可选) 标记为已读的函数
-    const markAsRead = async (alertId) => {
-        // ... (在这里实现更新数据库 'is_read' 字段的逻辑)
+    const value = {
+        alerts,
+        unreadCount,
+        loading,
+        fetchAlerts,
+        markAsRead,
+        markAllAsRead,
+        deleteAlert // 导出删除方法
     };
-
-    const value = { alerts, loading, markAsRead };
 
     return (
         <AlertContext.Provider value={value}>

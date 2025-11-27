@@ -707,6 +707,7 @@ export const NoticeList = (props) => {
     return (
         <List
             dataSource={props.data}
+            pagination={props.pagination} 
             renderItem={item => (
                 item.isBatch
                     ? <NoticeBatchItem batch={item} {...props} />

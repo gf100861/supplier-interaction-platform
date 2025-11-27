@@ -68,7 +68,8 @@ const NoticePage = () => {
     const [selectedSuppliers, setSelectedSuppliers] = useState([]);
     const [dateRange, setDateRange] = useState(null);
 
-    const [viewMode, setViewMode] = useState('grouped');
+    //如果需要默认是分组就改成grouped
+    const [viewMode, setViewMode] = useState('flat');
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -873,6 +874,15 @@ const NoticePage = () => {
                                 noticeCategoryDetails={noticeCategoryDetails}
                                 activeCollapseKeys={activeCollapseKeys}
                                 setActiveCollapseKeys={setActiveCollapseKeys}
+                                // --- 9. 核心：仅在 flat 模式下传入分页配置 ---
+                                pagination={viewMode === 'flat' ? {
+                                    position: 'bottom',
+                                    align: 'center',
+                                    defaultPageSize: 7,
+                                    showSizeChanger: true,
+                                    pageSizeOptions: ['7','8', '16', '50'],
+                                    showTotal: (total) => `共 ${total} 条数据`
+                                } : false}
                             />
                         </TabPane>
                     );
@@ -893,6 +903,7 @@ const NoticePage = () => {
                             onChange={(e) => setViewMode(e.target.value)}
                             buttonStyle="solid"
                             optionType="button"
+
                         >
                             <Radio.Button value="grouped"><AppstoreOutlined /> 分组</Radio.Button>
                             <Radio.Button value="flat"><BarsOutlined /> 列表</Radio.Button>
