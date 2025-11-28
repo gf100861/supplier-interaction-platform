@@ -1,7 +1,7 @@
 // supplier-platform-frontend/src/services/EmailService.js
 
 // 请替换为您实际的后端地址 (不要带 /api，因为后端路由会处理)
-const API_BASE_URL = 'https://supplier-interaction-platform-backend.vercel.app'; 
+const API_BASE_URL = 'https://supplier-interaction-platform-backend.vercel.app';
 
 const getEmailLayout = (title, content, actionLink = 'https://supplier-interaction-platform.vercel.app/login', actionText = '登录平台查看') => {
     return `
@@ -66,7 +66,7 @@ export const EmailService = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ to, subject, html })
             });
-            
+
             if (!response.ok) {
                 const err = await response.json();
                 console.error('邮件发送失败:', err);
@@ -82,14 +82,14 @@ export const EmailService = {
     /**
      * 场景1：SD下发新通知单 -> 通知供应商
      */
-   async notifySupplierNewNotice(supplierEmail, noticeTitle, noticeCode, supplierName) {
+    async notifySupplierNewNotice(supplierEmail, noticeTitle, noticeCode, supplierName, targetSdid) {
         if (!supplierEmail) return;
-        
+
         const subject = `[待办] 您收到一个新的整改通知单 #${noticeCode}`;
         const content = `
             <h3>新任务通知</h3>
-            <p>尊敬的 <strong>${supplierName || '合作伙伴'}</strong>：</p>
-            <p>SD 刚刚为您下发了一个新的整改通知单，请您及时登录平台进行查阅和处理。</p>
+            <p>尊敬的供应商 <strong>${supplierName || '合作伙伴'}</strong>：</p>
+            <p>${targetSdid}刚刚为您下发了一个新的整改通知单，请您及时登录平台进行查阅和处理。</p>
             <div class="info-box">
                 <div class="info-item"><strong>编号：</strong> ${noticeCode}</div>
                 <div class="info-item"><strong>标题：</strong> ${noticeTitle}</div>
@@ -97,17 +97,17 @@ export const EmailService = {
             </div>
             <p>请点击下方按钮查看详情并开始处理。</p>
         `;
-        
+
         await this.send({ to: supplierEmail, subject, html: getEmailLayout(subject, content) });
     },
 
     /**
      * 场景2：供应商提交计划 -> 通知 SD
      */
-       async notifySDPlanSubmitted(sdEmail, supplierName, noticeTitle, sdName = 'SD') {
+    async notifySDPlanSubmitted(sdEmail, supplierName, noticeTitle, sdName, notice_id) {
         if (!sdEmail) return;
 
-        const subject = `[审核] 供应商 ${supplierName} 已提交行动计划`;
+        const subject = `[审核] 供应商 ${supplierName} 已提交行动计划${notice_id}`;
         const content = `
             <h3>行动计划待审核</h3>
             <p>您好，<strong>${sdName}</strong>：</p>
@@ -119,7 +119,7 @@ export const EmailService = {
             </div>
             <p>请尽快登录平台进行审核。</p>
         `;
-        
+
         await this.send({ to: sdEmail, subject, html: getEmailLayout(subject, content) });
     },
 
@@ -127,14 +127,14 @@ export const EmailService = {
     /**
      * 场景3：SD 批准/驳回Actions -> 通知供应商
      */
-    async notifySupplierAuditResult(supplierEmail, noticeTitle, status, comment, sdName = 'SD') {
+    async notifySupplierAuditResult(supplierEmail, noticeTitle, status, comment, sdName = 'SD', notice_code) {
         if (!supplierEmail) return;
-        
+
         const isApproved = status.includes('通过') || status.includes('关闭') || status.includes('批准');
         const statusColor = isApproved ? '#52c41a' : '#f5222d';
         const statusText = isApproved ? '通过 / 已批准' : '驳回 / 需修改';
-        
-        const subject = `[结果] 通知单 ${noticeTitle} 计划审核结果：${status}`;
+
+        const subject = `[结果] 通知单 ${noticeTitle} 计划审核结果：${status} - ${notice_code}`;
         const content = `
             <h3>审核结果通知</h3>
             <p>您针对通知单 <strong>${noticeTitle}</strong> 提交的行动计划已被 <strong>${sdName}</strong> 审核。</p>
@@ -144,17 +144,17 @@ export const EmailService = {
             </div>
             <p>${isApproved ? '请继续后续流程。' : '请根据审核意见修改后重新提交。'}</p>
         `;
-        
+
         await this.send({ to: supplierEmail, subject, html: getEmailLayout(subject, content) });
     },
 
-     /**
-     * 场景4：供应商提交Evidence -> 通知 SD
-     */
-  async notifySDEvidenceSubmitted(sdEmail, supplierName, noticeTitle, sdName = 'SD') {
+    /**
+    * 场景4：供应商提交Evidence -> 通知 SD
+    */
+    async notifySDEvidenceSubmitted(sdEmail, supplierName, noticeTitle, sdName = 'SD', notice_code) {
         if (!sdEmail) return;
 
-        const subject = `[证据] 供应商 ${supplierName} 已提交完成证据`;
+        const subject = `[证据] 供应商 ${supplierName} 已提交完成证据${notice_code}`;
         const content = `
             <h3>证据待审核</h3>
             <p>您好，<strong>${sdName}</strong>：</p>
@@ -166,20 +166,20 @@ export const EmailService = {
             </div>
             <p>请尽快登录平台进行审核与确认。</p>
         `;
-        
+
         await this.send({ to: sdEmail, subject, html: getEmailLayout(subject, content) });
     },
 
     /**
      * 场景5：SD 批准/驳回Evidence -> 通知供应商
      */
-      async notifySupplierEvidenceResult(supplierEmail, noticeTitle, status, comment, sdName = 'SD') {
-         if (!supplierEmail) return;
-        
+    async notifySupplierEvidenceResult(supplierEmail, noticeTitle, status, comment, sdName = 'SD', notice_code) {
+        if (!supplierEmail) return;
+
         const isApproved = status.includes('通过') || status.includes('关闭') || status.includes('批准') || status.includes('完成');
         const statusColor = isApproved ? '#52c41a' : '#f5222d';
-        
-        const subject = `[结果] 通知单 ${noticeTitle} 证据审核结果：${status}`;
+
+        const subject = `[结果] 通知单 ${noticeTitle} 证据审核结果：${status} - ${notice_code} `;
         const content = `
             <h3>证据审核结果</h3>
             <p>您针对通知单 <strong>${noticeTitle}</strong> 提交的完成证据已被 <strong>${sdName}</strong> 审核。</p>
@@ -189,7 +189,7 @@ export const EmailService = {
             </div>
             <p>${isApproved ? '恭喜，该通知单流程已全部完成。' : '请补充或修改证据后重新提交。'}</p>
         `;
-        
+
         await this.send({ to: supplierEmail, subject, html: getEmailLayout(subject, content) });
     },
     /**
@@ -199,8 +199,8 @@ export const EmailService = {
      * 但考虑到一般逻辑，废除通知单应该通知供应商“不用做了”，同时也通知SD“这个单子废了”。
      * 为了简化，这里实现为一个通用的“通知单已作废”通知，可以发给任何人。
      */
-     async notifyNoticeAbortion(email, noticeTitle, noticeCode, reason, operatorName = '管理员') {
-       if (!email) return;
+    async notifyNoticeAbortion(email, noticeTitle, noticeCode, reason, operatorName = '管理员') {
+        if (!email) return;
 
         const subject = `[作废] 通知单 ${noticeCode} 已被作废`;
         const content = `
@@ -213,14 +213,14 @@ export const EmailService = {
             </div>
             <p>该通知单流程已终止，无需进行后续操作。</p>
         `;
-        
+
         await this.send({ to: email, subject, html: getEmailLayout(subject, content, 'https://supplier-interaction-platform.vercel.app/login', '登录平台查看详情') });
     },
 
 
-   /**
-     * 场景7：更换供应商 -> 通知三方 (旧供应商，新供应商，SD)
-     */
+    /**
+      * 场景7：更换供应商 -> 通知三方 (旧供应商，新供应商，SD)
+      */
     async notifyReassignment({ oldSupplierEmail, newSupplierEmail, sdEmail, noticeTitle, noticeCode, oldSupplierName, newSupplierName, reason }) {
         // 1. 通知旧供应商：任务取消
         if (oldSupplierEmail && oldSupplierEmail.length > 0) {
@@ -272,12 +272,12 @@ export const EmailService = {
     /**
      * 场景8：Admin发布通知 -> 通知系统全员
      */
-     async notifySystemAnnouncement(emails, title, contentText, priority = '普通') {
+    async notifySystemAnnouncement(emails, title, contentText, priority = '普通') {
         if (!emails || emails.length === 0) return;
 
         const subject = `[系统公告] ${title}`;
         const priorityColor = priority === '紧急' ? '#f5222d' : '#1890ff';
-        
+
         const content = `
             <h3 style="color: ${priorityColor};">${title}</h3>
             <div style="margin-bottom: 20px;">
@@ -288,10 +288,9 @@ export const EmailService = {
                 ${contentText}
             </div>
         `;
-        
+
         await this.send({ to: emails, subject, html: getEmailLayout(subject, content, 'https://supplier-interaction-platform.vercel.app/login', '登录系统查看') });
     }
 
 };
 
-  

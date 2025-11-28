@@ -146,11 +146,10 @@ const ProblemAnalysisPage = () => {
         }
 
         try {
-            messageApi.loading({ content: '正在向管理员发送安全警报邮件...', key: 'sending_email' });
+            // messageApi.loading({ content: '正在向管理员发送安全警报邮件...', key: 'sending_email' });
 
             // 确保路径正确，使用上面定义的 API_BASE_URL
             const endpoint = `${API_BASE_URL}/api/send-alert-email.js`;
-            console.log('Calling Email API:', endpoint);
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -172,7 +171,7 @@ const ProblemAnalysisPage = () => {
                 if (!response.ok) {
                     throw new Error(data.error || '后端返回错误');
                 }
-                messageApi.success({ content: '安全警报邮件已成功发送。', key: 'sending_email', duration: 3 });
+                // messageApi.success({ content: '安全警报邮件已成功发送。', key: 'sending_email', duration: 3 });
             } else {
                 // 如果返回的不是 JSON (比如是 404 HTML 页面)，说明找错了地址
                 // const text = await response.text(); 

@@ -707,6 +707,7 @@ export const NoticeList = (props) => {
     return (
         <List
             dataSource={props.data}
+            //把pagination的几个参数传递进入Notice list,可以有分页的默认，统计值等等参考Notice page的传参
             pagination={props.pagination} 
             renderItem={item => (
                 item.isBatch

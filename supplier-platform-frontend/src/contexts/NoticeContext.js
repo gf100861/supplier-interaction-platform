@@ -114,7 +114,7 @@ export const NoticeProvider = ({ children }) => {
             if (newStatus === '待SD确认actions') {
                 // Email
                 if (sdEmail) {
-                    EmailService.notifySDPlanSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName);
+                    EmailService.notifySDPlanSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
                 }
                 // Alert
                 if (sdId) {
@@ -131,7 +131,7 @@ export const NoticeProvider = ({ children }) => {
             if (newStatus === '待SD关闭evidence') {
                 // Email
                 if (sdEmail) {
-                    EmailService.notifySDEvidenceSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName);
+                    EmailService.notifySDEvidenceSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName,data.notice_code);
                 }
                 // Alert
                 if (sdId) {
@@ -219,7 +219,7 @@ export const NoticeProvider = ({ children }) => {
                     // Email Logic
                     if (isPlanReview) {
                         const resultText = (newStatus === '待供应商关闭') ? '计划已批准，请上传证据' : '计划被驳回，请修改';
-                        EmailService.notifySupplierAuditResult(emails, data.title, resultText, comment, sdName);
+                        EmailService.notifySupplierAuditResult(emails, data.title, resultText, comment, sdName,data.notice_code);
                     } else if (isEvidenceReview) {
                         let resultText = '';
                         if (newStatus === '已完成') {
@@ -227,7 +227,7 @@ export const NoticeProvider = ({ children }) => {
                         } else {
                             resultText = '部分证据被驳回，请补充提交';
                         }
-                        EmailService.notifySupplierEvidenceResult(emails, data.title, resultText, comment, sdName);
+                        EmailService.notifySupplierEvidenceResult(emails, data.title, resultText, comment, sdName, data.notice_code);
                     } else if (isAborted) {
                         EmailService.notifyNoticeAbortion(emails, data.title, data.notice_code, comment, '管理员'); 
                     }
@@ -322,17 +322,22 @@ export const NoticeProvider = ({ children }) => {
             // 为了确保 alert 数据完整，最好用 map + Promise.all
             await Promise.all(noticesToProcess.map(async (notice) => {
                 const targetSupplierId = notice.assigned_supplier_id;
+
+                const targetSdid = notice.creator.username
                 if (!targetSupplierId) return;
 
                 const { data: supplierUsers } = await supabase
                     .from('users')
-                    .select('id, email')
+                    .select('id, email,username')
                     .eq('supplier_id', targetSupplierId);
 
                 if (supplierUsers && supplierUsers.length > 0) {
                     // Email
                     const emails = supplierUsers.map(u => u.email).filter(Boolean);
-                    EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code, '合作伙伴');
+
+                    const username =supplierUsers.map(u => u.username).filter(Boolean) || '合作伙伴';
+                    console.log('供应商',supplierUsers)
+                    EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code ,username, targetSdid);
 
                     // Alert Collection
                     supplierUsers.forEach(u => {

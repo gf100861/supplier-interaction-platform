@@ -52,7 +52,6 @@ export const ActionPlanReviewDisplay = ({ historyItem }) => {
                                 size="large"
                                 showTitle={true}
                             />
-                            {console.log('ces', plan.evidenceAttachments)}
                             <AttachmentsDisplay 
                                 attachments={plan.evidenceAttachments}
                                 title="附件证据"
