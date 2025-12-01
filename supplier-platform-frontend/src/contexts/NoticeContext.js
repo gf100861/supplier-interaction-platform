@@ -304,89 +304,75 @@ export const NoticeProvider = ({ children }) => {
         }
     };
 
-    // --- 5. addNotices 函数 ---
-    const addNotices = async (newNoticesArray) => {
+     const addNotices = async (newNoticesArray) => {
         try {
+            // 1. 插入数据，并请求返回 creator 的关联信息
             const { data, error } = await supabase
                 .from('notices')
                 .insert(newNoticesArray)
-                .select();
+                // 关键修复：在这里请求 creator 信息，否则 notice.creator 是 undefined
+                .select('*, creator:users(username, email)'); 
                 
             if (error) throw error;
 
-            const noticesToProcess = newNoticesArray;
+            // 2. 使用返回的 data (包含 ID 和 creator 信息) 进行后续处理，而不是用 newNoticesArray
+            const noticesToProcess = data; 
             const allAlerts = [];
 
-            // 我们需要遍历处理，因为每个 notice 可能对应不同的供应商
-            // 注意：forEach 是同步的，里面的 await 不会阻塞外层，但这里我们希望并发处理即可
-            // 为了确保 alert 数据完整，最好用 map + Promise.all
-            await Promise.all(noticesToProcess.map(async (notice) => {
-                const targetSupplierId = notice.assigned_supplier_id;
+            if (noticesToProcess && noticesToProcess.length > 0) {
+                await Promise.all(noticesToProcess.map(async (notice) => {
+                    const targetSupplierId = notice.assigned_supplier_id;
+                    
+                    // 安全获取 Creator Username，增加回退机制
+                    const targetSdid = notice.creator?.username || notice.sd_notice?.creator || 'SD'; 
+                    
+                    if (!targetSupplierId) return;
 
-                const targetSdid = notice.creator.username
-                if (!targetSupplierId) return;
-
-                const { data: supplierUsers } = await supabase
-                    .from('users')
-                    .select('id, email,username')
-                    .eq('supplier_id', targetSupplierId);
-
-                if (supplierUsers && supplierUsers.length > 0) {
-                    // Email
-                    const emails = supplierUsers.map(u => u.email).filter(Boolean);
-
-                    const username =supplierUsers.map(u => u.username).filter(Boolean) || '合作伙伴';
-                    console.log('供应商',supplierUsers)
-                    EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code ,username, targetSdid);
-
-                    // Alert Collection
-                    supplierUsers.forEach(u => {
-                        allAlerts.push({
-                            target_user_id: u.id,
-                            message: `收到新通知单: ${notice.title} (${notice.notice_code})`,
-                            link: `/notices?open=${notice.id || 'unknown'}`, // 注意：这里如果不重新查库，可能拿不到 id (除非 Supabase insert 返回了)
-                            // 修正：上面的 .insert(...).select() 会让 data 包含 id。
-                            // 但这里的 notice 变量是入参 newNoticesArray 的项，它没有 ID。
-                            // 我们应该用 `data` 里的项。
-                            created_at: new Date().toISOString()
-                        });
-                    });
-                }
-            }));
-
-            // 修正：使用 insert 返回的 data 来构建 Alert (因为需要 ID)
-            // 这里简化处理：重新遍历 data
-            const alertsFromData = [];
-            if (data) {
-                await Promise.all(data.map(async (insertedNotice) => {
-                     const { data: supplierUsers } = await supabase
+                    const { data: supplierUsers } = await supabase
                         .from('users')
-                        .select('id')
-                        .eq('supplier_id', insertedNotice.assigned_supplier_id);
-                     
-                     if (supplierUsers) {
-                         supplierUsers.forEach(u => {
-                             alertsFromData.push({
-                                 target_user_id: u.id,
-                                 message: `收到新通知单: ${insertedNotice.title} (${insertedNotice.notice_code})`,
-                                 link: `/notices?open=${insertedNotice.id}`,
-                                 created_at: new Date().toISOString()
-                             });
-                         });
-                     }
-                }));
-            }
+                        .select('id, email, username')
+                        .eq('supplier_id', targetSupplierId);
 
-            if (alertsFromData.length > 0) {
-                await createSystemAlerts(alertsFromData);
+                    if (supplierUsers && supplierUsers.length > 0) {
+                        // 3. 邮件通知逻辑
+                        // 过滤出有效用户（有邮箱的）
+                        const validUsers = supplierUsers.filter(u => u.email);
+                        const emails = validUsers.map(u => u.email);
+                        const usernames = validUsers.map(u => u.username || '合作伙伴');
+
+                        console.log('准备发送邮件给:', emails);
+                            
+                        await EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code, usernames, targetSdid);
+                        
+                        // 4. 系统内 Alert 收集
+                        supplierUsers.forEach(u => {
+                            allAlerts.push({
+                                creator_id: notice.creator_id, // 添加创建者ID
+                                target_user_id: u.id,
+                                message: `收到新通知单: ${notice.title} (${notice.notice_code})`,
+                                link: `/notices?open=${notice.id}`, // 现在 notice.id 是存在的
+                                created_at: new Date().toISOString(),
+                                is_read: false
+                            });
+                        });
+                    }
+                }));
+
+                // 5. 批量插入 Alerts
+                if (allAlerts.length > 0) {
+                    const { error: alertError } = await supabase.from('alerts').insert(allAlerts);
+                    if (alertError) console.error("创建Alert失败:", alertError);
+                }
             }
+            
+            // 返回插入的数据
+            return data;
 
         } catch (err) {
             console.error("创建通知单失败:", err);
             throw err;
         }
     };
-
     const deleteNotice = async (noticeId) => {
         setLoading(true);
         try {
