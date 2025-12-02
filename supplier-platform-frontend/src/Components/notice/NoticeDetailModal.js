@@ -1,23 +1,73 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message } from 'antd';
+// 1. 添加 Carousel 到 antd 导入
+import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message, Carousel } from 'antd';
 import {
     PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
     CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
     InboxOutlined, 
     FileAddOutlined,
-    DownloadOutlined // 1. 导入图标
+    DownloadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 import { useNotification } from '../../contexts/NotificationContext';
+// 2. 仅导入 EnhancedImageDisplay，移除外部的 ImageCarousel，使用本地定义的
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 import { AttachmentsDisplay } from '../common/AttachmentsDisplay';
-// 2. 导入 ExcelJS 和 FileSaver
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
+
+// --- 3. 新增：本地定义的图片轮播组件 ---
+const LocalImageCarousel = ({ images, title }) => {
+    if (!images || !Array.isArray(images) || images.length === 0) return null;
+
+    // 轮播容器样式
+    const contentStyle = {
+        margin: 0,
+        height: '300px',
+        color: '#fff',
+        lineHeight: '300px',
+        textAlign: 'center',
+        background: '#f0f2f5',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: '8px',
+        overflow: 'hidden'
+    };
+
+    return (
+        <div style={{ marginTop: '12px' }}>
+            {title && <div style={{ marginBottom: '8px' }}><Text strong><PictureOutlined /> {title}:</Text></div>}
+            <div style={{ padding: '0 20px' }}> {/* 增加 padding 以防止箭头遮挡 */}
+                <Carousel 
+                    arrows 
+                    infinite 
+                    autoplay 
+                    style={{ backgroundColor: '#364d79', borderRadius: '8px' }}
+                >
+                    {images.map((img, index) => {
+                        const url = typeof img === 'string' ? img : (img?.url || img?.thumbUrl);
+                        return (
+                            <div key={index}>
+                                <div style={contentStyle}>
+                                    <Image
+                                        src={url}
+                                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                                        alt={`evidence-${index}`}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </Carousel>
+            </div>
+        </div>
+    );
+};
 
 // 3. 将 toPlainText 设为模块级辅助函数
 const toPlainText = (val) => {
@@ -54,7 +104,6 @@ const categoryColumnConfig = {
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 
 const DynamicDetailsDisplay = ({ notice }) => {
-    // ... (组件保持不变, 确保 toPlainText 在其作用域内或已在外部定义)
     if (!notice?.category || !notice?.sdNotice?.details) return null;
     const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(
@@ -77,7 +126,7 @@ const DynamicDetailsDisplay = ({ notice }) => {
     );
 };
 
-// --- ✨ 4. 核心修改：PlanSubmissionForm (添加导入/导出) ---
+// --- PlanSubmissionForm ---
 const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
     const draftKey = `actionPlanDraft_${notice?.id}`;
     const { messageApi } = useNotification();
@@ -296,7 +345,7 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
     );
 };
 
-// --- ✨ 5. 核心修改：EvidencePerActionForm (添加导入/导出) ---
+// --- EvidencePerActionForm ---
 const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
     const { messageApi } = useNotification();
     const draftKey = `evidenceDraft_${notice?.id}`;
@@ -724,7 +773,8 @@ export const NoticeDetailModal = ({
             <Card size="small" type="inner">
                 <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description || notice?.sdNotice?.details?.finding)}</Paragraph>
                 <DynamicDetailsDisplay notice={notice} />
-                <EnhancedImageDisplay images={notice?.sdNotice?.images} title="初始图片" />
+                {/* 4. 使用 LocalImageCarousel 替换 EnhancedImageDisplay/ImageCarousel */}
+                <LocalImageCarousel images={notice?.sdNotice?.images} title="初始图片" />
                 <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
 
                 {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (

@@ -9,68 +9,18 @@ import {
     BookOutlined,
     PrinterOutlined,
     ShareAltOutlined,
-    OpenAIOutlined
+    OpenAIOutlined,
+    GlobalOutlined, 
+    CrownOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AlertBell } from './notice/AlertBell';
-import { CrownOutlined } from '@ant-design/icons';
 import { FileReceiver } from '../Pages/FileReceiver';
+import { useLanguage } from '../contexts/LanguageContext'; 
+
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
-
-const allMenuItems = [
-    { key: '/', icon: <HomeOutlined />, label: '仪表盘', roles: ['SD', 'Manager', 'Supplier', 'Admin'] },
-    { key: '/audit-plan', icon: <AuditOutlined />, label: '年度计划', roles: ['SD', 'Manager'] },
-    {
-        key: 'notice-group',
-        icon: <SolutionOutlined />,
-        label: '通知单处理',
-        roles: ['SD', 'Manager', 'Supplier'],
-        children: [
-            { key: '/notices', label: '整改通知单列表', roles: ['SD', 'Manager', 'Supplier'] },
-            { key: '/upload', label: '手工导入任务', roles: ['SD', 'Manager'] },
-            { key: '/batch-create', label: '批量导入任务', roles: ['SD', 'Manager'] },
-
-        ]
-    },
-
-    {
-        key: '/intelligence-search',
-        icon: <OpenAIOutlined />,
-        label: 'AI 检索通知单',
-        roles: ['SD', 'Manager', 'Admin']
-
-    },
-
-    { key: '/analysis', icon: <BookOutlined />, label: '经验使用', roles: ['SD', 'Manager', 'Admin'] },
-    { key: '/reports', icon: <PrinterOutlined />, label: '综合报告', roles: ['SD', 'Manager', 'Supplier'] },
-    {
-        key: '/offline-share',
-        icon: <ShareAltOutlined />,
-        label: '文件互传',
-        // 假设只有SD和经理需要这个功能
-        roles: ['SD', 'Manager', 'Admin']
-    },
-
-
-    { key: '/settings', icon: <UserOutlined />, label: '系统设置和建议', roles: ['SD', 'Manager', 'Supplier'] },
-    {
-        key: '/admin',
-        icon: <CrownOutlined />,
-        label: '系统管理',
-        roles: ['Admin'] // <-- 只有 Admin 角色能看到
-    }
-];
-
-const getOpenKeys = (path) => {
-    for (const item of allMenuItems) {
-        if (item.children && item.children.some(child => child.key === path)) {
-            return [item.key];
-        }
-    }
-    return [];
-};
 
 // 智能的权限过滤函数
 const filterMenu = (menuItems, role) => {
@@ -80,9 +30,7 @@ const filterMenu = (menuItems, role) => {
             if (item.children) {
                 const visibleChildren = filterMenu(item.children, role);
                 if (visibleChildren.length === 0) return null;
-                if (visibleChildren.length === 1) {
-                    return { ...item, key: visibleChildren[0].key, children: undefined };
-                }
+                // 如果子菜单只有一个，且没有显式设置不扁平化，逻辑上可以扁平化，但 Antd Menu 需要层级，这里保留层级
                 return { ...item, children: visibleChildren };
             }
             return item;
@@ -97,18 +45,72 @@ const MainLayout = () => {
     const [selectedKeys, setSelectedKeys] = useState([]);
     const [openKeys, setOpenKeys] = useState([]);
 
-    // --- 核心修正 1：优化菜单高亮和展开的 useEffect ---
+    const { language, toggleLanguage, t } = useLanguage(); 
+
+    // --- 核心修正：将菜单定义移入组件内部，以便使用 t() ---
+    // 使用 useMemo 并在依赖中加入 'language'，确保切换语言时重新生成菜单
+    const allMenuItems = useMemo(() => [
+        { key: '/', icon: <HomeOutlined />, label: t('menu.dashboard'), roles: ['SD', 'Manager', 'Supplier', 'Admin'] },
+        { key: '/audit-plan', icon: <AuditOutlined />, label: t('menu.auditPlan'), roles: ['SD', 'Manager'] },
+        {
+            key: 'notice-group',
+            icon: <SolutionOutlined />,
+            label: t('menu.noticeGroup'),
+            roles: ['SD', 'Manager', 'Supplier'],
+            children: [
+                { key: '/notices', label: t('menu.notices'), roles: ['SD', 'Manager', 'Supplier'] },
+                { key: '/upload', label: t('menu.manualUpload'), roles: ['SD', 'Manager'] },
+                { key: '/batch-create', label: t('menu.batchCreate'), roles: ['SD', 'Manager'] },
+            ]
+        },
+        {
+            key: '/intelligence-search',
+            icon: <OpenAIOutlined />,
+            label: t('menu.intelligenceSearch'),
+            roles: ['SD', 'Manager', 'Admin']
+        },
+        { key: '/analysis', icon: <BookOutlined />, label: t('menu.analysis'), roles: ['SD', 'Manager', 'Admin'] },
+        { key: '/reports', icon: <PrinterOutlined />, label: t('menu.reports'), roles: ['SD', 'Manager', 'Supplier'] },
+        {
+            key: '/offline-share',
+            icon: <ShareAltOutlined />,
+            label: t('menu.offlineShare'),
+            roles: ['SD', 'Manager', 'Admin']
+        },
+        { key: '/settings', icon: <UserOutlined />, label: t('menu.settings'), roles: ['SD', 'Manager', 'Supplier'] },
+        {
+            key: '/admin',
+            icon: <CrownOutlined />,
+            label: t('menu.admin'),
+            roles: ['Admin'] 
+        }
+    ], [language, t]); // 依赖项包含 language
+
+    const getOpenKeys = (path) => {
+        for (const item of allMenuItems) {
+            if (item.children && item.children.some(child => child.key === path)) {
+                return [item.key];
+            }
+        }
+        return [];
+    };
+
     useEffect(() => {
         const currentPath = '/' + location.pathname.split('/')[1];
-        setSelectedKeys([currentPath]);
+        // 特殊处理根路径
+        const effectiveKey = location.pathname === '/' ? '/' : currentPath;
+        
+        setSelectedKeys([location.pathname]); // 精确匹配
         if (!collapsed) {
-            setOpenKeys(getOpenKeys(currentPath));
+            // 如果已经在 submenu 中，保持展开
+            const newOpenKeys = getOpenKeys(location.pathname);
+            if(newOpenKeys.length > 0) setOpenKeys(prev => [...new Set([...prev, ...newOpenKeys])]);
         }
-    }, [location.pathname, collapsed]);
+    }, [location.pathname, collapsed, allMenuItems]);
 
     const handleLogout = () => {
         localStorage.removeItem('user');
-        message.success('您已成功登出！');
+        message.success(t('common.logoutSuccess'));
         navigate('/login');
     };
 
@@ -116,15 +118,14 @@ const MainLayout = () => {
         navigate(e.key);
     };
 
-    // --- 核心修正 2：让用户信息在每次路由变化时都重新获取 ---
     const storedUser = useMemo(() => {
         const userString = localStorage.getItem('user');
         return userString ? JSON.parse(userString) : null;
-    }, [location.pathname]); // 依赖于路由路径
+    }, [location.pathname]); 
 
     const userRole = storedUser?.role || null;
     const userName = storedUser?.username || '访客';
-    const visibleMenuItems = useMemo(() => filterMenu(allMenuItems, userRole), [userRole]);
+    const visibleMenuItems = useMemo(() => filterMenu(allMenuItems, userRole), [allMenuItems, userRole]);
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
@@ -150,13 +151,21 @@ const MainLayout = () => {
                         backgroundColor: '#fff',
                     }}
                 >
-                    <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>供应商与SD信息交换平台</h2>
+                    <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>{t('app.title')}</h2>
                     <Space size="large">
 
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
-                        <Text>欢迎您, <Text strong>{userName}</Text></Text>
+                        <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>
+                           
+                        <Button 
+                            type="text" 
+                            icon={<GlobalOutlined />} 
+                            onClick={toggleLanguage}
+                        >
+                            {language === 'zh' ? 'English' : '中文'}
+                        </Button>
                         <AlertBell />
-                        <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>登出</Button>
+                        <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>{t('header.logout')}</Button>
                     </Space>
                 </Header>
                 <Content style={{ margin: '16px' }}>
@@ -174,4 +183,3 @@ const MainLayout = () => {
 };
 
 export default MainLayout;
-

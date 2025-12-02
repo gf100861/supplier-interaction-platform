@@ -5,7 +5,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 // Import all contexts
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
-
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext'; // 1. 引入 LanguageContext
 import { NoticeProvider } from './contexts/NoticeContext';
 import { SupplierProvider } from './contexts/SupplierContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -35,10 +35,11 @@ import { FileSender } from './Pages/OfflineSharePage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
+    const { antdLocale } = useLanguage(); // 2. 获取当前语言包
 
     return (
         <AntdConfigProvider
-            locale={zhCN}
+              locale={antdLocale}
             theme={{
                 algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
             }}
@@ -96,7 +97,9 @@ const ThemedApp = () => {
 function App() {
     return (
         <ThemeProvider>
-            <ThemedApp />
+                <LanguageProvider>
+                <ThemedApp />
+            </LanguageProvider>
         </ThemeProvider>
     );
 }

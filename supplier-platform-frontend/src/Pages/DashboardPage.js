@@ -7,7 +7,8 @@ import { useNotices } from '../contexts/NoticeContext';
 import { supabase } from '../supabaseClient';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotification } from '../contexts/NotificationContext';
-
+// 1. 引入 useLanguage
+import { useLanguage } from '../contexts/LanguageContext';
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 
@@ -25,52 +26,53 @@ const getPlanIcon = (type) => {
 
 // --- 2. 提取 PlanItem 为独立组件 (修复 Bug 的关键) ---
 // 这个组件现在拥有自己的状态，不会因为父组件渲染而被销毁
+// --- 核心修复 2: PlanItem 支持跨年移动 ---
 const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
-    // 每个计划项维护自己的“目标月份”状态
-    const [targetMonth, setTargetMonth] = useState(null);
+    const [targetDateStr, setTargetDateStr] = useState(null); // 格式 "YYYY-MM"
 
-    // 确认推迟
     const handleConfirmReschedule = () => {
-        if (targetMonth) {
-            onReschedule(plan, targetMonth);
-            setTargetMonth(null); // 重置选择
+        if (targetDateStr) {
+            const [year, month] = targetDateStr.split('-').map(Number);
+            onReschedule(plan, month, year); // 传递新的年份
+            setTargetDateStr(null);
         }
     };
 
+    // 生成未来 12 个月的选项
+    const monthOptions = useMemo(() => {
+        const options = [];
+        let current = dayjs().startOf('month');
+        for (let i = 0; i < 12; i++) {
+            const val = current.add(i, 'month');
+            const year = val.year();
+            const month = val.month() + 1;
+            const label = `${year}年${month}月`;
+            const value = `${year}-${month}`;
+            // 禁用当前计划所在的月份
+            const disabled = plan.year === year && plan.planned_month === month;
+            options.push({ label, value, disabled });
+        }
+        return options;
+    }, [plan.year, plan.planned_month]);
+
     const rescheduleTitle = (
-        <div style={{ width: 150 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ width: 180 }} onClick={(e) => e.stopPropagation()}>
             <Text>移动到:</Text>
             <Select
                 placeholder="选择月份"
                 style={{ width: '100%', marginTop: 8 }}
-                value={targetMonth}
-                onChange={(value) => setTargetMonth(value)}
-                // 这里的点击阻止冒泡很重要，防止 Select 点击导致 Popconfirm 关闭
+                value={targetDateStr}
+                onChange={(value) => setTargetDateStr(value)}
                 onClick={(e) => e.stopPropagation()}
-                getPopupContainer={(triggerNode) => triggerNode.parentNode} // 帮助 Select 在 Popconfirm 中正确定位
-            >
-                {months.map((m, i) => (
-                    <Option key={i + 1} value={i + 1} disabled={plan.planned_month === (i + 1)}>
-                        {m}
-                    </Option>
-                ))}
-            </Select>
+                getPopupContainer={(triggerNode) => triggerNode.parentNode}
+                options={monthOptions}
+            />
         </div>
     );
 
     const itemContent = (
-        <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            padding: '4px 8px',
-            border: '1px solid #f0f0f0',
-            borderRadius: '4px',
-            marginBottom: '4px',
-            backgroundColor: '#fff'
-        }}>
-            <Space>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '4px 8px', border: '1px solid #f0f0f0', borderRadius: '4px', marginBottom: '4px', backgroundColor: '#fff' }}>
+             <Space>
                 {getPlanIcon(plan.type)}
                 <div>
                     <Text strong style={{ fontSize: '12px', display: 'block' }} ellipsis={{ tooltip: plan.supplier_name }}>
@@ -82,71 +84,45 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
                 </div>
             </Space>
             <Space size={0}>
-                <Tooltip title="查找相关通知单">
-                    <Button
-                        type="text"
-                        size="small"
-                        icon={<FileTextOutlined />}
-                        style={{ color: '#595959' }}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onNavigate(plan);
-                        }}
-                    />
+                 <Tooltip title="查找相关通知单">
+                    <Button type="text" size="small" icon={<FileTextOutlined />} style={{ color: '#595959' }} onClick={(e) => { e.stopPropagation(); onNavigate(plan); }} />
                 </Tooltip>
-
                 <Tooltip title="调整计划月份">
                     <Popconfirm
                         title={rescheduleTitle}
                         onConfirm={handleConfirmReschedule}
-                        onCancel={() => setTargetMonth(null)}
+                        onCancel={() => setTargetDateStr(null)}
                         okText="移动"
                         cancelText="取消"
                         disabled={plan.status === 'completed'}
                     >
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<CalendarOutlined />}
-                            style={{ color: '#1890ff' }}
-                            disabled={plan.status === 'completed'}
-                        />
+                        <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={plan.status === 'completed'} />
                     </Popconfirm>
                 </Tooltip>
-
                 <Tooltip title="标记完成/待办">
-                    <Popconfirm
-                        title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`}
-                        onConfirm={() => onMarkComplete(plan.id, plan.status)}
-                    >
+                    <Popconfirm title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`} onConfirm={() => onMarkComplete(plan.id, plan.status)}>
                         <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{ color: 'grey' }} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
                     </Popconfirm>
                 </Tooltip>
-                <Tooltip title="删除计划">
-                    <Popconfirm
-                        title="确定删除此计划吗?"
-                        onConfirm={() => onDelete(plan.id)}
-                    >
-                        <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                </Tooltip>
+                 <Popconfirm title="确定删除?" onConfirm={() => onDelete(plan.id)}>
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
             </Space>
         </div>
     );
 
     if (plan.comment && plan.comment.trim()) {
-        return (
-            <Tooltip title={<><b>备注:</b> {plan.comment}</>} placement="topLeft">
-                {itemContent}
-            </Tooltip>
-        );
+        return <Tooltip title={<><b>备注:</b> {plan.comment}</>} placement="topLeft">{itemContent}</Tooltip>;
     }
     return itemContent;
 };
 
 
+
 const DashboardPage = () => {
     const navigate = useNavigate();
+    // 2. 获取 t 函数和当前语言
+    const { t, language } = useLanguage();
     const { notices, loading: noticesLoading } = useNotices();
     const [allUsers, setAllUsers] = useState([]);
     const [usersLoading, setUsersLoading] = useState(true);
@@ -229,45 +205,42 @@ const DashboardPage = () => {
 
     // --- 3. 修改 handleReschedule ---
     // 现在它接收 item 和 newMonth 两个参数
-    const handleReschedule = async (item, newMonth) => {
-        if (!newMonth) {
-            messageApi.error("请选择一个新的月份！");
-            return;
-        }
-        if (newMonth === item.planned_month) {
-            return;
-        }
-
-        const oldMonth = item.planned_month;
-        const key = `reschedule-${item.id}`;
-
-        // 乐观更新 UI
-        setAllPendingPlans(prevPlans =>
-            prevPlans.map(p =>
-                p.id === item.id ? { ...p, planned_month: newMonth } : p
-            )
-        );
-        messageApi.loading({ content: '正在移动计划...', key });
-
-        try {
-            const { error } = await supabase
-                .from('audit_plans')
-                .update({ planned_month: newMonth })
-                .eq('id', item.id);
-
-            if (error) throw error;
-            messageApi.success({ content: `计划已成功移动到 ${newMonth}月！`, key });
-        } catch (error) {
-            messageApi.error({ content: `计划调整失败: ${error.message}`, key });
-            // 失败回滚
-            setAllPendingPlans(prevPlans =>
-                prevPlans.map(p =>
-                    p.id === item.id ? { ...p, planned_month: oldMonth } : p
-                )
-            );
-        }
-    };
-
+     const handleReschedule = async (item, newMonth, newYear) => {
+          if (!newMonth || !newYear) {
+              messageApi.error("请选择一个新的月份！");
+              return;
+          }
+          if (newMonth === item.planned_month && newYear === item.year) return;
+  
+          const oldMonth = item.planned_month;
+          const oldYear = item.year;
+          const key = `reschedule-${item.id}`;
+  
+          // 乐观更新 UI
+          setAllPendingPlans(prevPlans =>
+              prevPlans.map(p =>
+                  p.id === item.id ? { ...p, planned_month: newMonth, year: newYear } : p
+              )
+          );
+          messageApi.loading({ content: '正在移动计划...', key });
+  
+          try {
+              const { error } = await supabase
+                  .from('audit_plans')
+                  .update({ planned_month: newMonth, year: newYear }) // 更新年份
+                  .eq('id', item.id);
+  
+              if (error) throw error;
+              messageApi.success({ content: `计划已成功移动到 ${newYear}年${newMonth}月！`, key });
+          } catch (error) {
+              messageApi.error({ content: `计划调整失败: ${error.message}`, key });
+              setAllPendingPlans(prevPlans =>
+                  prevPlans.map(p =>
+                      p.id === item.id ? { ...p, planned_month: oldMonth, year: oldYear } : p
+                  )
+              );
+          }
+      };
 
     // Fetch all users
     useEffect(() => {
@@ -316,14 +289,15 @@ const DashboardPage = () => {
             return;
         }
 
-        const fetchAllPendingPlans = async () => {
+const fetchAllPendingPlans = async () => {
             setAllPlansLoading(true);
             try {
-                const targetYear = dayjs().year();
+                // 修改查询逻辑：获取今年及以后的所有未完成计划，不再限制仅今年
+                const currentYear = dayjs().year();
                 let query = supabase
                     .from('audit_plans')
                     .select('*')
-                    .eq('year', targetYear)
+                    .gte('year', currentYear) // 获取今年及未来的
                     .neq('status', 'completed');
 
                 const { data, error } = await query;
@@ -341,12 +315,10 @@ const DashboardPage = () => {
                     setAllPendingPlans(data || []);
                 }
             } catch (error) {
-                console.error("获取所有年度计划失败:", error);
+                console.error("获取计划失败:", error);
                 setAllPendingPlans([]);
             } finally {
-                if (currentUser.role !== 'SD' || !suppliersLoading) {
-                    setAllPlansLoading(false);
-                }
+                if (currentUser.role !== 'SD' || !suppliersLoading) setAllPlansLoading(false);
             }
         };
 
@@ -367,58 +339,54 @@ const DashboardPage = () => {
     }, [allUsers]);
 
     // --- planStatistics ---
-    const planStatistics = useMemo(() => {
-        const now = dayjs();
-        const currentMonth = now.month() + 1; // 1-12
-        const nextMonth = now.add(1, 'month').month() + 1;
-
-        let overduePastPlansCount = 0;
-        let pendingCurrentMonthPlansCount = 0;
-
-        const currentAndPastPlansList = [];
-        const pendingNextMonthPlansList = [];
-
-        allPendingPlans.forEach(plan => {
-            const supplier = suppliers.find(s => s.id === plan.supplier_id);
-            const enrichedPlan = {
-                ...plan,
-                supplier_display_name: supplier?.short_code || plan.supplier_name
-            };
-
-            if (enrichedPlan.planned_month < currentMonth) {
-                overduePastPlansCount++;
-                currentAndPastPlansList.push(enrichedPlan); // 左侧
-            }
-            else if (enrichedPlan.planned_month === currentMonth) {
-                pendingCurrentMonthPlansCount++;
-                currentAndPastPlansList.push(enrichedPlan); // 左侧
-            }
-            else if (enrichedPlan.planned_month === nextMonth) {
-                pendingNextMonthPlansList.push(enrichedPlan); // 右侧
-            }
-        });
-
-        const filterPlans = (plan) => {
-            if (selectedPlanCategory !== 'all' && plan.category !== selectedPlanCategory) {
-                return false;
-            }
-            if (selectedPlanSupplier !== 'all' && plan.supplier_id !== selectedPlanSupplier) {
-                return false;
-            }
-            return true;
-        };
-
-        const filteredCurrentAndPastPlansForList = currentAndPastPlansList.filter(filterPlans);
-        const filteredNextMonthPlansForList = pendingNextMonthPlansList.filter(filterPlans);
-
-        return {
-            overduePastPlans: overduePastPlansCount,
-            pendingCurrentMonthPlans: pendingCurrentMonthPlansCount,
-            pendingNextMonthPlans: pendingNextMonthPlansList.length,
-            filteredCurrentAndPastPlansForList,
-            filteredNextMonthPlansForList
-        };
-    }, [allPendingPlans, selectedPlanCategory, selectedPlanSupplier, suppliers]);
+   const planStatistics = useMemo(() => {
+          const now = dayjs();
+          const currentMonthStart = now.startOf('month');
+          const nextMonthStart = now.add(1, 'month').startOf('month');
+          
+          let overduePastPlansCount = 0;
+          let pendingCurrentMonthPlansCount = 0;
+  
+          const currentAndPastPlansList = [];
+          const pendingNextMonthPlansList = [];
+  
+          allPendingPlans.forEach(plan => {
+              const supplier = suppliers.find(s => s.id === plan.supplier_id);
+              const enrichedPlan = {
+                  ...plan,
+                  supplier_display_name: supplier?.short_code || plan.supplier_name
+              };
+  
+              // 构建计划的日期对象进行比较
+              const planDate = dayjs(`${plan.year}-${plan.planned_month}-01`);
+  
+              if (planDate.isBefore(currentMonthStart)) {
+                  overduePastPlansCount++;
+                  currentAndPastPlansList.push(enrichedPlan);
+              }
+              else if (planDate.isSame(currentMonthStart, 'month')) {
+                  pendingCurrentMonthPlansCount++;
+                  currentAndPastPlansList.push(enrichedPlan);
+              }
+              else if (planDate.isSame(nextMonthStart, 'month')) {
+                  pendingNextMonthPlansList.push(enrichedPlan);
+              }
+          });
+  
+          const filterPlans = (plan) => {
+              if (selectedPlanCategory !== 'all' && plan.category !== selectedPlanCategory) return false;
+              if (selectedPlanSupplier !== 'all' && plan.supplier_id !== selectedPlanSupplier) return false;
+              return true;
+          };
+  
+          return {
+              overduePastPlans: overduePastPlansCount,
+              pendingCurrentMonthPlans: pendingCurrentMonthPlansCount,
+              pendingNextMonthPlans: pendingNextMonthPlansList.length,
+              filteredCurrentAndPastPlansForList: currentAndPastPlansList.filter(filterPlans),
+              filteredNextMonthPlansForList: pendingNextMonthPlansList.filter(filterPlans)
+          };
+      }, [allPendingPlans, selectedPlanCategory, selectedPlanSupplier, suppliers]);
 
 
     const dashboardData = useMemo(() => {
@@ -521,30 +489,35 @@ const DashboardPage = () => {
 
     const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
 
+       const nextMonthNum = dayjs().add(1, 'month').format('M');
+        // 如果您在字典中使用了 {month} 占位符，这里传递对象
+
+        console.log('下月显示',nextMonthNum)
+        const nextMonthTitle = t('dashboard.list.nextMonthPending');
+
     // --- 5. 定义 Tour 步骤 ---
-    const tourSteps = [
+  const tourSteps = [
         {
-            title: '核心指标',
-            description: '这里展示了当前月份及历史累计的关键业务指标，包括已关闭通知单、未关闭通知单及计划完成情况。',
+            title: t('tour.step1.title'),
+            description: t('tour.step1.desc'),
             target: () => refCoreMetrics.current,
         },
         ...(isSDManagerOrAdmin ? [{
-            title: '月度计划概览',
-            description: 'SD 和 经理可以在此处查看和管理月度审计、QRM会议等计划的执行进度。',
+            title: t('tour.step2.title'),
+            description: t('tour.step2.desc'),
             target: () => refMonthlyPlan.current,
         }] : []),
         {
-            title: '行动预警',
-            description: '系统会自动筛选出近30天内未处理的紧急事项，点击“去处理”可快速跳转并筛选出对应供应商的通知单。',
+            title: t('tour.step3.title'),
+            description: t('tour.step3.desc'),
             target: () => refWarnings.current,
         },
         {
-            title: '亮点展示',
-            description: '展示近期获得点赞最多的优秀整改案例，供大家学习参考。',
+            title: t('tour.step4.title'),
+            description: t('tour.step4.desc'),
             target: () => refHighlights.current,
         },
     ];
-
     const pageIsLoading = noticesLoading || usersLoading || suppliersLoading || allPlansLoading;
 
     if (pageIsLoading && !dashboardData) {
@@ -642,210 +615,210 @@ const DashboardPage = () => {
         filteredNextMonthPlansForList
     } = planStatistics;
 
+     // 辅助：获取下个月的月份名称（英文模式显示英文月份名，中文显示数字）
+        const nextMonthLabel = language === 'en' 
+            ? dayjs().add(1, 'month').format('MMMM') 
+            : dayjs().add(1, 'month').format('M');
 
-    return (
-        <div>
-            <Card style={{ marginBottom: 24 }} bordered={false}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                        <Title level={4} style={{ margin: 0 }}>运营仪表盘</Title>
-                        <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>监控关键绩效指标 (KPI) 与行动预警。</Paragraph>
-                    </div>
-                     {/* 6. 添加 Tour 触发按钮 */}
-                    <Button icon={<QuestionCircleOutlined />} onClick={() => setOpenTour(true)}>功能引导</Button>
-                </div>
-            </Card>
-
-            <Row gutter={[24, 24]} align="stretch">
-                <Col xs={24} md={isSDManagerOrAdmin ? 12 : 24} lg={12}>
-                    <div ref={refCoreMetrics} style={{ height: '100%' }}>
-                        <Card bordered={false} loading={pageIsLoading || allPlansLoading} style={{ height: '100%' }} title="核心指标 (通知单 & 计划)">
-                            <Row gutter={[16, 24]}>
-                                <Col xs={12} sm={12}>
-                                    <Statistic title="本月已关闭 (通知)" value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
-                                </Col>
-                                <Col xs={12} sm={12}>
-                                    <Statistic title="所有未关闭 (通知)" value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
-                                </Col>
-                                <Col xs={12} sm={12}>
-                                    <Statistic title="过往未完成 (计划)" value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} />
-                                </Col>
-                                <Col xs={12} sm={12}>
-                                    <Statistic title="本月待办 (计划)" value={pendingCurrentMonthPlans} valueStyle={{ color: '#faad14' }} prefix={<ScheduleOutlined />} />
-                                </Col>
-                            </Row>
-                        </Card>
-                    </div>
-                </Col>
-
-                {isSDManagerOrAdmin && (
-                    <Col xs={24} md={12} lg={12}>
-                        <div ref={refMonthlyPlan} style={{ height: '100%' }}>
-                            <Card
-                                title="月度计划概览"
-                                bordered={false}
-                                loading={allPlansLoading || categoriesLoading}
-                                style={{ height: '100%' }}
-                                extra={
-                                    <Space wrap>
-                                        <Select
-                                            size="small"
-                                            style={{ width: 120 }}
-                                            placeholder="按供应商"
-                                            value={selectedPlanSupplier}
-                                            onChange={setSelectedPlanSupplier}
-                                            options={[
-                                                { value: 'all', label: '所有供应商' },
-                                                ...managedSuppliers.map(s => ({ value: s.id, label: s.short_code }))
-                                            ]}
-                                        />
-                                        <Select
-                                            size="small"
-                                            style={{ width: 120 }}
-                                            placeholder="按类型"
-                                            value={selectedPlanCategory}
-                                            onChange={setSelectedPlanCategory}
-                                            options={[
-                                                { value: 'all', label: '所有类型' },
-                                                ...planCategories.map(c => ({ value: c.name, label: c.name }))
-                                            ]}
-                                        />
-                                    </Space>
-                                }
-                            >
-                                <Row gutter={16}>
-                                    <Col span={12}>
-                                        <Title level={5} style={{ marginTop: 0 }}>
-                                            当月及过往待办 ({filteredCurrentAndPastPlansForList.length})
-                                        </Title>
-                                        <div>
-                                            {filteredCurrentAndPastPlansForList.length > 0 ? (
-                                                <List
-                                                    itemLayout="horizontal"
-                                                    dataSource={filteredCurrentAndPastPlansForList}
-                                                    // 传递 PlanItem 需要的回调
-                                                    renderItem={(plan) => (
-                                                        <PlanItem
-                                                            plan={plan}
-                                                            onMarkComplete={handleMarkAsComplete}
-                                                            onDelete={handleDeleteEvent}
-                                                            onNavigate={handleNavigateToNotices}
-                                                            onReschedule={handleReschedule}
-                                                        />
-                                                    )}
-                                                    pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
-                                                />
-                                            ) : (
-                                                <Empty description="暂无积压计划。" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
-                                            )}
-                                        </div>
-                                    </Col>
-                                    <Col span={12}>
-                                        <Title level={5} style={{ marginTop: 0 }}>
-                                            {dayjs().add(1, 'month').format('M')}月待办 ({filteredNextMonthPlansForList.length})
-                                        </Title>
-                                        <div>
-                                            {filteredNextMonthPlansForList.length > 0 ? (
-                                                <List
-                                                    itemLayout="horizontal"
-                                                    dataSource={filteredNextMonthPlansForList}
-                                                    renderItem={(plan) => (
-                                                        <PlanItem
-                                                            plan={plan}
-                                                            onMarkComplete={handleMarkAsComplete}
-                                                            onDelete={handleDeleteEvent}
-                                                            onNavigate={handleNavigateToNotices}
-                                                            onReschedule={handleReschedule}
-                                                        />
-                                                    )}
-                                                    pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
-                                                />
-                                            ) : (
-                                                <Empty description="下月暂无计划。" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
-                                            )}
-                                        </div>
-                                    </Col>
-                                </Row>
-                            </Card>
-                        </div>
-                    </Col>
-                )}
-            </Row>
-
-            <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
-                <Col xs={24} lg={12}>
-                    <div ref={refWarnings} style={{ height: '100%' }}>
-                        <Card title="行动预警：近30天待处理 (通知单)" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
-                            <List
-                                itemLayout="horizontal"
-                                dataSource={supplierActionRequired}
-                                renderItem={(item) => (
-                                    <List.Item>
-                                        <List.Item.Meta
-                                            avatar={<Avatar style={{ backgroundColor: '#ff4d4f' }} icon={<UserOutlined />} />}
-                                            title={<Text strong>{item.name}</Text>}
-                                            description={`${item.count} 项待处理`}
-                                        />
-                                        <Button
-                                            type="link"
-                                            // --- 核心修改：将 key 改为 preSelectedSupplierId 以保持一致性 ---
-                                            onClick={() => navigate('/notices', { state: { preSelectedSupplierId: item.id } })}
-                                        >
-                                            去处理
-                                        </Button>
-                                    </List.Item>
-                                )}
-                                locale={{ emptyText: <Empty description="太棒了！近30天内没有积压任务。" /> }}
-                            />
-                        </Card>
-                    </div>
-                </Col>
-                <Col xs={24} lg={12}>
-                    <div ref={refHighlights} style={{ height: '100%' }}>
-                        <Card title="亮点展示：近期最受欢迎改善 (通知单)" bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
-                            {topImprovement ? (
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                        <Space wrap size="small">
-                                            <Tag color="gold">来自: {topImprovement.supplier?.short_code || '未知'}</Tag>
-                                            {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
-                                            {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
-                                        </Space>
-                                        <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>
-                                            查看详情
-                                        </Button>
-                                    </div>
-                                    <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
-                                    <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
-                                        {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || '无详细描述'}
-                                    </Paragraph>
-                                    <Divider style={{ margin: '12px 0' }} />
-                                    <Space align="center">
-                                        <StarOutlined style={{ color: '#ffc53d' }} />
-                                        <Text strong>{topImprovement.likes?.length || 0} 个赞</Text>
-                                        <Avatar.Group maxCount={5} size="small" style={{ marginLeft: 8 }}>
-                                            {(topImprovement.likes || []).map(userId => (
-                                                <Tooltip key={userId} title={userLookup[userId]?.username || '未知用户'}>
-                                                    <Avatar style={{ backgroundColor: '#1890ff' }}>
-                                                        {userLookup[userId]?.username?.[0]?.toUpperCase() || '?'}
-                                                    </Avatar>
-                                                </Tooltip>
-                                            ))}
-                                        </Avatar.Group>
-                                    </Space>
-                                </div>
-                            ) : (
-                                <Empty description="近期暂无获得点赞的改善案例。" />
-                            )}
-                        </Card>
-                    </div>
-                </Col>
-            </Row>
-
-            {/* 7. 渲染 Tour 组件 */}
-            <Tour open={openTour} onClose={() => setOpenTour(false)} steps={tourSteps} />
-        </div>
-    );
+  return (
+         <div>
+             <Card style={{ marginBottom: 24 }} bordered={false}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div>
+                         <Title level={4} style={{ margin: 0 }}>{t('dashboard.opsDashboard')}</Title>
+                         <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>{t('dashboard.opsDashboardDesc')}</Paragraph>
+                     </div>
+                     <Button icon={<QuestionCircleOutlined />} onClick={() => setOpenTour(true)}>{t('dashboard.tourButton')}</Button>
+                 </div>
+             </Card>
+ 
+             <Row gutter={[24, 24]} align="stretch">
+                 <Col xs={24} md={isSDManagerOrAdmin ? 12 : 24} lg={12}>
+                     <div ref={refCoreMetrics} style={{ height: '100%' }}>
+                         <Card bordered={false} loading={pageIsLoading || allPlansLoading} style={{ height: '100%' }} title={t('dashboard.coreMetrics')}>
+                             <Row gutter={[16, 24]}>
+                                 <Col xs={12} sm={12}>
+                                     <Statistic title={t('dashboard.stat.closedMonth')} value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
+                                 </Col>
+                                 <Col xs={12} sm={12}>
+                                     <Statistic title={t('dashboard.stat.allOpen')} value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} />
+                                 </Col>
+                                 <Col xs={12} sm={12}>
+                                     <Statistic title={t('dashboard.stat.planOverdue')} value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} />
+                                 </Col>
+                                 <Col xs={12} sm={12}>
+                                     <Statistic title={t('dashboard.stat.planPending')} value={pendingCurrentMonthPlans} valueStyle={{ color: '#faad14' }} prefix={<ScheduleOutlined />} />
+                                 </Col>
+                             </Row>
+                         </Card>
+                     </div>
+                 </Col>
+ 
+                 {isSDManagerOrAdmin && (
+                     <Col xs={24} md={12} lg={12}>
+                         <div ref={refMonthlyPlan} style={{ height: '100%' }}>
+                             <Card
+                                 title={t('dashboard.monthlyPlan')}
+                                 bordered={false}
+                                 loading={allPlansLoading || categoriesLoading}
+                                 style={{ height: '100%' }}
+                                 extra={
+                                     <Space wrap>
+                                         <Select
+                                             size="small"
+                                             style={{ width: 120 }}
+                                             placeholder={t('dashboard.filter.bySupplier')}
+                                             value={selectedPlanSupplier}
+                                             onChange={setSelectedPlanSupplier}
+                                             options={[
+                                                 { value: 'all', label: t('dashboard.filter.allSuppliers') },
+                                                 ...managedSuppliers.map(s => ({ value: s.id, label: s.short_code }))
+                                             ]}
+                                         />
+                                         <Select
+                                             size="small"
+                                             style={{ width: 120 }}
+                                             placeholder={t('dashboard.filter.byType')}
+                                             value={selectedPlanCategory}
+                                             onChange={setSelectedPlanCategory}
+                                             options={[
+                                                 { value: 'all', label: t('dashboard.filter.allTypes') },
+                                                 ...planCategories.map(c => ({ value: c.name, label: c.name }))
+                                             ]}
+                                         />
+                                     </Space>
+                                 }
+                             >
+                                 <Row gutter={16}>
+                                     <Col span={12}>
+                                         <Title level={5} style={{ marginTop: 0 }}>
+                                             {t('dashboard.list.pastPending')} ({filteredCurrentAndPastPlansForList.length})
+                                         </Title>
+                                         <div>
+                                             {filteredCurrentAndPastPlansForList.length > 0 ? (
+                                                 <List
+                                                     itemLayout="horizontal"
+                                                     dataSource={filteredCurrentAndPastPlansForList}
+                                                     renderItem={(plan) => (
+                                                         <PlanItem
+                                                             plan={plan}
+                                                             onMarkComplete={handleMarkAsComplete}
+                                                             onDelete={handleDeleteEvent}
+                                                             onNavigate={handleNavigateToNotices}
+                                                             onReschedule={handleReschedule}
+                                                         />
+                                                     )}
+                                                     pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
+                                                 />
+                                             ) : (
+                                                 <Empty description={t('dashboard.list.noBacklog')} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
+                                             )}
+                                         </div>
+                                     </Col>
+                                     <Col span={12}>
+                                         <Title level={5} style={{ marginTop: 0 }}>
+                                            {nextMonthTitle}({filteredNextMonthPlansForList.length})
+                                         </Title>
+                                         <div>
+                                             {filteredNextMonthPlansForList.length > 0 ? (
+                                                 <List
+                                                     itemLayout="horizontal"
+                                                     dataSource={filteredNextMonthPlansForList}
+                                                     renderItem={(plan) => (
+                                                         <PlanItem
+                                                             plan={plan}
+                                                             onMarkComplete={handleMarkAsComplete}
+                                                             onDelete={handleDeleteEvent}
+                                                             onNavigate={handleNavigateToNotices}
+                                                             onReschedule={handleReschedule}
+                                                         />
+                                                     )}
+                                                     pagination={{ pageSize: 3, size: 'small', showLessItems: true }}
+                                                 />
+                                             ) : (
+                                                 <Empty description={t('dashboard.list.noNextMonth')} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
+                                             )}
+                                         </div>
+                                     </Col>
+                                 </Row>
+                             </Card>
+                         </div>
+                     </Col>
+                 )}
+             </Row>
+ 
+             <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
+                 <Col xs={24} lg={12}>
+                     <div ref={refWarnings} style={{ height: '100%' }}>
+                         <Card title={t('dashboard.actionAlert')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                             <List
+                                 itemLayout="horizontal"
+                                 dataSource={supplierActionRequired}
+                                 renderItem={(item) => (
+                                     <List.Item>
+                                         <List.Item.Meta
+                                             avatar={<Avatar style={{ backgroundColor: '#ff4d4f' }} icon={<UserOutlined />} />}
+                                             title={<Text strong>{item.name}</Text>}
+                                             description={`${item.count} ${t('dashboard.list.itemsPending')}`}
+                                         />
+                                         <Button
+                                             type="link"
+                                             onClick={() => navigate('/notices', { state: { preSelectedSupplierId: item.id } })}
+                                         >
+                                             {t('dashboard.action.process')}
+                                         </Button>
+                                     </List.Item>
+                                 )}
+                                 locale={{ emptyText: <Empty description={t('dashboard.empty.noAlerts')} /> }}
+                             />
+                         </Card>
+                     </div>
+                 </Col>
+                 <Col xs={24} lg={12}>
+                     <div ref={refHighlights} style={{ height: '100%' }}>
+                         <Card title={t('dashboard.highlights')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                             {topImprovement ? (
+                                 <div>
+                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                         <Space wrap size="small">
+                                             <Tag color="gold">{t('dashboard.tag.from')}: {topImprovement.supplier?.short_code || '?'}</Tag>
+                                             {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
+                                             {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
+                                         </Space>
+                                         <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>
+                                             {t('dashboard.action.viewDetails')}
+                                         </Button>
+                                     </div>
+                                     <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
+                                     <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
+                                         {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || t('dashboard.desc.noDetails')}
+                                     </Paragraph>
+                                     <Divider style={{ margin: '12px 0' }} />
+                                     <Space align="center">
+                                         <StarOutlined style={{ color: '#ffc53d' }} />
+                                         <Text strong>{topImprovement.likes?.length || 0} {t('dashboard.text.likes')}</Text>
+                                         <Avatar.Group maxCount={5} size="small" style={{ marginLeft: 8 }}>
+                                             {(topImprovement.likes || []).map(userId => (
+                                                 <Tooltip key={userId} title={userLookup[userId]?.username || '?'}>
+                                                     <Avatar style={{ backgroundColor: '#1890ff' }}>
+                                                         {userLookup[userId]?.username?.[0]?.toUpperCase() || '?'}
+                                                     </Avatar>
+                                                 </Tooltip>
+                                             ))}
+                                         </Avatar.Group>
+                                     </Space>
+                                 </div>
+                             ) : (
+                                 <Empty description={t('dashboard.empty.noLikes')} />
+                             )}
+                         </Card>
+                     </div>
+                 </Col>
+             </Row>
+ 
+             <Tour open={openTour} onClose={() => setOpenTour(false)} steps={tourSteps} />
+         </div>
+     );
 };
 
 export default DashboardPage;
