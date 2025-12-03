@@ -1,515 +1,1038 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm, Tour } from 'antd';
-import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, FileTextOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import { useNavigate } from 'react-router-dom';
-import { useNotices } from '../contexts/NoticeContext';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+    Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider, DatePicker, Tooltip, theme // 1. 引入 DatePicker
+} from 'antd';
+import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
-import { useSuppliers } from '../contexts/SupplierContext';
+import dayjs from 'dayjs';
+
+// 2. 导入所有需要的组件、Hooks 和数据
+import { NoticeList } from '../Components/notice/NoticeList';
+import { RejectionModal } from '../Components/notice/RejectionModal';
+import { CorrectionModal } from '../Components/notice/CorrectionModal';
+import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
+
+//导入所有需要的所有的Context
 import { useNotification } from '../contexts/NotificationContext';
-import { useLanguage } from '../contexts/LanguageContext';
+import { useSuppliers } from '../contexts/SupplierContext'; // 3. 导入 useSuppliers
+import { useNotices } from '../contexts/NoticeContext';
+import { useConfig } from '../contexts/ConfigContext';
+
 
 const { Title, Paragraph, Text } = Typography;
-const { Option } = Select;
-
-const getPlanIcon = (type) => {
-    switch (type) {
-        case 'audit': return <AuditOutlined style={{ color: '#1890ff' }} />;
-        case 'qrm': return <TeamOutlined style={{ color: '#faad14' }} />;
-        case 'quality_review': return <ReconciliationOutlined style={{ color: '#52c41a' }} />;
-        default: return <CalendarOutlined />;
-    }
-};
-
-// --- 核心修复 2: PlanItem 支持跨年移动 ---
-const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
-    const [targetDateStr, setTargetDateStr] = useState(null); // 格式 "YYYY-MM"
-
-    const handleConfirmReschedule = () => {
-        if (targetDateStr) {
-            const [year, month] = targetDateStr.split('-').map(Number);
-            onReschedule(plan, month, year); // 传递新的年份
-            setTargetDateStr(null);
-        }
-    };
-
-    // 生成未来 12 个月的选项
-    const monthOptions = useMemo(() => {
-        const options = [];
-        let current = dayjs().startOf('month');
-        for (let i = 0; i < 12; i++) {
-            const val = current.add(i, 'month');
-            const year = val.year();
-            const month = val.month() + 1;
-            const label = `${year}年${month}月`;
-            const value = `${year}-${month}`;
-            // 禁用当前计划所在的月份
-            const disabled = plan.year === year && plan.planned_month === month;
-            options.push({ label, value, disabled });
-        }
-        return options;
-    }, [plan.year, plan.planned_month]);
-
-    const rescheduleTitle = (
-        <div style={{ width: 180 }} onClick={(e) => e.stopPropagation()}>
-            <Text>移动到:</Text>
-            <Select
-                placeholder="选择月份"
-                style={{ width: '100%', marginTop: 8 }}
-                value={targetDateStr}
-                onChange={(value) => setTargetDateStr(value)}
-                onClick={(e) => e.stopPropagation()}
-                getPopupContainer={(triggerNode) => triggerNode.parentNode}
-                options={monthOptions}
-            />
-        </div>
-    );
-
-    const itemContent = (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '4px 8px', border: '1px solid #f0f0f0', borderRadius: '4px', marginBottom: '4px', backgroundColor: '#fff' }}>
-             <Space>
-                {getPlanIcon(plan.type)}
-                <div>
-                    <Text strong style={{ fontSize: '12px', display: 'block' }} ellipsis={{ tooltip: plan.supplier_name }}>
-                        {plan.supplier_display_name}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: '11px', display: 'block' }} ellipsis={{ tooltip: `[${plan.category}] - ${plan.auditor}` }}>
-                        {`[${plan.category}] - ${plan.auditor}`}
-                    </Text>
-                </div>
-            </Space>
-            <Space size={0}>
-                 <Tooltip title="查找相关通知单">
-                    <Button type="text" size="small" icon={<FileTextOutlined />} style={{ color: '#595959' }} onClick={(e) => { e.stopPropagation(); onNavigate(plan); }} />
-                </Tooltip>
-                <Tooltip title="调整计划月份">
-                    <Popconfirm
-                        title={rescheduleTitle}
-                        onConfirm={handleConfirmReschedule}
-                        onCancel={() => setTargetDateStr(null)}
-                        okText="移动"
-                        cancelText="取消"
-                        disabled={plan.status === 'completed'}
-                    >
-                        <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={plan.status === 'completed'} />
-                    </Popconfirm>
-                </Tooltip>
-                <Tooltip title="标记完成/待办">
-                    <Popconfirm title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`} onConfirm={() => onMarkComplete(plan.id, plan.status)}>
-                        <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{ color: 'grey' }} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
-                    </Popconfirm>
-                </Tooltip>
-                 <Popconfirm title="确定删除?" onConfirm={() => onDelete(plan.id)}>
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
-            </Space>
-        </div>
-    );
-
-    if (plan.comment && plan.comment.trim()) {
-        return <Tooltip title={<><b>备注:</b> {plan.comment}</>} placement="topLeft">{itemContent}</Tooltip>;
-    }
-    return itemContent;
-};
+const { Search } = Input;
+const { TabPane } = Tabs;
+const { RangePicker } = DatePicker; // 4. 解构 RangePicker
 
 
-const DashboardPage = () => {
+const NoticePage = () => {
+    // --- 状态管理 ---
+    const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
+    const { suppliers, loading: suppliersLoading } = useSuppliers(); // 5. 获取 suppliers
+    const { messageApi } = useNotification();
+    const { token } = theme.useToken();
+
+
     const navigate = useNavigate();
-    const { t, language } = useLanguage(); 
-    
-    const { notices, loading: noticesLoading } = useNotices();
+    const location = useLocation();
+
+
+    const allPossibleStatuses = [
+        '待提交Action Plan', '待供应商关闭', '待SD确认actions',
+        '待SD关闭evidence', '已完成', '已作废'
+    ];
+
+    const { noticeCategoryDetails, noticeCategories, loading: configLoading } = useConfig();
+    const [form] = Form.useForm();
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+
+    const [selectedNotice, setSelectedNotice] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCategories, setSelectedCategories] = useState([]);
+    const [activeCollapseKeys, setActiveCollapseKeys] = useState([]);
+    const [rejectionModal, setRejectionModal] = useState({ visible: false, notice: null, handler: null });
+    const [rejectionForm] = Form.useForm();
+    const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
+    const [reassignForm] = Form.useForm();
+    const [selectedStatuses, setSelectedStatuses] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [usersLoading, setUsersLoading] = useState(true);
-    const { suppliers, loading: suppliersLoading } = useSuppliers();
-    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-    const [allPendingPlans, setAllPendingPlans] = useState([]);
-    const [allPlansLoading, setAllPlansLoading] = useState(true);
-    const { messageApi } = useNotification();
-    const [planCategories, setPlanCategories] = useState([]);
-    const [categoriesLoading, setCategoriesLoading] = useState(true);
-    const [selectedPlanCategory, setSelectedPlanCategory] = useState('all');
-    const [selectedPlanSupplier, setSelectedPlanSupplier] = useState('all');
+    const [listSortOrder, setListSortOrder] = useState('desc');
 
-    const refCoreMetrics = useRef(null);
-    const refMonthlyPlan = useRef(null);
-    const refWarnings = useRef(null);
-    const refHighlights = useRef(null);
-    const [openTour, setOpenTour] = useState(false);
+    const [isReassigning, setIsReassigning] = useState(false);
 
-    // ... (managedSuppliers, handleMarkAsComplete, handleDeleteEvent 等函数保持不变)
+    const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
+
+    // --- 6. 为 Supplier 和 DateRange 添加 State ---
+    const [selectedSuppliers, setSelectedSuppliers] = useState([]);
+    const [dateRange, setDateRange] = useState(null);
+
+    //如果需要默认是分组就改成grouped
+    const [viewMode, setViewMode] = useState('flat');
+
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
-        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') return suppliers;
-        if (currentUser.role === 'SD') return (currentUser.managed_suppliers || []).map(a => a.supplier).filter(Boolean);
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
+            return suppliers;
+        }
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier).filter(Boolean);
+        }
         return [];
     }, [currentUser, suppliers]);
 
-    const handleMarkAsComplete = async (id, currentStatus) => {
-        const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
-        const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
-        const { error } = await supabase.from('audit_plans').update({ status: newStatus, completion_date: completionDate }).eq('id', id);
-        if (error) messageApi.error(`更新状态失败: ${error.message}`);
-        else {
-            messageApi.success('状态更新成功！');
-            setAllPendingPlans(prev => prev.filter(p => p.id !== id));
+    // --- 7. (核心) 添加 useEffect 以接收来自 AuditPlanPage 的 state ---
+    useEffect(() => {
+        const passedState = location.state;
+        if (passedState) {
+            // 情况 A: 来自年度计划 (AuditPlanPage)，包含供应商、月份和年份
+            if (passedState.preSelectedSupplierId && passedState.preSelectedMonth && passedState.preSelectedYear) {
+                const { preSelectedSupplierId, preSelectedMonth, preSelectedYear } = passedState;
+
+                // 1. 应用供应商筛选
+                setSelectedSuppliers([preSelectedSupplierId]);
+
+                // 2. 应用月份筛选
+                const targetDate = dayjs(`${preSelectedYear}-${preSelectedMonth}-01`);
+                setDateRange([targetDate.startOf('month'), targetDate.endOf('month')]);
+
+                // 3. 提示用户
+                messageApi.info(`已为您筛选 ${preSelectedYear}年${preSelectedMonth}月 ${suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || ''} 的相关通知单。`);
+
+                // 4. 清除 state
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+            // 情况 B: 来自仪表盘预警 (DashboardPage)，仅包含供应商 ID
+            else if (passedState.preSelectedSupplierId) {
+                const { preSelectedSupplierId } = passedState;
+
+                // 1. 应用供应商筛选
+                setSelectedSuppliers([preSelectedSupplierId]);
+
+                // 2. 提示用户
+                const supplierName = suppliers.find(s => s.id === preSelectedSupplierId)?.short_code || '该供应商';
+                messageApi.info(`已为您筛选 ${supplierName} 的相关通知单。`);
+
+                // 3. 清除 state
+                navigate(location.pathname, { replace: true, state: {} });
+            }
         }
-    };
+    }, [location.state, navigate, messageApi, suppliers]); // 依赖 suppliers 以确保名称能正确显示
 
-    const handleDeleteEvent = async (id) => {
-        const { error } = await supabase.from('audit_plans').delete().eq('id', id);
-        if (error) messageApi.error(`删除失败: ${error.message}`);
-        else {
-            messageApi.success('事件已删除！');
-            setAllPendingPlans(prev => prev.filter(p => p.id !== id));
-        }
-    };
 
-    const handleNavigateToNotices = (plan) => {
-        if (!plan.supplier_id || !plan.planned_month || !plan.year) {
-            messageApi.error("无法跳转，计划信息不完整。");
-            return;
-        }
-        navigate('/notices', { state: { preSelectedSupplierId: plan.supplier_id, preSelectedMonth: plan.planned_month, preSelectedYear: plan.year } });
-    };
-
-    // --- 核心修复 2: 接收年份参数并更新 ---
-    const handleReschedule = async (item, newMonth, newYear) => {
-        if (!newMonth || !newYear) {
-            messageApi.error("请选择一个新的月份！");
-            return;
-        }
-        if (newMonth === item.planned_month && newYear === item.year) return;
-
-        const oldMonth = item.planned_month;
-        const oldYear = item.year;
-        const key = `reschedule-${item.id}`;
-
-        // 乐观更新 UI
-        setAllPendingPlans(prevPlans =>
-            prevPlans.map(p =>
-                p.id === item.id ? { ...p, planned_month: newMonth, year: newYear } : p
-            )
-        );
-        messageApi.loading({ content: '正在移动计划...', key });
-
-        try {
-            const { error } = await supabase
-                .from('audit_plans')
-                .update({ planned_month: newMonth, year: newYear }) // 更新年份
-                .eq('id', item.id);
-
-            if (error) throw error;
-            messageApi.success({ content: `计划已成功移动到 ${newYear}年${newMonth}月！`, key });
-        } catch (error) {
-            messageApi.error({ content: `计划调整失败: ${error.message}`, key });
-            setAllPendingPlans(prevPlans =>
-                prevPlans.map(p =>
-                    p.id === item.id ? { ...p, planned_month: oldMonth, year: oldYear } : p
-                )
-            );
-        }
-    };
-
+    // (获取 allUsers 的 useEffect 保持不变)
     useEffect(() => {
         const fetchUsers = async () => {
-            setUsersLoading(true);
             try {
-                const { data } = await supabase.from('users').select('id, username');
-                setAllUsers(data || []);
-            } catch (e) { console.error(e); } finally { setUsersLoading(false); }
+                const { data, error } = await supabase.from('users').select('id,supplier_id');
+                if (error) throw error;
+                setAllUsers(data);
+            } catch (error) {
+                console.error("获取用户列表失败:", error);
+            } finally {
+                setUsersLoading(false);
+            }
         };
         fetchUsers();
     }, []);
 
+    // (同步 selectedNotice 的 useEffect 保持不变)
     useEffect(() => {
-        const fetchCategories = async () => {
-            setCategoriesLoading(true);
-            try {
-                const { data } = await supabase.from('notice_categories').select('id, name');
-                setPlanCategories(data || []);
-            } catch (e) { console.error(e); } finally { setCategoriesLoading(false); }
-        };
-        fetchCategories();
-    }, []);
-
-    useEffect(() => {
-        if (!currentUser || !['SD', 'Manager', 'Admin'].includes(currentUser.role)) {
-            setAllPlansLoading(false);
-            return;
+        if (selectedNotice && notices.length > 0) {
+            const updatedVersion = notices.find(n => n.id === selectedNotice.id);
+            if (updatedVersion && JSON.stringify(updatedVersion) !== JSON.stringify(selectedNotice)) {
+                setSelectedNotice(updatedVersion);
+            }
         }
-        const fetchAllPendingPlans = async () => {
-            setAllPlansLoading(true);
-            try {
-                // 修改查询逻辑：获取今年及以后的所有未完成计划，不再限制仅今年
-                const currentYear = dayjs().year();
-                let query = supabase
-                    .from('audit_plans')
-                    .select('*')
-                    .gte('year', currentYear) // 获取今年及未来的
-                    .neq('status', 'completed');
+    }, [notices, selectedNotice]);
 
-                const { data, error } = await query;
-                if (error) throw error;
-
-                if (currentUser.role === 'SD') {
-                    if (!suppliersLoading) {
-                        const managedSupplierIds = new Set(managedSuppliers.map(s => s.id));
-                        const filteredData = (data || []).filter(plan => managedSupplierIds.has(plan.supplier_id));
-                        setAllPendingPlans(filteredData);
-                    } else {
-                        setAllPendingPlans([]);
-                    }
-                } else {
-                    setAllPendingPlans(data || []);
-                }
-            } catch (error) {
-                console.error("获取计划失败:", error);
-                setAllPendingPlans([]);
-            } finally {
-                if (currentUser.role !== 'SD' || !suppliersLoading) setAllPlansLoading(false);
+    // (处理 URL ?open= 参数的 useEffect 保持不变)
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const noticeIdToOpen = params.get('open');
+        if (noticeIdToOpen && notices.length > 0) {
+            const noticeToOpen = notices.find(n => n.id === noticeIdToOpen);
+            if (noticeToOpen) {
+                showDetailsModal(noticeToOpen);
+                navigate('/notices', { replace: true });
             }
-        };
-        if (!(currentUser.role === 'SD' && suppliersLoading)) fetchAllPendingPlans();
-    }, [currentUser, suppliers, suppliersLoading, managedSuppliers]);
+        }
+    }, [location.search, notices, navigate]);
 
-    const userLookup = useMemo(() => allUsers.reduce((acc, user) => ({ ...acc, [user.id]: user }), {}), [allUsers]);
 
-    // --- planStatistics 修改：更健壮的日期比较 ---
-    const planStatistics = useMemo(() => {
-        const now = dayjs();
-        const currentMonthStart = now.startOf('month');
-        const nextMonthStart = now.add(1, 'month').startOf('month');
-        
-        let overduePastPlansCount = 0;
-        let pendingCurrentMonthPlansCount = 0;
+    const sortedNoticeCategories = useMemo(() => {
+        if (!noticeCategories || noticeCategories.length === 0) {
+            return [];
+        }
+        const target = "Process Audit"; // 您想要置顶的项
+        // 如果目标项存在于数组中，则将其置顶
+        if (noticeCategories.includes(target)) {
+            return [target, ...noticeCategories.filter(item => item !== target)];
+        }
+        // 如果不存在，则返回原始顺序
+        return noticeCategories;
+    }, [noticeCategories]); // 依赖于从 Context 获取的原始分类列表
 
-        const currentAndPastPlansList = [];
-        const pendingNextMonthPlansList = [];
 
-        allPendingPlans.forEach(plan => {
-            const supplier = suppliers.find(s => s.id === plan.supplier_id);
-            const enrichedPlan = {
-                ...plan,
-                supplier_display_name: supplier?.short_code || plan.supplier_name
-            };
+    // (userVisibleNotices useMemo 保持不变)
+    const userVisibleNotices = useMemo(() => {
+        if (!currentUser || !notices) return [];
+        switch (currentUser.role) {
+            case 'Manager':
+            case 'Admin':
+                return notices;
+            case 'SD':
+                const managedSupplierIds = (currentUser.managed_suppliers || []).map(s => s.supplier.id);
+                return notices.filter(n =>
+                    n.status === '已完成' ||
+                    n.creatorId === currentUser.id ||
+                    managedSupplierIds.includes(n.assignedSupplierId)
+                );
+            case 'Supplier':
+                const supplierCompanyId = currentUser.supplier_id;
+                return notices.filter(n => n.assignedSupplierId === supplierCompanyId);
+            default:
+                return [];
+        }
+    }, [notices, currentUser]);
 
-            // 构建计划的日期对象进行比较
-            const planDate = dayjs(`${plan.year}-${plan.planned_month}-01`);
+    // --- 8. 更新 searchedNotices useMemo 以包含新筛选 ---
+    const searchedNotices = useMemo(() => {
+        let data = userVisibleNotices;
 
-            if (planDate.isBefore(currentMonthStart)) {
-                overduePastPlansCount++;
-                currentAndPastPlansList.push(enrichedPlan);
-            }
-            else if (planDate.isSame(currentMonthStart, 'month')) {
-                pendingCurrentMonthPlansCount++;
-                currentAndPastPlansList.push(enrichedPlan);
-            }
-            else if (planDate.isSame(nextMonthStart, 'month')) {
-                pendingNextMonthPlansList.push(enrichedPlan);
+        // 类别筛选
+        if (selectedCategories && selectedCategories.length > 0) {
+            data = data.filter(n => selectedCategories.includes(n.category));
+        }
+
+        // 状态筛选
+        if (selectedStatuses.length > 0) {
+            data = data.filter(n => selectedStatuses.includes(n.status));
+        }
+
+        // (新增) 供应商筛选
+        if (selectedSuppliers.length > 0) {
+            data = data.filter(n => selectedSuppliers.includes(n.assignedSupplierId));
+        }
+
+        // (新增) 日期范围筛选
+        if (dateRange && dateRange[0] && dateRange[1]) {
+            data = data.filter(n => {
+                const createTime = dayjs(n.sdNotice?.createTime);
+                return createTime.isAfter(dateRange[0].startOf('day')) && createTime.isBefore(dateRange[1].endOf('day'));
+            });
+        }
+
+        // 关键词搜索
+        const keywords = searchTerm.toLowerCase().split(/[；;@,，]/).map(k => k.trim()).filter(Boolean);
+        if (keywords.length > 0) {
+            data = data.filter(notice => {
+                const searchableText = [
+                    notice.title,
+                    notice.sdNotice?.description,
+                    notice.assignedSupplierName,
+                    notice.category,
+                    notice.status,
+                    notice?.noticeCode
+                ].join(' ').toLowerCase();
+                return keywords.some(keyword => searchableText.includes(keyword));
+            });
+        }
+
+        return data;
+    }, [userVisibleNotices, searchTerm, selectedCategories, selectedStatuses, selectedSuppliers, dateRange]); // <-- 添加新依赖
+
+
+    // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
+    // --- 核心修正：在这里实现全新的、智能的分组逻辑 ---
+    const groupedNotices = useMemo(() => {
+        // --- 9. 新增：如果选择的是“打散/列表”模式，直接返回 ---
+        if (viewMode === 'flat') {
+            const flatList = [...searchedNotices];
+            // 对打散列表进行排序
+            flatList.sort((a, b) => {
+                const timeA = dayjs(a.sdNotice?.createTime);
+                const timeB = dayjs(b.sdNotice?.createTime);
+                return listSortOrder === 'asc' ? timeA.diff(timeB) : timeB.diff(timeA);
+            });
+            return flatList;
+        }
+
+        // --- 分组模式逻辑 (保持不变) ---
+        const batchGroups = {}; // 用于存放真正的批量任务
+        const dailyGroups = {}; // 用于存放按“供应商+日期”分组的单个任务
+
+        searchedNotices.forEach(notice => {
+            if (notice.batchId) {
+                if (!batchGroups[notice.batchId]) batchGroups[notice.batchId] = [];
+                batchGroups[notice.batchId].push(notice);
+            } else {
+                const dateKey = dayjs(notice.sdNotice?.createTime).format('YYYY-MM-DD');
+                const dailyGroupKey = `${notice.assignedSupplierId}-${dateKey}`;
+
+                if (!dailyGroups[dailyGroupKey]) dailyGroups[dailyGroupKey] = [];
+                dailyGroups[dailyGroupKey].push(notice);
             }
         });
 
-        const filterPlans = (plan) => {
-            if (selectedPlanCategory !== 'all' && plan.category !== selectedPlanCategory) return false;
-            if (selectedPlanSupplier !== 'all' && plan.supplier_id !== selectedPlanSupplier) return false;
-            return true;
+        const batchItems = Object.values(batchGroups).map(batch => ({
+            isBatch: true,
+            batchId: batch[0].batchId,
+            notices: batch,
+            representative: batch[0]
+        }));
+
+        const dailyItems = [];
+        Object.values(dailyGroups).forEach(group => {
+            if (group.length > 1) {
+                dailyItems.push({
+                    isBatch: true,
+                    batchId: `daily-${group[0].assignedSupplierId}-${dayjs(group[0].sdNotice?.createTime).format('YYYYMMDD')}`,
+                    notices: group,
+                    representative: group[0]
+                });
+            } else {
+                dailyItems.push(group[0]);
+            }
+        });
+
+        const combinedList = [...batchItems, ...dailyItems];
+
+        // 排序逻辑
+        const getSortableDate = (item) => {
+            const dateStr = item.isBatch ? item.representative.sdNotice?.createTime : item.sdNotice?.createTime;
+            return dayjs(dateStr || 0);
         };
 
-        return {
-            overduePastPlans: overduePastPlansCount,
-            pendingCurrentMonthPlans: pendingCurrentMonthPlansCount,
-            pendingNextMonthPlans: pendingNextMonthPlansList.length,
-            filteredCurrentAndPastPlansForList: currentAndPastPlansList.filter(filterPlans),
-            filteredNextMonthPlansForList: pendingNextMonthPlansList.filter(filterPlans)
-        };
-    }, [allPendingPlans, selectedPlanCategory, selectedPlanSupplier, suppliers]);
+        if (listSortOrder === 'asc') {
+            combinedList.sort((a, b) => getSortableDate(a).diff(getSortableDate(b)));
+        } else if (listSortOrder === 'desc') {
+            combinedList.sort((a, b) => getSortableDate(b).diff(getSortableDate(a)));
+        }
 
-    // ... (dashboardData 计算逻辑保持不变)
-    const dashboardData = useMemo(() => {
-        if (noticesLoading || usersLoading || suppliersLoading) return null;
-        let baseData = [];
-        // ... (省略重复代码，与之前一致)
-        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') baseData = notices;
-        else if (currentUser.role === 'SD') {
-             const managedIds = new Set(managedSuppliers.map(s=>s.id));
-             baseData = notices.filter(n => (n.creatorId === currentUser.id || managedIds.has(n.assignedSupplierId)));
-        } else if (currentUser.role === 'Supplier') baseData = notices.filter(n => n.assignedSupplierId === currentUser.supplier_id);
+        return combinedList;
+    }, [searchedNotices, listSortOrder, viewMode]); // <-- 9. 添加 viewMode 依赖
 
-        const now = dayjs();
-        // ... (统计逻辑省略，与之前一致)
-        const closedThisMonth = baseData.filter(n => n.status === '已完成' && dayjs(n.history?.find(h=>h.type==='sd_closure_approve')?.time).isAfter(now.startOf('month'))).length;
-        const allOpenIssues = baseData.filter(n => !['已完成', '已作废'].includes(n.status)).length;
-        const recentPendingIssues = baseData.filter(n => !['已完成', '已作废'].includes(n.status) && dayjs(n.createdAt).isAfter(now.subtract(30, 'day'))).length;
-        const pendingEvidenceNext30Days = baseData.filter(n => n.status === '待供应商关闭' && n.deadline !== 'N/A' && dayjs(n.deadline).isAfter(now) && dayjs(n.deadline).isBefore(now.add(30, 'day'))).length;
-        
-        // ... (Top Improvement 逻辑省略)
-        const topImprovement = notices.filter(n => n.status === '已完成' && n.likes?.length > 0).sort((a,b)=>b.likes.length - a.likes.length)[0];
-        
-        // ... (Action Required 逻辑省略)
-        const pendingForSupplier = baseData.filter(n => !['已完成', '已作废'].includes(n.status) && dayjs(n.createdAt).isAfter(now.subtract(30, 'day')));
-        const supplierActionRequired = Object.entries(pendingForSupplier.reduce((acc, n) => {
-             const name = suppliers.find(s=>s.id===n.assignedSupplierId)?.short_code || n.assignedSupplierName || 'Unknown';
-             if(!acc[name]) acc[name]={count:0, id:n.assignedSupplierId};
-             acc[name].count++;
-             return acc;
-        }, {})).map(([name, d]) => ({name, ...d})).sort((a,b)=>b.count-a.count);
 
-        return { closedThisMonth, allOpenIssues, recentPendingIssues, pendingEvidenceNext30Days, supplierActionRequired, topImprovement };
-    }, [notices, allUsers, suppliers, noticesLoading, usersLoading, suppliersLoading, currentUser, managedSuppliers]);
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const noticeIdToOpen = params.get('open');
+        if (noticeIdToOpen && notices.length > 0) {
+            const noticeToOpen = notices.find(n => n.id === noticeIdToOpen);
+            if (noticeToOpen) {
+                showDetailsModal(noticeToOpen);
+                navigate('/notices', { replace: true });
+            }
+        }
+    }, [location.search, notices, navigate]);
 
-    const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
-    const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
+    // --- 核心修正：新增 useEffect 来实时同步 selectedNotice ---
+    useEffect(() => {
 
-    // --- 核心修复 1: 确保 t 函数参数传递正确 ---
-    // 获取下个月的月份名称用于参数替换
-    // 注意：这里我们使用 dayjs 获取下个月的数字 (1-12)
-    const nextMonthNum = dayjs().add(1, 'month').format('M');
-    // 如果您在字典中使用了 {month} 占位符，这里传递对象
-    const nextMonthTitle = t('dashboard.list.nextMonthPending', { month: nextMonthNum });
 
-    const tourSteps = [
-        { title: t('tour.step1.title'), description: t('tour.step1.desc'), target: () => refCoreMetrics.current },
-        ...(isSDManagerOrAdmin ? [{ title: t('tour.step2.title'), description: t('tour.step2.desc'), target: () => refMonthlyPlan.current }] : []),
-        { title: t('tour.step3.title'), description: t('tour.step3.desc'), target: () => refWarnings.current },
-        { title: t('tour.step4.title'), description: t('tour.step4.desc'), target: () => refHighlights.current },
-    ];
+        if (selectedNotice) {
 
-    const pageIsLoading = noticesLoading || usersLoading || suppliersLoading || allPlansLoading;
+            const updatedVersion = notices.find(n => n.id === selectedNotice.id);
+            if (updatedVersion) {
 
-    if (pageIsLoading && !dashboardData) return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
-    if (!dashboardData) return <div style={{ padding: 24 }}><Empty description="No data" /></div>;
+                // 比较新旧数据，看是否真的有变化
+                if (JSON.stringify(updatedVersion) !== JSON.stringify(selectedNotice)) {
 
-    // ... (Supplier View 省略，保持不变)
-    if (currentUser.role === 'Supplier') {
-         // ...
-         return <div>...</div>
+                    setSelectedNotice(updatedVersion);
+                }
+            }
+        }
+    }, [notices]);
+
+    // --- 弹窗与通用 Handler ---
+    const showDetailsModal = (notice) => {
+        form.resetFields(); // 每次打开都重置表单
+        const history = notice.history || [];
+        const lastHistory = history[history.length - 1];
+
+        console.log('通知单', notice)
+
+        // 逻辑修正：检查 '计划被驳回' 的情况（兼容不同状态文案）
+        if (notice.status === '待提交Action Plan' && lastHistory?.type === 'sd_plan_rejection') {
+            const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission');
+            if (lastSubmission) {
+                form.setFieldsValue({
+                    actionPlans: (lastSubmission.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline) : null })),
+                });
+            }
+        }
+        // 逻辑补充：检查 '证据被驳回' 的情况
+        else if (notice.status === '待供应商关闭' && lastHistory?.type === 'sd_evidence_rejection') {
+            const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
+            if (lastSubmission) {
+                // 注意：EvidencePerActionForm 的数据结构是 { evidence: [...] }
+                const evidenceValues = (lastSubmission.actionPlans || []).map(plan => ({
+                    description: plan.evidenceDescription || '',
+                    images: plan.evidenceImages || [],
+                }));
+                form.setFieldsValue({ evidence: evidenceValues });
+            }
+        }
+
+        setSelectedNotice(notice);
+    };
+
+    const getBase64 = (file) =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (error) => reject(error);
+        });
+
+
+    const handleDetailModalCancel = () => {
+
+        setSelectedNotice(null);
     }
+    const handleRejectionCancel = () => { rejectionForm.resetFields(); setRejectionModal({ visible: false, notice: null, handler: null }); };
+    const handleCorrectionCancel = () => { reassignForm.resetFields(); setCorrectionModal({ visible: false, notice: null }); };
+    const handleReviewToggle = async (notice, e) => {
+        e.stopPropagation();
+        await updateNotice(notice.id, { isReviewed: !notice.isReviewed });
+        messageApi.success(!notice.isReviewed ? '已标记为“已审阅”' : '已取消“已审阅”标记');
+    };
+    // --- 核心业务处理函数 (精简版) ---
 
-    const { closedThisMonth, allOpenIssues, supplierActionRequired, topImprovement } = dashboardData;
-    const { overduePastPlans, pendingCurrentMonthPlans, filteredCurrentAndPastPlansForList, filteredNextMonthPlansForList } = planStatistics;
+    // 1. 供应商提交行动计划
+    const handlePlanSubmit = async (values) => {
+        const notice = selectedNotice;
+        if (!notice) return;
+        const formattedPlans = (values.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline).format('YYYY-MM-DD') : '' }));
+        const newHistory = { type: 'supplier_plan_submission', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '供应商已提交行动计划。', actionPlans: formattedPlans };
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        await updateNotice(notice.id, { status: '待SD确认actions', history: [...currentHistory, newHistory] });
+        // 发送提醒
+        messageApi.success('行动计划提交成功！');
+        handleDetailModalCancel();
+    };
+
+    // 2. SD 批准行动计划（支持从弹窗或列表快捷操作触发）
+    const handlePlanApprove = async (targetNotice) => {
+
+        //selectedNotice 这个 state 中已经存储了我们正在操作的、完整的通知单对象
+        const notice = targetNotice;
+        if (!notice) return;
+
+        // 使用 (notice.history || []) 来确保我们总是在操作一个数组
+        const lastPlanSubmission = [...(notice.history || [])].reverse().find(h => h.type === 'supplier_plan_submission');
+
+        console.log(notice.history)
+        if (!lastPlanSubmission) {
+            messageApi.error("无法找到供应商提交的行动计划，操作失败！");
+            return;
+        }
+
+        const plansWithStatus = (lastPlanSubmission.actionPlans || []).map(p => ({ ...p, status: 'pending_evidence' }));
+
+        const newHistory = {
+            type: 'sd_plan_approval',
+            submitter: currentUser.name,
+            time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+            description: '行动计划已批准，等待供应商上传完成证据。',
+            actionPlans: plansWithStatus,
+        };
+
+        // 再次使用 (notice.history || []) 来确保安全
+        const currentHistory = notice.history || [];
+        await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
+
+        // 发送传统提醒
+
+
+        // 发送新的结构化提醒
+
+        messageApi.success('计划已批准！');
+        handleDetailModalCancel();
+        if (!targetNotice) {
+            handleDetailModalCancel();
+        }
+    };
+
+    // 3. SD 驳回行动计划
+    const handlePlanReject = async (values, noticeArg) => {
+        const notice = noticeArg || rejectionModal.notice;
+        if (!notice) return;
+        const newHistory = { type: 'sd_plan_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[计划被驳回] ${values.rejectionReason}` };
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        try {
+            await updateNotice(notice.id, { status: '待提交Action Plan', history: [...currentHistory, newHistory] });
+            // 发送提醒
+            messageApi.warning('计划已驳回！');
+        } catch (e) {
+            messageApi.error('退回失败：' + (e?.message || '未知错误'));
+            return;
+        } finally {
+            handleRejectionCancel();
+            if (selectedNotice?.id === notice.id) handleDetailModalCancel();
+        }
+    };
+
+    // 4. 供应商提交完成证据
+    const handleEvidenceSubmit = async (values) => {
+        const notice = selectedNotice;
+        if (!notice) return;
+
+        // 1. --- 开始加载，显示“处理中”，并持续到整个函数结束 ---
+        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
+
+        try {
+            // 2. --- 查找需要附上证据的原始行动计划 ---
+            const lastPlanSubmission = [...notice.history].reverse().find(h => h.type === 'supplier_plan_submission');
+            const originalPlans = lastPlanSubmission?.actionPlans || [];
+
+            // 3. --- 异步处理所有图片和附件文件 ---
+            const processFiles = async (fileList = []) => {
+                return Promise.all((fileList || []).map(async (file) => {
+                    if (file.originFileObj && !file.url) {
+                        const base64Url = await getBase64(file.originFileObj);
+                        return { ...file, url: base64Url, thumbUrl: base64Url };
+                    }
+                    return file;
+                }));
+            };
+
+            const plansWithEvidence = await Promise.all(
+                originalPlans.map(async (plan, index) => {
+                    const evidenceItem = values.evidence?.[index];
+                    const processedImages = await processFiles(evidenceItem?.images);
+                    const processedAttachments = await processFiles(evidenceItem?.attachments);
+
+                    // 将证据信息合并回每个行动计划中
+                    return {
+                        ...plan,
+                        evidenceDescription: evidenceItem?.description || '',
+                        evidenceImages: processedImages,
+                        evidenceAttachments: processedAttachments, // <-- 确保附件也被包含
+                    };
+                })
+            );
+
+            // 4. --- 创建新的历史记录 ---
+            const newHistory = {
+                type: 'supplier_evidence_submission',
+                submitter: currentUser.name,
+                time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                description: '供应商已上传完成证据。',
+                actionPlans: plansWithEvidence
+            };
+            const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+            // 5. --- 更新数据库中的通知单 ---
+            await updateNotice(notice.id, {
+                status: '待SD关闭evidence',
+                history: [...currentHistory, newHistory]
+            });
+
+            // 6. --- 发送实时提醒 ---
+
+
+            // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
+            messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
+            handleDetailModalCancel();
+
+        } catch (error) {
+            // 8. --- 如果中间任何一步出错，显示失败消息 ---
+            console.error("证据提交失败:", error);
+            messageApi.error({ content: `提交失败: ${error.message}`, key: 'evidenceSubmit', duration: 3 });
+        }
+    };
+    // 5. SD 批准并关闭（支持从弹窗或列表快捷操作触发）
+    const handleClosureApprove = async (targetNotice) => {
+        const notice = targetNotice || selectedNotice;
+        if (!notice) return;
+        const newHistory = { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '审核通过，问题关闭。' };
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        await updateNotice(notice.id, { status: '已完成', history: [...currentHistory, newHistory] });
+        // 发送提醒
+        messageApi.success('通知单已关闭！');
+        if (!targetNotice) {
+            handleDetailModalCancel();
+        }
+    };
+
+    // 6. SD 驳回证据
+    const handleEvidenceReject = async (values) => {
+        const notice = rejectionModal.notice;
+        if (!notice) return;
+        const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回] ${values.rejectionReason}` };
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
+        // 发送提醒
+        messageApi.warning('证据已驳回！');
+        handleRejectionCancel();
+        if (selectedNotice?.id === notice.id) handleDetailModalCancel();
+    };
+
+    // 6.1 SD 逐条批准证据
+    const handleEvidenceItemApprove = async (index) => {
+        const notice = selectedNotice;
+        if (!notice) return;
+
+        const history = Array.isArray(notice.history) ? notice.history : [];
+        const lastEvidenceSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
+        if (!lastEvidenceSubmission) return;
+
+        const updatedActionPlans = lastEvidenceSubmission.actionPlans.map((p, i) => i === index ? { ...p, status: 'approved' } : p);
+
+        const newHistory = { ...lastEvidenceSubmission, actionPlans: updatedActionPlans };
+
+        const newFullHistory = history.map(h => h.time === lastEvidenceSubmission.time ? newHistory : h);
+
+        const allApproved = updatedActionPlans.every(p => p.status === 'approved');
+
+        if (allApproved) {
+            await updateNotice(notice.id, { status: '已完成', history: [...newFullHistory, { type: 'sd_closure_approve', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '所有证据均已批准，问题关闭。' }] });
+            // 发送提醒
+            messageApi.success('该条证据已批准，所有证据均通过，单据已关闭！');
+            handleDetailModalCancel();
+        } else {
+            await updateNotice(notice.id, { history: newFullHistory });
+            // 发送提醒
+            messageApi.success('该条证据已批准');
+            // Refresh the modal with updated data
+            setSelectedNotice({ ...notice, history: newFullHistory });
+        }
+    };
+
+    // 6.2 SD 逐条驳回证据（退回至行动阶段）
+    const handleEvidenceItemReject = async (values, index) => {
+        const notice = selectedNotice;
+        if (!notice) return;
+
+        const history = Array.isArray(notice.history) ? notice.history : [];
+        const lastEvidenceSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
+        if (!lastEvidenceSubmission) return;
+
+        const updatedActionPlans = lastEvidenceSubmission.actionPlans.map((p, i) => i === index ? { ...p, status: 'rejected' } : p);
+
+        const newHistoryItem = { ...lastEvidenceSubmission, actionPlans: updatedActionPlans };
+
+        const newFullHistory = history.map(h => h.time === lastEvidenceSubmission.time ? newHistoryItem : h);
+
+        const rejectionHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回-第${index + 1}项] ${values.rejectionReason}`, evidenceIndex: index };
+
+        await updateNotice(notice.id, { status: '待供应商关闭', history: [...newFullHistory, rejectionHistory] });
+
+        //发送提醒
+        messageApi.warning('该条证据已驳回，单据退回到提交证据阶段');
+        handleRejectionCancel();
+        handleDetailModalCancel();
+    };
+
+    // 通用驳回弹窗
+    const handleRejectionSubmit = async () => {
+        try {
+            const values = await rejectionForm.validateFields();
+            if (!rejectionModal.handler) {
+                messageApi.error('未找到处理函数，请重试');
+                return;
+            }
+            await rejectionModal.handler(values);
+            messageApi.success('已提交退回原因');
+            // 双保险：若子处理未主动关闭弹窗，这里也关闭
+            if (rejectionModal.visible) {
+                handleRejectionCancel();
+            }
+        } catch (error) {
+            console.log('Validate Failed:', error);
+        }
+    };
+
+    // ✨ 新增：处理管理员“重分配供应商”的逻辑
+    const handleReassignment = async (values) => {
+        const notice = correctionModal.notice;
+        if (!notice) return;
+
+        // 假设您有一个 suppliers 列表，类似 AdminPage 中的 allSuppliers
+        // 如果 NoticePage 没有 suppliers 状态，您可能需要从 Context 或 API 获取
+        // 这里假设 suppliers 已经在组件中可用
+        const newSupplier = suppliers.find(s => s.id === values.newSupplierId);
+
+        if (!newSupplier) {
+            messageApi.error('未找到指定的供应商！');
+            return;
+        }
+
+        // [新增] 开始加载状态
+        setIsReassigning(true);
+        // [新增] 显示加载提示 (持久化，直到操作完成)
+        const loadingMsg = messageApi.loading('正在重分配通知单并发送邮件通知...', 0);
+
+        const newHistory = {
+            type: 'manager_reassignment',
+            submitter: currentUser.username, // Assuming username is the name
+            time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+            description: `[管理修正]  ${notice.assignedSupplierName}已被重新更换。 原因: ${values.reason || '未提供原因'}`,
+        };
+
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+        try {
+            // [修改] 使用 updateNotice 来触发邮件和更新状态
+            // 关键点：传入 old_supplier_id 以便 Context 能够识别这是重分配操作并发送邮件给旧供应商
+            await updateNotice(notice.id, {
+                assigned_supplier_id: newSupplier.id,
+                assigned_supplier_name: newSupplier.name, // 确保这里使用 name 字段
+                old_supplier_id: notice.assignedSupplierId, // 传入旧供应商ID (注意这里取值可能需要根据您的 Notice 数据结构调整，Context返回的通常是驼峰)
+                history: [...currentHistory, newHistory],
+            });
+
+            // 假设您有一个 'alerts' 表
+            const alertsToInsert = [
+                { creator_id: currentUser.id, target_user_id: notice.assignedSupplierId, message: `"${notice.title}" 已被重分配，您无需再处理。`, link: `/notices` },
+                { creator_id: currentUser.id, target_user_id: newSupplier.id, message: `您有一个新的通知单被分配: "${notice.title}"。`, link: `/notices?open=${notice.id}` },
+                { creator_id: currentUser.id, target_user_id: notice.creatorId, message: `您创建的 "${notice.title}" 已被重分配给 ${newSupplier.name}。`, link: `/notices?open=${notice.id}` },
+            ];
+
+            await supabase.from('alerts').insert(alertsToInsert);
+
+            // [新增] 销毁加载提示并显示成功
+            loadingMsg();
+            messageApi.success('通知单已成功重分配！');
+            setCorrectionModal({ visible: false, notice: null });
+            // reassignForm.resetFields(); // 如果有 form 实例
+        } catch (error) {
+            // [新增] 销毁加载提示并显示错误
+            loadingMsg();
+            messageApi.error(`重分配失败: ${error.message}`);
+        } finally {
+            // [新增] 结束加载状态
+            setIsReassigning(false);
+        }
+    };
+
+    // ✨ 新增：处理管理员“作废通知单”的逻辑
+    const handleVoidNotice = async (values) => {
+        const notice = correctionModal.notice;
+        if (!notice) return;
+
+        const newHistory = {
+            type: 'manager_void',
+            submitter: currentUser.name,
+            time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+            description: `[管理修正] 通知单已作废。原因: ${values.reason || '未提供原因'}`,
+        };
+
+        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+        await updateNotice(notice.id, {
+            status: '已作废',
+            history: [...currentHistory, newHistory],
+        });
+
+        // 为相关方创建提醒
+
+
+        messageApi.warning('通知单已作废！');
+        setCorrectionModal({ visible: false, notice: null }); // 关闭修正弹窗
+        reassignForm.resetFields();
+    };
+
+
+    const handleLikeToggle = async (notice) => {
+        const currentLikes = notice.likes || [];
+        const userId = currentUser.id;
+        const isLiked = currentLikes.includes(userId);
+        const newLikesArray = isLiked ? currentLikes.filter(id => id !== userId) : [...currentLikes, userId];
+        // const newHistoryEntry = { type: isLiked ? 'unlike' : 'like', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss') };
+        // const updatedHistory = [...(notice.history || []), newHistoryEntry];
+
+        // --- 核心修正：直接使用 updateNotice Hook ---
+        try {
+            await updateNotice(notice.id, { likes: newLikesArray });
+            messageApi.success(isLiked ? '已取消点赞' : '感谢您的认可！');
+        } catch (error) {
+            messageApi.error(`操作失败: ${error.message}`);
+        }
+    };
+
+
+    const showRejectionModal = (notice, rejectHandler) => {
+        console.log('[showRejectionModal] open for notice', notice?.id);
+        setRejectionModal({
+            visible: true,
+            notice: notice,
+            handler: (values) => rejectHandler(values, notice)
+        });
+        messageApi.info('请填写退回原因');
+    };
+
+    const getActionsForItem = (item) => {
+
+        const actions = [];
+        const isSDOrManager = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager');
+        const isAllowedToEdit = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager' || currentUser.role === 'Admin');
+        const canEdit = item.status === '待提交Action Plan';
+        const isManager = currentUser && currentUser.role === 'Manager';
+        const stopPropagationAndRun = (e, func) => { e?.stopPropagation(); func(); };
+
+        if (isAllowedToEdit) {
+            // --- 核心修正：修改此按钮的 onClick ---
+            actions.push(
+                <Button
+                    key="edit"
+                    icon={<EditOutlined />}
+                    type="link"
+                    disabled={!canEdit}
+                    onClick={(e) => stopPropagationAndRun(e, () => navigate(`/edit-notice/${item.id}`))} // <-- 指向新的路由
+                >
+                    修改
+                </Button>
+            );
+        }
+
+        // SD 和 Manager 的快捷操作
+        if (currentUser.role === 'SD' || currentUser.role === 'Manager') {
+            // 审批计划阶段（兼容不同文案）
+            if (item.status === '待SD确认actions' || item.status === '待SD确认actions计划') {
+                actions.push(<Button key="quick_approve_plan" type="link" onClick={(e) => stopPropagationAndRun(e, () => handlePlanApprove(item))}>批准计划</Button>);
+                actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
+            }
+            // 关闭阶段
+            if (item.status === '待SD关闭evidence') {
+                actions.push(<Popconfirm key="quick_close" title="确定要批准并关闭吗?（若想逐条审批证据，请进入详情）" onConfirm={(e) => stopPropagationAndRun(e, () => handleClosureApprove(item))}><Button type="link">批准关闭</Button></Popconfirm>);
+            }
+
+            if (item.status === '已完成' && isSDOrManager) {
+                const isLiked = item.likes && item.likes.includes(currentUser.id);
+                actions.push(
+                    <Space key="like-action" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                            type={isLiked ? "primary" : "text"}
+                            shape="circle"
+                            icon={isLiked ? <StarFilled /> : <StarOutlined />}
+                            onClick={(e) => stopPropagationAndRun(e, () => handleLikeToggle(item))}
+                        />
+                        <Text type="secondary">{item.likes?.length || 0}</Text>
+                    </Space>
+                );
+            }
+        }
+
+        actions.push(<Button key="details" onClick={(e) => stopPropagationAndRun(e, () => showDetailsModal(item))}>查看详情</Button>);
+
+        // 管理员的修正/撤回按钮 (如果需要)
+        if (currentUser.role === 'Manager' && item.status !== '已完成' && item.status !== '已作废') {
+            actions.push(<Button key="correct" type="link" style={{ color: token.colorWarning }} onClick={(e) => stopPropagationAndRun(e, () => setCorrectionModal({ visible: true, notice: item }))}>修正/撤回</Button>);
+        }
+
+        return actions;
+    };
+
+    const renderTabs = () => {
+        if (!currentUser) return <p>请先登录</p>;
+        if (configLoading || noticesLoading) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}><Spin size="large" /></div>; }
+
+        if (noticesLoading && notices.length === 0) {
+            return <div><Spin size="large" /></div>;
+        }
+
+        const tabsConfig = {
+            Supplier: [
+                { key: 'pending', label: '待我处理', statuses: ['待提交Action Plan', '待供应商关闭'] },
+                { key: 'review', label: '等待审核', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
+                { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
+            ],
+            SD: [
+                { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan'] },
+                { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
+                { key: 'review', label: '待SD确认actions', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
+                { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
+                { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
+            ],
+            Manager: [
+                { key: 'all', label: '所有单据', statuses: allPossibleStatuses },
+                { key: 'review', label: '待SD审核', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
+                { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
+                { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan'] },
+                { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
+            ]
+        };
+        const userTabs = tabsConfig[currentUser.role];
+        return (
+            <Tabs defaultActiveKey={userTabs[0].key} type="card">
+                {userTabs.map(tab => {
+                    const filteredData = searchedNotices.filter(n => tab.statuses.includes(n.status));
+                    const tabGroupedData = groupedNotices.filter(g => g.isBatch ? g.notices.some(n => tab.statuses.includes(n.status)) : tab.statuses.includes(g.status));
+                    return (
+                        <TabPane tab={`${tab.label} (${filteredData.length})`} key={tab.key}>
+                            {/* --- 核心修正：在这里将所有需要的 props 完整地传递下去 --- */}
+                            <NoticeList
+                                data={tabGroupedData}
+                                getActionsForItem={getActionsForItem}
+                                showDetailsModal={showDetailsModal}
+                                handleReviewToggle={handleReviewToggle}
+                                token={token}
+                                currentUser={currentUser}
+                                noticeCategoryDetails={noticeCategoryDetails}
+                                activeCollapseKeys={activeCollapseKeys}
+                                setActiveCollapseKeys={setActiveCollapseKeys}
+                                // --- 9. 核心：仅在 flat 模式下传入分页配置 ---
+                                pagination={viewMode === 'flat' ? {
+                                    position: 'bottom',
+                                    align: 'center',
+                                    defaultPageSize: 7,
+                                    showSizeChanger: true,
+                                    pageSizeOptions: ['7','8', '16', '50'],
+                                    showTotal: (total) => `共 ${total} 条数据`
+                                } : false}
+                            />
+                        </TabPane>
+                    );
+                })}
+            </Tabs>
+        );
+    };
 
     return (
-        <div>
-            <Card style={{ marginBottom: 24 }} bordered={false}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                        <Title level={4} style={{ margin: 0 }}>{t('dashboard.opsDashboard')}</Title>
-                        <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>{t('dashboard.opsDashboardDesc')}</Paragraph>
-                    </div>
-                    <Button icon={<QuestionCircleOutlined />} onClick={() => setOpenTour(true)}>{t('dashboard.tourButton')}</Button>
+        <div style={{ padding: '24px' }}>
+            <Card style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                    <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单</Paragraph></div>
+
+                    <Space wrap>
+                        <Radio.Group
+                            value={viewMode}
+                            onChange={(e) => setViewMode(e.target.value)}
+                            buttonStyle="solid"
+                            optionType="button"
+
+                        >
+                            <Radio.Button value="grouped"><AppstoreOutlined /> 分组</Radio.Button>
+                            <Radio.Button value="flat"><BarsOutlined /> 列表</Radio.Button>
+                        </Radio.Group>
+                        {isSDManagerOrAdmin && (
+                            <Select
+                                mode="multiple"
+                                allowClear
+                                style={{ minWidth: 200 }} // 改为 minWidth
+                                placeholder="按供应商筛选"
+                                value={selectedSuppliers} // 绑定 state
+                                onChange={setSelectedSuppliers} // 绑定 state setter
+                                loading={suppliersLoading}
+                                maxTagCount="responsive"
+                                showSearch // 明确开启搜索功能
+
+                                // --- 核心修正 1：在这里组合 label ---
+                                options={managedSuppliers.map(s => ({
+                                    value: s.id,
+                                    label: `${s.short_code}` // 例如: "CVG (CVI-CVG)"
+                                }))}
+
+                                // --- 核心修正 2：使用 Antd 的默认智能筛选 ---
+                                filterOption={(input, option) =>
+                                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                            />
+                        )}
+                        <RangePicker
+                            style={{ minWidth: 240 }}
+                            value={dateRange} // 绑定 state
+                            onChange={setDateRange} // 绑定 state setter
+                        />
+                        <Select
+                            mode="multiple"
+                            allowClear
+                            style={{ minWidth: 200 }}
+                            placeholder="按问题类型筛选"
+                            onChange={setSelectedCategories}
+                            options={sortedNoticeCategories.map(c => ({ label: c, value: c }))}
+                            loading={configLoading}
+                            maxTagCount="responsive"
+                        />
+                        <Select
+                            mode="multiple"
+                            allowClear
+                            style={{ minWidth: 200 }}
+                            placeholder="按状态筛选"
+                            onChange={setSelectedStatuses}
+                            options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
+                            maxTagCount="responsive"
+                        />
+
+                        <Search
+                            placeholder="搜索通知单：可用;；@,，分隔关键词"
+                            allowClear
+                            onSearch={setSearchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            style={{ width: 360 }}
+                        />
+                        <Tooltip title="按创建日期升序">
+                            <Button
+                                icon={<SortAscendingOutlined />}
+                                onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                type={listSortOrder === 'asc' ? 'primary' : 'default'}
+                            />
+                        </Tooltip>
+                        <Tooltip title="按创建日期降序">
+                            <Button
+                                icon={<SortDescendingOutlined />}
+                                onClick={() => setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                                type={listSortOrder === 'desc' ? 'primary' : 'default'}
+                            />
+                        </Tooltip>
+
+                    </Space>
                 </div>
             </Card>
+            <Card>{renderTabs()}</Card>
 
-            <Row gutter={[24, 24]} align="stretch">
-                <Col xs={24} md={isSDManagerOrAdmin ? 12 : 24} lg={12}>
-                    <div ref={refCoreMetrics} style={{ height: '100%' }}>
-                        <Card bordered={false} loading={pageIsLoading || allPlansLoading} style={{ height: '100%' }} title={t('dashboard.coreMetrics')}>
-                            <Row gutter={[16, 24]}>
-                                <Col xs={12} sm={12}><Statistic title={t('dashboard.stat.closedMonth')} value={closedThisMonth} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Col>
-                                <Col xs={12} sm={12}><Statistic title={t('dashboard.stat.allOpen')} value={allOpenIssues} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Col>
-                                <Col xs={12} sm={12}><Statistic title={t('dashboard.stat.planOverdue')} value={overduePastPlans} valueStyle={{ color: '#f5222d' }} prefix={<WarningOutlined />} /></Col>
-                                <Col xs={12} sm={12}><Statistic title={t('dashboard.stat.planPending')} value={pendingCurrentMonthPlans} valueStyle={{ color: '#faad14' }} prefix={<ScheduleOutlined />} /></Col>
-                            </Row>
-                        </Card>
-                    </div>
-                </Col>
-
-                {isSDManagerOrAdmin && (
-                    <Col xs={24} md={12} lg={12}>
-                        <div ref={refMonthlyPlan} style={{ height: '100%' }}>
-                            <Card
-                                title={t('dashboard.monthlyPlan')}
-                                bordered={false}
-                                loading={allPlansLoading || categoriesLoading}
-                                style={{ height: '100%' }}
-                                extra={
-                                    <Space wrap>
-                                        <Select size="small" style={{ width: 120 }} placeholder={t('dashboard.filter.bySupplier')} value={selectedPlanSupplier} onChange={setSelectedPlanSupplier} options={[{ value: 'all', label: t('dashboard.filter.allSuppliers') }, ...managedSuppliers.map(s => ({ value: s.id, label: s.short_code }))]} />
-                                        <Select size="small" style={{ width: 120 }} placeholder={t('dashboard.filter.byType')} value={selectedPlanCategory} onChange={setSelectedPlanCategory} options={[{ value: 'all', label: t('dashboard.filter.allTypes') }, ...planCategories.map(c => ({ value: c.name, label: c.name }))]} />
-                                    </Space>
-                                }
-                            >
-                                <Row gutter={16}>
-                                    <Col span={12}>
-                                        <Title level={5} style={{ marginTop: 0 }}>
-                                            {t('dashboard.list.pastPending')} ({filteredCurrentAndPastPlansForList.length})
-                                        </Title>
-                                        <div>
-                                            {filteredCurrentAndPastPlansForList.length > 0 ? (
-                                                <List itemLayout="horizontal" dataSource={filteredCurrentAndPastPlansForList} renderItem={(plan) => <PlanItem plan={plan} onMarkComplete={handleMarkAsComplete} onDelete={handleDeleteEvent} onNavigate={handleNavigateToNotices} onReschedule={handleReschedule} />} pagination={{ pageSize: 3, size: 'small', showLessItems: true }} />
-                                            ) : <Empty description={t('dashboard.list.noBacklog')} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />}
-                                        </div>
-                                    </Col>
-                                    <Col span={12}>
-                                        <Title level={5} style={{ marginTop: 0 }}>
-                                            {/* 使用处理后的 nextMonthTitle */}
-                                            {nextMonthTitle} ({filteredNextMonthPlansForList.length})
-                                        </Title>
-                                        <div>
-                                            {filteredNextMonthPlansForList.length > 0 ? (
-                                                <List itemLayout="horizontal" dataSource={filteredNextMonthPlansForList} renderItem={(plan) => <PlanItem plan={plan} onMarkComplete={handleMarkAsComplete} onDelete={handleDeleteEvent} onNavigate={handleNavigateToNotices} onReschedule={handleReschedule} />} pagination={{ pageSize: 3, size: 'small', showLessItems: true }} />
-                                            ) : <Empty description={t('dashboard.list.noNextMonth')} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />}
-                                        </div>
-                                    </Col>
-                                </Row>
-                            </Card>
-                        </div>
-                    </Col>
+            <div style={{ textAlign: 'center', marginTop: 24 }}>
+                {hasMore ? (
+                    <Button
+                        onClick={loadMoreNotices}
+                        loading={noticesLoading && notices.length > 0}
+                    >
+                        加载更多
+                    </Button>
+                ) : (
+                    <Text type="secondary">已经到底啦</Text>
                 )}
-            </Row>
+            </div>
 
-            {/* ... (Action Alert 和 Highlights 区域代码保持不变) ... */}
-            <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
-                <Col xs={24} lg={12}>
-                    <div ref={refWarnings} style={{ height: '100%' }}>
-                        <Card title={t('dashboard.actionAlert')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
-                            <List
-                                itemLayout="horizontal"
-                                dataSource={supplierActionRequired}
-                                renderItem={(item) => (
-                                    <List.Item>
-                                        <List.Item.Meta avatar={<Avatar style={{ backgroundColor: '#ff4d4f' }} icon={<UserOutlined />} />} title={<Text strong>{item.name}</Text>} description={`${item.count} ${t('dashboard.list.itemsPending')}`} />
-                                        <Button type="link" onClick={() => navigate('/notices', { state: { preSelectedSupplierId: item.id } })}>{t('dashboard.action.process')}</Button>
-                                    </List.Item>
-                                )}
-                                locale={{ emptyText: <Empty description={t('dashboard.empty.noAlerts')} /> }}
-                            />
-                        </Card>
-                    </div>
-                </Col>
-                <Col xs={24} lg={12}>
-                    <div ref={refHighlights} style={{ height: '100%' }}>
-                        <Card title={t('dashboard.highlights')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
-                            {topImprovement ? (
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                        <Space wrap size="small">
-                                            <Tag color="gold">{t('dashboard.tag.from')}: {topImprovement.supplier?.short_code || '?'}</Tag>
-                                            {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
-                                            {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
-                                        </Space>
-                                        <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/notices?open=${topImprovement.id}`)}>{t('dashboard.action.viewDetails')}</Button>
-                                    </div>
-                                    <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
-                                    <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>{topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || t('dashboard.desc.noDetails')}</Paragraph>
-                                    <Divider style={{ margin: '12px 0' }} />
-                                    <Space align="center">
-                                        <StarOutlined style={{ color: '#ffc53d' }} />
-                                        <Text strong>{topImprovement.likes?.length || 0} {t('dashboard.text.likes')}</Text>
-                                        <Avatar.Group maxCount={5} size="small" style={{ marginLeft: 8 }}>
-                                            {(topImprovement.likes || []).map(userId => <Tooltip key={userId} title={userLookup[userId]?.username || '?'}> <Avatar style={{ backgroundColor: '#1890ff' }}>{userLookup[userId]?.username?.[0]?.toUpperCase() || '?'}</Avatar></Tooltip>)}
-                                        </Avatar.Group>
-                                    </Space>
-                                </div>
-                            ) : <Empty description={t('dashboard.empty.noLikes')} />}
-                        </Card>
-                    </div>
-                </Col>
-            </Row>
+            <NoticeDetailModal
+                open={!!selectedNotice}
+                notice={selectedNotice}
+                onCancel={handleDetailModalCancel}
+                currentUser={currentUser}
+                form={form}
 
-            <Tour open={openTour} onClose={() => setOpenTour(false)} steps={tourSteps} />
+                onPlanSubmit={handlePlanSubmit}
+                onPlanApprove={() => handlePlanApprove(selectedNotice)} // 确保传递 notice
+                showPlanRejectionModal={() => showRejectionModal(selectedNotice, handlePlanReject)}
+
+                onEvidenceSubmit={handleEvidenceSubmit}
+                onClosureApprove={() => handleClosureApprove(selectedNotice)} // 确保传递 notice
+                onApproveEvidenceItem={(index) => handleEvidenceItemApprove(index)}
+                onRejectEvidenceItem={(index) => setRejectionModal({ visible: true, notice: selectedNotice, handler: (values) => handleEvidenceItemReject(values, index) })}
+                onLikeToggle={handleLikeToggle}
+            />
+
+            <RejectionModal
+                visible={rejectionModal.visible}
+                notice={rejectionModal.notice}
+                form={rejectionForm}
+                onCancel={handleRejectionCancel}
+                onSubmit={handleRejectionSubmit}
+            />
+            <CorrectionModal
+                visible={correctionModal.visible}
+                notice={correctionModal.notice}
+                onCancel={handleCorrectionCancel}
+                onReassign={handleReassignment}
+                onVoid={handleVoidNotice}
+                suppliers={suppliers} // 确保传递 suppliers
+                form={reassignForm}
+            />
         </div>
     );
 };
 
-export default DashboardPage;
+export default NoticePage;

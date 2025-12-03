@@ -11,6 +11,40 @@ import { saveAs } from 'file-saver';
 
 const { Text } = Typography;
 
+// --- 1. 新增：高亮文本辅助组件 ---
+// 支持多关键词 (例如用逗号分隔的)
+const HighlightText = ({ text, keyword }) => {
+    const strText = String(text || '');
+    if (!keyword || !keyword.trim()) {
+        return <>{strText}</>;
+    }
+
+    // 1. 将搜索词按分隔符拆分为数组，并过滤空值
+    const keywords = keyword.toLowerCase().split(/[；;@,，\s]+/).filter(k => k.trim());
+    if (keywords.length === 0) return <>{strText}</>;
+
+    // 2. 构建正则：(keyword1|keyword2|...)，注意转义特殊字符
+    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(${escapedKeywords.join('|')})`, 'gi');
+
+    // 3. 拆分并高亮
+    const parts = strText.split(regex);
+
+    return (
+        <span>
+            {parts.map((part, i) => 
+                regex.test(part) ? (
+                    <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
+                        {part}
+                    </span>
+                ) : (
+                    part
+                )
+            )}
+        </span>
+    );
+};
+
 // --- 子组件：单个通知单 ---
 const getStatusTag = (status) => {
     let color;
@@ -41,6 +75,20 @@ const getStatusTag = (status) => {
     return <Tag color={color}>{status}</Tag>;
 };
 
+const toPlainText = (val) => {
+    if (val == null) return '';
+    if (typeof val === 'object' && val.richText) {
+         return val.richText.map(r => r?.text || '').join('');
+    }
+    if (typeof val === 'object' && Array.isArray(val.richText)) {
+        return val.richText.map(r => r?.text || '').join('');
+    }
+    if (typeof val === 'object' && typeof val.richText === 'string') {
+        return val.richText;
+    }
+    return String(val);
+};
+
 
 const SingleNoticeItem = ({
     item,
@@ -52,18 +100,18 @@ const SingleNoticeItem = ({
     noticeCategoryDetails,
     selectable = false,
     selected = false,
-    onSelectChange = () => { }
+    onSelectChange = () => { },
+    searchTerm = '' // --- 2. 接收 searchTerm ---
 }) => {
 
-    const displayTitle = (item.title && typeof item.title === 'object')
-        ? item.title.richText
-        : item.title;
+    // 获取纯文本标题用于高亮
+    const rawTitle = toPlainText(item.title); 
+    
     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
         ? noticeCategoryDetails[item.category]
         : { id: 'N/A', color: 'default' };
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
-
 
     return (
         <List.Item actions={getActionsForItem(item)}>
@@ -88,9 +136,24 @@ const SingleNoticeItem = ({
                 avatar={<FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary }} />}
                 title={
                     <Space>
-                        <a onClick={() => showDetailsModal(item)}><Text strong>{displayTitle || ''}</Text></a>
+                        <a onClick={() => showDetailsModal(item)}>
+                            <Text strong>
+                                {/* --- 3. 使用 HighlightText 包裹标题 --- */}
+                                <HighlightText text={rawTitle} keyword={searchTerm} />
+                            </Text>
+                        </a>
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
+                        {/* 也可以选择高亮显示编号 */}
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
+                        </Text>
                     </Space>
+                }
+                // 也可以选择高亮描述
+                description={
+                    <div style={{maxHeight: '42px', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                         <HighlightText text={toPlainText(item.sdNotice?.description || item.sdNotice?.details?.finding)} keyword={searchTerm} />
+                    </div>
                 }
             />
             <Space size="middle">
@@ -704,15 +767,15 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
 // --- 主组件：通知单列表 ---
 export const NoticeList = (props) => {
+    // props.searchTerm 应该由父组件传入
     return (
         <List
             dataSource={props.data}
-            //把pagination的几个参数传递进入Notice list,可以有分页的默认，统计值等等参考Notice page的传参
-            pagination={props.pagination} 
+            pagination={props.pagination}
             renderItem={item => (
                 item.isBatch
-                    ? <NoticeBatchItem batch={item} {...props} />
-                    : <SingleNoticeItem item={item} selectable={false} {...props} />
+                    ? <NoticeBatchItem batch={item} {...props} searchTerm={props.searchTerm} /> // --- 6. 传递 searchTerm ---
+                    : <SingleNoticeItem item={item} selectable={false} {...props} searchTerm={props.searchTerm} /> // --- 7. 传递 searchTerm ---
             )}
             locale={{ emptyText: '暂无相关通知单' }}
         />

@@ -26,6 +26,41 @@ const { TabPane } = Tabs;
 const { RangePicker } = DatePicker; // 4. 解构 RangePicker
 
 
+// --- 1. 新增：高亮文本辅助组件 ---
+// 支持多关键词 (例如用逗号分隔的)
+const HighlightText = ({ text, keyword }) => {
+    const strText = String(text || '');
+    if (!keyword || !keyword.trim()) {
+        return <>{strText}</>;
+    }
+
+    // 1. 将搜索词按分隔符拆分为数组，并过滤空值
+    const keywords = keyword.toLowerCase().split(/[；;@,，\s]+/).filter(k => k.trim());
+    if (keywords.length === 0) return <>{strText}</>;
+
+    // 2. 构建正则：(keyword1|keyword2|...)，注意转义特殊字符
+    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(${escapedKeywords.join('|')})`, 'gi');
+
+    // 3. 拆分并高亮
+    const parts = strText.split(regex);
+
+    return (
+        <span>
+            {parts.map((part, i) => 
+                regex.test(part) ? (
+                    <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
+                        {part}
+                    </span>
+                ) : (
+                    part
+                )
+            )}
+        </span>
+    );
+};
+
+
 const NoticePage = () => {
     // --- 状态管理 ---
     const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
@@ -232,6 +267,8 @@ const NoticePage = () => {
                 const searchableText = [
                     notice.title,
                     notice.sdNotice?.description,
+                    notice.sdNotice?.details?.finding,
+                    notice.sdNotice?.details?.process,
                     notice.assignedSupplierName,
                     notice.category,
                     notice.status,
@@ -863,9 +900,9 @@ const NoticePage = () => {
                     const tabGroupedData = groupedNotices.filter(g => g.isBatch ? g.notices.some(n => tab.statuses.includes(n.status)) : tab.statuses.includes(g.status));
                     return (
                         <TabPane tab={`${tab.label} (${filteredData.length})`} key={tab.key}>
-                            {/* --- 核心修正：在这里将所有需要的 props 完整地传递下去 --- */}
                             <NoticeList
                                 data={tabGroupedData}
+                                searchTerm={searchTerm} // --- 核心修改：在这里传递 searchTerm ---
                                 getActionsForItem={getActionsForItem}
                                 showDetailsModal={showDetailsModal}
                                 handleReviewToggle={handleReviewToggle}
@@ -874,13 +911,13 @@ const NoticePage = () => {
                                 noticeCategoryDetails={noticeCategoryDetails}
                                 activeCollapseKeys={activeCollapseKeys}
                                 setActiveCollapseKeys={setActiveCollapseKeys}
-                                // --- 9. 核心：仅在 flat 模式下传入分页配置 ---
                                 pagination={viewMode === 'flat' ? {
+                                    // ... (分页配置保持不变)
                                     position: 'bottom',
                                     align: 'center',
-                                    defaultPageSize: 7,
+                                    defaultPageSize: 8,
                                     showSizeChanger: true,
-                                    pageSizeOptions: ['7','8', '16', '50'],
+                                    pageSizeOptions: ['8', '16', '50'],
                                     showTotal: (total) => `共 ${total} 条数据`
                                 } : false}
                             />
