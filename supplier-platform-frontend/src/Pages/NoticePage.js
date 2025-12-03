@@ -912,7 +912,7 @@ const NoticePage = () => {
                                 activeCollapseKeys={activeCollapseKeys}
                                 setActiveCollapseKeys={setActiveCollapseKeys}
                                 pagination={viewMode === 'flat' ? {
-                                    // ... (分页配置保持不变)
+                                  
                                     position: 'bottom',
                                     align: 'center',
                                     defaultPageSize: 8,

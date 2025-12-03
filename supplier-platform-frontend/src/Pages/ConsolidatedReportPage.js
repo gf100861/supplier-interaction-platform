@@ -394,7 +394,7 @@ const ConsolidatedReportPage = () => {
 
             worksheet.columns = [
                 { header: 'ParmaId', key: 'parmaId', width: 15 },
-                { header: '供应商', key: 'supplierName', width: 25 },
+                { header: '供应商', key: 'supplierShortCode', width: 25 },
                 { header: '状态', key: 'status', width: 15 },
                 { header: '创建时间', key: 'createTime', width: 15 },
                 { header: '预计时间', key: 'deadline', width: 15 },
@@ -409,9 +409,12 @@ const ConsolidatedReportPage = () => {
             });
 
             const rows = groupedData[category].map(notice => {
+
+                console.log(notice.supplier.shortCode)
                 return {
                     parmaId: notice.supplier?.parmaId || '',
                     supplierName: notice.assignedSupplierName || '',
+                    supplierShortCode: notice.supplier.shortCode,
                     status: notice.status || '',
                     createTime: notice.sdNotice?.createTime ? dayjs(notice.sdNotice.createTime).format('YYYY-MM-DD') : '',
                     deadline: notice.deadline || '',

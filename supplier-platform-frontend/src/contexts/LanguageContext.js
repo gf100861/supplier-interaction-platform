@@ -45,8 +45,8 @@ const translations = {
         'dashboard.stat.evidenceDue': '未来30天需提交证据',
         'dashboard.stat.closedMonth': '本月已关闭 (通知)',
         'dashboard.stat.allOpen': '所有未关闭 (通知)',
-        'dashboard.stat.planOverdue': '过往未完成 (计划)',
-        'dashboard.stat.planPending': '本月待办 (计划)',
+        'dashboard.stat.planOverdue': '过往未完成 (年度计划)',
+        'dashboard.stat.planPending': '本月待办 (年度计划)',
         
         // 模块标题
         'dashboard.coreMetrics': '核心指标 (通知单 & 计划)',
@@ -60,7 +60,7 @@ const translations = {
         'dashboard.filter.allSuppliers': '所有供应商',
         'dashboard.filter.allTypes': '所有类型',
         'dashboard.list.pastPending': '当月及过往待办',
-        'dashboard.list.nextMonthPending': '下月待办', // {month} 是占位符
+        'dashboard.list.nextMonthPending': '下月待办', 
         'dashboard.list.noBacklog': '暂无积压计划。',
         'dashboard.list.noNextMonth': '下月暂无计划。',
         'dashboard.list.itemsPending': '项待处理',
