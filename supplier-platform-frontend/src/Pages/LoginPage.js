@@ -35,63 +35,37 @@ const useTypingEffect = (textToType, speed = 50) => {
 // --- 2. Dynamic Image Carousel Component ---
 const LoginCarousel = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [imagesLoaded, setImagesLoaded] = useState({});
-
-    // --- ✨ 核心修正: 在 useMemo 内部为每个图片 URL 添加时间戳 ---
-    const carouselItems = useMemo(() => {
-        const timestamp = Date.now(); // 获取当前时间戳
-        return [
-            {
-                src: `/images/Carousel1.jpg?t=${timestamp}`, // 附加时间戳
-                title: '协同 · 无界',
-                description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
-                bgColor: '#e0f2fe',
-                cardBgColor: 'rgba(240, 249, 255, 0.7)',
-            },
-            {
-                src: `/images/Carousel2.jpg?t=${timestamp}`, // 附加时间戳
-                title: '数据 · 驱动',
-                description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
-                bgColor: '#f0fdf4',
-                cardBgColor: 'rgba(240, 253, 244, 0.7)',
-            },
-            {
-                src: `/images/Carousel3.jpg?t=${timestamp}`, // 附加时间戳
-                title: '效率 · 提升',
-                description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
-                bgColor: '#f5f3ff',
-                cardBgColor: 'rgba(245, 243, 255, 0.75)',
-            },
-        ];
-    }, []); // 依赖项为空，时间戳在组件挂载时生成一次
-
-    useEffect(() => {
-        console.log("Starting image preloading with cache busting...");
-        carouselItems.forEach((item) => {
-            const img = new window.Image();
-            img.src = item.src; // 使用带时间戳的 URL 进行预加载
-
-            img.onload = () => {
-                console.log(`Image loaded successfully (cache busted): ${item.src}`);
-                setImagesLoaded((prevLoaded) => ({
-                    ...prevLoaded,
-                    [item.src]: true, // 使用带时间戳的 URL 作为 key
-                }));
-            };
-
-            img.onerror = (error) => {
-                console.error(`Failed to load image (cache busted): ${item.src}`, error);
-            };
-        });
-    }, [carouselItems]); // 依赖于 carouselItems (虽然它只生成一次)
+    
+    // --- 修正 1: 移除不必要的时间戳，允许浏览器缓存图片 ---
+    // 如果您确实需要防止缓存（比如开发时换了图），可以在文件名后手动加个版本号，而不是 Date.now()
+    const carouselItems = useMemo(() => [
+        {
+            src: '/images/Carousel1.jpg', 
+            title: '协同 · 无界',
+            description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
+            bgColor: '#e0f2fe',
+            cardBgColor: 'rgba(240, 249, 255, 0.7)',
+        },
+        {
+            src: '/images/Carousel2.jpg', 
+            title: '数据 · 驱动',
+            description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
+            bgColor: '#f0fdf4',
+            cardBgColor: 'rgba(240, 253, 244, 0.7)',
+        },
+        {
+            src: '/images/Carousel3.jpg',
+            title: '效率 · 提升',
+            description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
+            bgColor: '#f5f3ff',
+            cardBgColor: 'rgba(245, 243, 255, 0.75)',
+        },
+    ], []);
 
     const currentItem = carouselItems[currentIndex];
-    // 检查加载状态时也使用带时间戳的 URL
-    const isCurrentImageLoaded = !!imagesLoaded[currentItem.src];
-
-    const typedDescription = useTypingEffect(
-        isCurrentImageLoaded ? currentItem.description : '图片加载中...'
-    );
+    
+    // 打字机效果只依赖当前文本，不再依赖图片加载状态
+    const typedDescription = useTypingEffect(currentItem.description);
 
     useEffect(() => {
         document.body.style.backgroundColor = currentItem.bgColor;
@@ -106,6 +80,7 @@ const LoginCarousel = () => {
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <Carousel
                 autoplay
+                autoplaySpeed={5000} // 设置合理的轮播间隔
                 dots={false}
                 fade
                 style={{ width: '100%', maxWidth: '500px' }}
@@ -113,28 +88,57 @@ const LoginCarousel = () => {
             >
                 {carouselItems.map((item, index) => (
                     <div key={index}>
-                        {/* 渲染时也使用带时间戳的 URL */}
-                        <Image src={item.src} preview={false} style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }} />
+                        {/* --- 修正 2: 直接渲染 Image，利用 Antd 自带的 placeholder --- */}
+                        <Image 
+                            src={item.src} 
+                            preview={false} 
+                            placeholder={
+                                <div style={{ 
+                                    width: '100%', 
+                                    height: '100%', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    background: '#f5f5f5' 
+                                }}>
+                                    <Spin />
+                                </div>
+                            }
+                            style={{ 
+                                width: '100%', 
+                                aspectRatio: '16 / 10', 
+                                objectFit: 'cover', 
+                                borderRadius: '12px', 
+                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' 
+                            }} 
+                        />
                     </div>
                 ))}
             </Carousel>
-            <Card style={{ marginTop: '-60px', width: '90%', maxWidth: '450px', zIndex: 10, backdropFilter: 'blur(10px)', backgroundColor: currentItem.cardBgColor, border: '1px solid rgba(255, 255, 255, 0.2)', transition: 'background-color 0.5s ease-in-out' }}>
+            
+            <Card 
+                style={{ 
+                    marginTop: '-60px', 
+                    width: '90%', 
+                    maxWidth: '450px', 
+                    zIndex: 10, 
+                    backdropFilter: 'blur(10px)', 
+                    backgroundColor: currentItem.cardBgColor, 
+                    border: '1px solid rgba(255, 255, 255, 0.2)', 
+                    transition: 'background-color 0.5s ease-in-out' 
+                }}
+            >
                 <Title level={3}>{currentItem.title}</Title>
-                <div
-                    className="typing-text-container"
-                    style={{ position: 'relative', minHeight: '72px' }}
-                >
-                    <Paragraph type="secondary" style={{ visibility: 'hidden' }}>
+                <div className="typing-text-container" style={{ position: 'relative', minHeight: '72px' }}>
+                    {/* 为了防止高度塌陷，保留一个不可见的完整文本 */}
+                    <Paragraph type="secondary" style={{ visibility: 'hidden', marginBottom: 0 }}>
                         {currentItem.description}
                     </Paragraph>
-                    <Paragraph
-                        type="secondary"
-                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                    >
-                        {!isCurrentImageLoaded && <Spin size="small" />}
+                    
+                    {/* 绝对定位显示打字机效果 */}
+                    <Paragraph type="secondary" style={{ position: 'absolute', top: 0, left: 0, width: '100%', margin: 0 }}>
                         {typedDescription}
-                        {/* 仅在图片加载完成后显示光标 */}
-                        {isCurrentImageLoaded && <span className="typing-cursor">|</span>}
+                        <span className="typing-cursor">|</span>
                     </Paragraph>
                 </div>
             </Card>

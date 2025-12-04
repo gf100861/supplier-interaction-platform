@@ -31,6 +31,7 @@ import NotFoundPage from './Pages/NotFoundPage'
 import EditNoticePage from './Pages/EditNoticePage'; // <-- 1. 导入新页面
 import IntelligentSearchPage from './Pages/IntelligentSearchPage';
 import MobileTransferPage from './Pages/MobileTransferPage';
+import HelpCenterPage from './Pages/help-center';
 import { FileSender } from './Pages/OfflineSharePage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
@@ -59,6 +60,7 @@ const ThemedApp = () => {
                                             <Route path="/login" element={<LoginPage />} />
                                             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                                             <Route path="/reset-password" element={<ResetPasswordPage />} />
+                                                  <Route path="/help-center" element={<HelpCenterPage />} /> {/* 2. 添加路由 */}
                                             <Route element={<ProtectedRoute />}>
                                                 <Route path="/" element={<MainLayout />}>
                                                     <Route index element={<DashboardPage />} />
@@ -74,6 +76,7 @@ const ThemedApp = () => {
                                                     <Route path="intelligence-search" element={<IntelligentSearchPage />}></Route>
                                                     <Route path="offline-share" element={< FileSender/>}></Route>
                                                     <Route path="/mobile-transfer" element={<MobileTransferPage />} />
+                                              
                                                     <Route path="*" element={< NotFoundPage />} />
                                                 </Route>
                                             </Route>

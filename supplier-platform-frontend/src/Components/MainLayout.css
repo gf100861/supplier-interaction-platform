@@ -8,3 +8,33 @@
 .site-layout .site-layout-background {
   background: #fff;
 }
+
+.logo-container {
+  height: 32px; /* 固定容器高度，不要太高 */
+  margin: 16px; /* 上下左右留白 */
+  background: rgba(255, 255, 255, 0.15); /* 半透明背景，适配深色侧边栏 */
+  border-radius: 6px; /* 圆角 */
+  display: flex; /* Flex布局 */
+  align-items: center; /* 垂直居中 */
+  justify-content: center; /* 水平居中 */
+  overflow: hidden; /* 关键：防止溢出 */
+  transition: all 0.3s; /* 平滑过渡 */
+  cursor: pointer;
+}
+
+.logo-img {
+  height: auto; /* 宽度自适应 */
+  max-height: 20px; /* 关键：限制图片最大高度，留出呼吸空间 */
+  max-width: 80%; /* 关键：限制最大宽度，防止横向溢出 */
+  object-fit: contain; /* 保持比例 */
+  display: block;
+}
+
+/* 当侧边栏收起时的微调 */
+.ant-layout-sider-collapsed .logo-container {
+  margin: 16px 8px; /* 收起时左右边距减小 */
+  padding: 0;
+}
+
+/* 侧边栏收起时，如果不想要背景色，可以取消下面这行的注释 */
+/* .ant-layout-sider-collapsed .logo-container { background: transparent; } */

@@ -491,8 +491,6 @@ const fetchAllPendingPlans = async () => {
 
        const nextMonthNum = dayjs().add(1, 'month').format('M');
         // 如果您在字典中使用了 {month} 占位符，这里传递对象
-
-        console.log('下月显示',nextMonthNum)
         const nextMonthTitle = t('dashboard.list.nextMonthPending');
 
     // --- 5. 定义 Tour 步骤 ---

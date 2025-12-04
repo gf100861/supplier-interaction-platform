@@ -1,0 +1,194 @@
+/* 全局背景 */
+.help-body-layout {
+    max-width: 1600px;
+    margin: 0 auto;
+    background: #f8f9fa;
+    /* 关键修改：确保容器宽度撑开，否则Flex子项可能无法正确计算剩余空间 */
+    width: 100%;
+}
+
+/* 顶部导航栏 */
+.help-header {
+    height: 72px;
+    padding: 0 32px;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    min-width: 200px;
+}
+
+.help-logo-img {
+    height: 32px;
+    margin-right: 12px;
+}
+
+.help-app-name {
+    font-weight: 600;
+    font-size: 18px;
+    color: #1f2937;
+    padding-left: 16px;
+    border-left: 1px solid #e5e7eb;
+}
+
+/* 中间搜索框 */
+.header-search {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    margin: 0 40px;
+}
+
+.header-right {
+    min-width: 100px;
+    text-align: right;
+}
+
+/* 左侧边栏 */
+.help-sider {
+    position: sticky !important;
+    top: 72px;
+    height: calc(100vh - 72px);
+    overflow-y: auto;
+    box-shadow: 1px 0 4px rgba(0,0,0,0.02);
+    z-index: 100;
+}
+
+.help-contact-area {
+    position: absolute;
+    bottom: 24px;
+    left: 16px;
+    right: 16px;
+}
+
+.contact-card {
+    background: linear-gradient(135deg, #e6f7ff 0%, #ffffff 100%);
+    border: 1px solid #bae7ff;
+}
+
+/* 内容包装器 */
+.help-content-wrapper {
+    min-height: calc(100vh - 120px);
+    /* 确保 wrapper 本身没有不必要的宽度限制 */
+    width: 100%; 
+}
+
+/* 正文容器 - 关键修改 */
+.help-article {
+    background: #fff;
+    padding: 48px;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+    min-height: 100%;
+    animation: fadeIn 0.4s ease-in-out;
+    /* 确保占满 Grid 给的空间 */
+    width: 100%; 
+    box-sizing: border-box;
+}
+
+/* 小屏幕适配优化：减小内边距，防止内容被挤压 */
+@media screen and (max-width: 768px) {
+    .help-article {
+        padding: 24px;
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 右侧锚点 */
+.help-anchor-wrapper {
+    position: sticky;
+    top: 96px;
+}
+
+/* --- 组件样式 --- */
+.feature-card {
+    text-align: center;
+    height: 100%;
+    transition: all 0.3s;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #f0f0f0;
+}
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.06);
+}
+
+.icon-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+.icon-wrapper.blue { background: #e6f7ff; color: #1890ff; }
+.icon-wrapper.green { background: #f6ffed; color: #52c41a; }
+.icon-wrapper.gold { background: #fffbe6; color: #faad14; }
+
+.tip-box {
+    background-color: #fff7e6;
+    border: 1px solid #ffd591;
+    padding: 16px 24px;
+    border-radius: 8px;
+    margin: 24px 0;
+    color: #d46b08;
+}
+
+.guide-sub-card .ant-card-head {
+    min-height: 40px;
+    padding: 0 16px;
+    font-size: 14px;
+    background: #fafafa;
+}
+
+.ai-demo-box {
+    background: #f0f2f5;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #e5e7eb;
+}
+.bubble {
+    padding: 10px 16px;
+    border-radius: 20px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    max-width: 80%;
+}
+.bubble.user {
+    background: #1890ff;
+    color: #fff;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+.bubble.ai {
+    background: #fff;
+    color: #333;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.divider-title {
+    font-size: 20px;
+    color: #1f2937;
+    font-weight: 500;
+}
+
+.ant-timeline-item-content {
+    margin-left: 28px !important;
+}

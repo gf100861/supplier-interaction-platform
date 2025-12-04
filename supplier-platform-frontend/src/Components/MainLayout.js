@@ -10,14 +10,14 @@ import {
     PrinterOutlined,
     ShareAltOutlined,
     OpenAIOutlined,
-    GlobalOutlined, 
+    GlobalOutlined,
     CrownOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AlertBell } from './notice/AlertBell';
 import { FileReceiver } from '../Pages/FileReceiver';
-import { useLanguage } from '../contexts/LanguageContext'; 
+import { useLanguage } from '../contexts/LanguageContext';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
@@ -45,7 +45,7 @@ const MainLayout = () => {
     const [selectedKeys, setSelectedKeys] = useState([]);
     const [openKeys, setOpenKeys] = useState([]);
 
-    const { language, toggleLanguage, t } = useLanguage(); 
+    const { language, toggleLanguage, t } = useLanguage();
 
     // --- 核心修正：将菜单定义移入组件内部，以便使用 t() ---
     // 使用 useMemo 并在依赖中加入 'language'，确保切换语言时重新生成菜单
@@ -82,7 +82,7 @@ const MainLayout = () => {
             key: '/admin',
             icon: <CrownOutlined />,
             label: t('menu.admin'),
-            roles: ['Admin'] 
+            roles: ['Admin']
         }
     ], [language, t]); // 依赖项包含 language
 
@@ -99,12 +99,12 @@ const MainLayout = () => {
         const currentPath = '/' + location.pathname.split('/')[1];
         // 特殊处理根路径
         const effectiveKey = location.pathname === '/' ? '/' : currentPath;
-        
+
         setSelectedKeys([location.pathname]); // 精确匹配
         if (!collapsed) {
             // 如果已经在 submenu 中，保持展开
             const newOpenKeys = getOpenKeys(location.pathname);
-            if(newOpenKeys.length > 0) setOpenKeys(prev => [...new Set([...prev, ...newOpenKeys])]);
+            if (newOpenKeys.length > 0) setOpenKeys(prev => [...new Set([...prev, ...newOpenKeys])]);
         }
     }, [location.pathname, collapsed, allMenuItems]);
 
@@ -121,7 +121,7 @@ const MainLayout = () => {
     const storedUser = useMemo(() => {
         const userString = localStorage.getItem('user');
         return userString ? JSON.parse(userString) : null;
-    }, [location.pathname]); 
+    }, [location.pathname]);
 
     const userRole = storedUser?.role || null;
     const userName = storedUser?.username || '访客';
@@ -130,7 +130,29 @@ const MainLayout = () => {
     return (
         <Layout style={{ minHeight: '100vh' }}>
             <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
-                <div className="logo" />
+
+                {/* 使用新的 class 容器 */}
+                {/* 使用 class 控制样式，移除内联 style */}
+                <div className="logo-container">
+                    <img
+                        src="/system-logo.png"
+                        alt="Logo"
+                        className="logo-img"
+                    />
+                    {/* 如果需要显示文字，且在收起时隐藏 */}
+                    {!collapsed && (
+                        <span style={{
+                            color: 'white',
+                            marginLeft: 8,
+                            fontWeight: 600,
+                            fontSize: '14px',
+                            whiteSpace: 'nowrap', // 防止文字换行
+                            overflow: 'hidden'
+                        }}>
+                            SD Platform
+                        </span>
+                    )}
+                </div>
                 <Menu
                     theme="dark"
                     selectedKeys={selectedKeys}
@@ -156,10 +178,10 @@ const MainLayout = () => {
 
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>
-                           
-                        <Button 
-                            type="text" 
-                            icon={<GlobalOutlined />} 
+
+                        <Button
+                            type="text"
+                            icon={<GlobalOutlined />}
                             onClick={toggleLanguage}
                         >
                             {language === 'zh' ? 'English' : '中文'}
