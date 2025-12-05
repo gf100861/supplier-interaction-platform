@@ -1,39 +1,38 @@
 const { createClient } = require('@supabase/supabase-js');
-const cors = require('cors');
 
-// 初始化带有 Service Role 权限的 Supabase 客户端
-// 这允许我们绕过 RLS 并直接管理 Auth 用户
-const supabaseAdmin = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY, 
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
+// 辅助函数：CORS 和请求方法处理
+const allowCors = fn => async (req, res) => {
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    );
+
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
     }
-);
+    return await fn(req, res);
+};
 
-const corsMiddleware = cors({
-    origin: '*', // 生产环境请改为前端域名
-    methods: ['POST', 'OPTIONS'],
-});
-
-function runMiddleware(req, res, fn) {
-    return new Promise((resolve, reject) => {
-        fn(req, res, (result) => {
-            if (result instanceof Error) return reject(result);
-            return resolve(result);
-        });
-    });
-}
-
-module.exports = async (req, res) => {
-    await runMiddleware(req, res, corsMiddleware);
-
+const handler = async (req, res) => {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
+
+    // 初始化带有 Service Role 权限的 Supabase 客户端
+    const supabaseAdmin = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY, 
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    );
 
     const { email, password, username, role, supplierData } = req.body;
 
@@ -43,7 +42,6 @@ module.exports = async (req, res) => {
 
     try {
         // 1. 在 Supabase Auth 中创建用户
-        // 这不会发送确认邮件，且会自动验证邮箱（email_confirm: true）
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: password,
@@ -57,9 +55,8 @@ module.exports = async (req, res) => {
         let supplierId = null;
 
         // 2. 如果是供应商角色，处理供应商公司逻辑
-        if (role === 'Supplier') {
+        if (role === 'Supplier' && supplierData) {
             if (supplierData.isNew) {
-                // 创建新供应商公司
                 const { data: newSupplier, error: supError } = await supabaseAdmin
                     .from('suppliers')
                     .insert({
@@ -73,7 +70,6 @@ module.exports = async (req, res) => {
                 if (supError) throw supError;
                 supplierId = newSupplier.id;
             } else {
-                // 使用已有供应商 ID
                 supplierId = supplierData.id;
             }
         }
@@ -82,16 +78,15 @@ module.exports = async (req, res) => {
         const { error: profileError } = await supabaseAdmin
             .from('users')
             .insert({
-                id: newUserId, // 关键：必须与 Auth ID 一致
+                id: newUserId,
                 username: username,
                 email: email,
                 role: role,
-                supplier_id: supplierId, // 如果不是供应商，这里是 null
+                supplier_id: supplierId,
                 created_at: new Date().toISOString()
             });
 
         if (profileError) {
-            // 如果 public 表插入失败，回滚 Auth 用户（可选但推荐）
             await supabaseAdmin.auth.admin.deleteUser(newUserId);
             throw profileError;
         }
@@ -103,3 +98,5 @@ module.exports = async (req, res) => {
         return res.status(500).json({ error: error.message });
     }
 };
+
+module.exports = allowCors(handler);
