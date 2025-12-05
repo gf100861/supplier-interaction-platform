@@ -20,7 +20,7 @@ const { Search, TextArea } = Input;
 const isDev = process.env.NODE_ENV === 'development';
 const API_BASE_URL = isDev 
     ? 'http://localhost:3001' 
-    : 'https://supplier-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app'; 
 
 const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix', 'alarm'];
 const feedbackStatusConfig = {
