@@ -5,7 +5,7 @@ import {
     QuestionCircleOutlined, RobotOutlined, CloudUploadOutlined,
     TeamOutlined, DashboardOutlined, SafetyCertificateOutlined,
     ArrowLeftOutlined, RocketOutlined, BookOutlined, BulbOutlined,
-    CheckCircleOutlined, LoginOutlined
+    CheckCircleOutlined, LoginOutlined,DownloadOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import './HelpCenterPage.css';
@@ -95,7 +95,7 @@ const NoticeGuideContent = () => (
 
         <Divider />
 
-        <div id="handle-notice" className="section-block">
+       <div id="handle-notice" className="section-block">
             <Title level={3}>2. 供应商处理流程</Title>
             <Timeline
                 mode="left"
@@ -106,7 +106,11 @@ const NoticeGuideContent = () => (
                             <>
                                 <Text strong style={{ fontSize: 16 }}>步骤 A: 提交行动计划</Text>
                                 <Paragraph type="secondary">
-                                    收到通知后，进入详情页。针对问题填写<strong>“根本原因”、“纠正措施”、“负责人”</strong>和<strong>“截止日期”</strong>，然后点击提交。
+                                    收到通知后，进入详情页。针对问题填写<strong>“行动方案”、“负责人”</strong>和<strong>“完成日期”</strong>，然后点击提交。您可以提交多个行动项。
+                                    <div style={{ marginTop: 8, color: '#096dd9', fontSize: 13, background: '#e6f7ff', padding: '8px 12px', borderRadius: 6, border: '1px solid #bae7ff' }}>
+                                        <DownloadOutlined style={{ marginRight: 6 }} /> 
+                                        <strong>支持批量处理：</strong> 您可以在列表页“下载模板”，批量填写后重新导入 Action Plans。
+                                    </div>
                                 </Paragraph>
                             </>
                         ),
@@ -126,7 +130,11 @@ const NoticeGuideContent = () => (
                             <>
                                 <Text strong style={{ fontSize: 16 }}>步骤 B: 上传完成证据</Text>
                                 <Paragraph type="secondary">
-                                    计划批准后，请在截止日期前完成整改。再次进入详情页，上传<strong>整改后的照片</strong>并填写说明。
+                                    计划批准后，请在截止日期前完成整改。再次进入详情页，上传<strong>整改后的照片,视频等文件</strong>并填写说明。请针对每一个行动项提交证据。
+                                    <div style={{ marginTop: 8, color: '#096dd9', fontSize: 13, background: '#e6f7ff', padding: '8px 12px', borderRadius: 6, border: '1px solid #bae7ff' }}>
+                                        <CloudUploadOutlined style={{ marginRight: 6 }} /> 
+                                        <strong>支持批量处理：</strong> 系统支持批量上传整改证据文件，以及批量下载已有证据。
+                                    </div>
                                 </Paragraph>
                             </>
                         ),
@@ -185,9 +193,9 @@ const FaqContent = () => {
             q: "无法批量上传actions/evidence", 
             a: (
                 <span>
-                    因为您可能使用了列表的选项造成无法批量上传，请您使用点击分组并筛选
+                    因为您可能使用了列表的选项造成无法批量上传，请您使用点击分组
                     <b>待提交Action Plans/待供应商关闭</b>
-                    即可出现
+                    即可出现下载模板和上传的选项
                 </span>
             )
         },
@@ -195,6 +203,7 @@ const FaqContent = () => {
         { q: "为什么我看不到某些菜单？", a: "菜单基于角色权限显示。供应商只能看到与自己相关的通知单；SD可以看到计划管理功能。如有疑问请联系管理员。" },
         { q: "上传文件失败？", a: "请检查文件大小（建议<10MB）和格式。目前不支持 .exe, .bat 等可执行文件。图片建议使用 jpg/png。" },
         { q: "在批量输入actions的阶段时输入错误日期（2025/31/12）？", a: "系统会自动转换成正确的格式（建议SD作废）" },
+        { q: "为什么无法批量提交action plans/evidence？", a: "请检查下载的模板提交文件的列是否修改" },
       
     ];
     return (

@@ -11,7 +11,8 @@ import {
     ShareAltOutlined,
     OpenAIOutlined,
     GlobalOutlined,
-    CrownOutlined
+    CrownOutlined,
+    RobotOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -65,7 +66,7 @@ const MainLayout = () => {
         },
         {
             key: '/intelligence-search',
-            icon: <OpenAIOutlined />,
+            icon: <RobotOutlined />,
             label: t('menu.intelligenceSearch'),
             roles: ['SD', 'Manager', 'Admin']
         },

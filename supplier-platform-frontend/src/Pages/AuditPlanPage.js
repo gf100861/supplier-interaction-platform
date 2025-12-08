@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 // 1. 引入 Radio 和 Form.Item (虽然 Form.Item 没显式用，但在 Select 内部需要)
 import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, Empty, Avatar, Space, Tooltip, Divider, Spin, Statistic, Row, Col, Radio } from 'antd';
-import { DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined,CalendarOutlined } from '@ant-design/icons';
+import { DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNavigate } from 'react-router-dom';
@@ -42,6 +42,24 @@ const matrixStyles = {
     cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
 };
 
+// --- 新增：错误信息翻译辅助函数 ---
+const translateError = (error) => {
+    // 提取错误信息字符串，兼容 error 对象或直接字符串
+    const msg = error?.message || error || '未知错误';
+
+    // 常见 Supabase/PostgreSQL/Auth 错误关键词映射
+    if (msg.includes('Invalid login credentials')) return '登录凭证无效或已过期，请尝试重新登录';
+    if (msg.includes('User not found')) return '用户不存在';
+    if (msg.includes('duplicate key value')) return '该记录已存在，请勿重复添加';
+    if (msg.includes('violates foreign key constraint')) return '关联数据无效或不存在（如供应商ID错误）';
+    if (msg.includes('violates row-level security policy')) return '权限不足，您无法执行此操作';
+    if (msg.includes('violates not-null constraint')) return '缺少必填字段';
+    if (msg.includes('JWT expired')) return '登录会话已过期，请刷新页面';
+    if (msg.includes('Failed to fetch')) return '网络请求失败，请检查网络连接';
+    
+    // 如果没有匹配到特定错误，返回原始英文信息以便排查，或者返回通用中文
+    return msg; 
+};
 
 const AuditPlanPage = () => {
     const [events, setEvents] = useState([]);
@@ -62,8 +80,24 @@ const AuditPlanPage = () => {
     const [selectedCategoryKeys, setSelectedCategoryKeys] = useState([]);
     const [selectedStatusKey, setSelectedStatusKey] = useState('all'); // 'all', 'pending', 'completed'
 
-    const [rescheduleMonth, setRescheduleMonth] = useState(null);
+    // 修改：存储目标年月对象字符串 "{year: 2025, month: 5}"
+    const [rescheduleTarget, setRescheduleTarget] = useState(null);
 
+    // 计算未来12个月的滚动列表
+    const rollingMonths = useMemo(() => {
+        const options = [];
+        const start = dayjs().startOf('month'); // 从当前月开始
+        for (let i = 0; i < 12; i++) {
+            const d = start.add(i, 'month');
+            options.push({
+                label: d.format('YYYY年 M月'),
+                value: JSON.stringify({ year: d.year(), month: d.month() + 1 }),
+                year: d.year(),
+                month: d.month() + 1
+            });
+        }
+        return options;
+    }, []);
 
     if (currentUser.role === 'Supplier') {
         navigate('/');
@@ -93,7 +127,8 @@ const AuditPlanPage = () => {
             setCategories(sortedCategories);
 
         } catch (error) {
-            messageApi.error(`加载规划数据失败: ${error.message}`);
+            // 修改：使用 translateError 处理错误信息
+            messageApi.error(`加载规划数据失败: ${translateError(error)}`);
         } finally {
             setLoading(false);
         }
@@ -193,7 +228,8 @@ const AuditPlanPage = () => {
             .update({ status: newStatus, completion_date: completionDate })
             .eq('id', id);
         if (error) {
-            messageApi.error(`更新状态失败: ${error.message}`);
+            // 修改：使用 translateError 处理错误信息
+            messageApi.error(`更新状态失败: ${translateError(error)}`);
         } else {
             messageApi.success('状态更新成功！');
             fetchData();
@@ -203,7 +239,8 @@ const AuditPlanPage = () => {
     const handleDeleteEvent = async (id) => {
         const { error } = await supabase.from('audit_plans').delete().eq('id', id);
         if (error) {
-            messageApi.error(`删除失败: ${error.message}`);
+            // 修改：使用 translateError 处理错误信息
+            messageApi.error(`删除失败: ${translateError(error)}`);
         } else {
             messageApi.success('事件已删除！');
             fetchData();
@@ -234,32 +271,43 @@ const AuditPlanPage = () => {
         setIsModalVisible(true);
     };
 
-      const handleReschedule = async (item) => {
-        if (!rescheduleMonth) {
+    const handleReschedule = async (item) => {
+        if (!rescheduleTarget) {
             messageApi.error("请选择一个新的月份！");
             return;
         }
-        if (rescheduleMonth === item.planned_month) {
+
+        const target = JSON.parse(rescheduleTarget);
+        
+        // 检查是否其实没变
+        if (target.year === item.year && target.month === item.planned_month) {
             messageApi.info("月份未改变。");
-            setRescheduleMonth(null); // 重置
+            setRescheduleTarget(null);
             return;
         }
 
-        setLoading(true); // 使用页面的主 loading 状态
+        setLoading(true);
         try {
+            // 更新月份 AND 年份
             const { error } = await supabase
                 .from('audit_plans')
-                .update({ planned_month: rescheduleMonth })
+                .update({ 
+                    planned_month: target.month,
+                    year: target.year 
+                })
                 .eq('id', item.id);
             
             if (error) throw error;
-            messageApi.success(`计划已成功移动到 ${rescheduleMonth}月！`);
-            fetchData(); // 重新加载所有数据
+            
+            messageApi.success(`计划已成功移动到 ${target.year}年 ${target.month}月！`);
+            // 如果移动到了不同年份，当前视图会刷新并移除该条目（符合逻辑）
+            fetchData(); 
         } catch (error) {
-            messageApi.error(`计划调整失败: ${error.message}`);
+            // 修改：使用 translateError 处理错误信息
+            messageApi.error(`计划调整失败: ${translateError(error)}`);
         } finally {
             setLoading(false);
-            setRescheduleMonth(null); // 重置
+            setRescheduleTarget(null); // 重置
         }
     };
 
@@ -285,7 +333,8 @@ const AuditPlanPage = () => {
         };
         const { error } = await supabase.from('audit_plans').insert([newEvent]);
         if (error) {
-            messageApi.error(`添加失败: ${error.message}`);
+            // 修改：使用 translateError 处理错误信息
+            messageApi.error(`添加失败: ${translateError(error)}`);
         } else {
             const successMessageMap = {
                 'audit': '审计计划 添加成功！',
@@ -543,17 +592,22 @@ const AuditPlanPage = () => {
                                                 const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
 
                                                  const rescheduleTitle = (
-                                                    <div style={{width: 150}}>
-                                                        <Text>移动到:</Text>
+                                                    <div style={{width: 200}}>
+                                                        <Text>调整计划至:</Text>
                                                         <Select 
                                                             placeholder="选择月份" 
                                                             style={{ width: '100%', marginTop: 8 }}
-                                                            // 当 Select 变化时，更新 state
-                                                            onChange={(value) => setRescheduleMonth(value)}
+                                                            // 更新为滚动12个月的选项
+                                                            onChange={(value) => setRescheduleTarget(value)}
                                                         >
-                                                            {months.map((m, i) => (
-                                                                <Option key={i + 1} value={i + 1} disabled={item.planned_month === (i + 1)}>
-                                                                    {m}
+                                                            {rollingMonths.map((opt) => (
+                                                                <Option 
+                                                                    key={opt.value} 
+                                                                    value={opt.value} 
+                                                                    // 如果年份和月份都相同，则禁用
+                                                                    disabled={item.year === opt.year && item.planned_month === opt.month}
+                                                                >
+                                                                    {opt.label}
                                                                 </Option>
                                                             ))}
                                                         </Select>
@@ -583,13 +637,12 @@ const AuditPlanPage = () => {
                                                                 />
                                                             </Tooltip>
                                                             
-
-                                                              {/* --- 6. 添加“调整计划”按钮 --- */}
+                                                            {/* --- 6. 添加“调整计划”按钮 --- */}
                                                             <Tooltip title="调整计划月份">
                                                                 <Popconfirm
                                                                     title={rescheduleTitle}
                                                                     onConfirm={() => handleReschedule(item)}
-                                                                    onCancel={() => setRescheduleMonth(null)} // 取消时重置
+                                                                    onCancel={() => setRescheduleTarget(null)} // 取消时重置
                                                                     okText="移动"
                                                                     cancelText="取消"
                                                                     disabled={item.status === 'completed'} // 已完成的不可移动
@@ -663,4 +716,3 @@ const AuditPlanPage = () => {
 };
 
 export default AuditPlanPage;
-

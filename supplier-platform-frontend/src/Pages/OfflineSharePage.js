@@ -1,17 +1,88 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, Typography, Upload, Button, notification, message, Spin, Space, Modal, Alert, List, Popconfirm, Avatar, DatePicker, Input } from 'antd';
-import { ShareAltOutlined, UploadOutlined, InboxOutlined, DownloadOutlined, QrcodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons'; // 2. 导入新图标
+import { ShareAltOutlined, UploadOutlined, InboxOutlined, DownloadOutlined, QrcodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 import { saveAs } from 'file-saver';
-import dayjs from 'dayjs'; // 3. 导入 dayjs 用于格式化日期
+import dayjs from 'dayjs';
 
 const { Title, Paragraph, Text } = Typography;
 const { Dragger } = Upload;
-const { RangePicker } = DatePicker; // 2. 解构 RangePicker
-const { Search } = Input; // 3. 解构 Search
+const { RangePicker } = DatePicker;
+const { Search } = Input;
 
-// 4. 提取 QR 码加载器 (保持不变)
+// --- 日志系统工具函数 (复用自 LoginPage.js) ---
+
+// 1. Session ID 管理
+const getSessionId = () => {
+    let sid = sessionStorage.getItem('app_session_id');
+    if (!sid) {
+        sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        sessionStorage.setItem('app_session_id', sid);
+    }
+    return sid;
+};
+
+// 2. IP 获取与缓存
+let cachedIpAddress = null;
+const getClientIp = async () => {
+    if (cachedIpAddress) return cachedIpAddress;
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        cachedIpAddress = data.ip;
+        return data.ip;
+    } catch (error) {
+        return 'unknown';
+    }
+};
+
+// 3. 通用日志上报函数
+const logSystemEvent = async (params) => {
+    const { 
+        category = 'SYSTEM', 
+        eventType, 
+        severity = 'INFO', 
+        message, 
+        email = null, 
+        userId = null, 
+        meta = {} 
+    } = params;
+
+    try {
+        const clientIp = await getClientIp();
+        const sessionId = getSessionId();
+
+        const environmentInfo = {
+            ip_address: clientIp,
+            session_id: sessionId,
+            userAgent: navigator.userAgent,
+            url: window.location.href,
+            page: 'OfflineSharePage' // 标记来源页面
+        };
+
+        // Fire-and-forget
+        supabase.from('system_logs').insert([{
+            category,
+            event_type: eventType,
+            severity,
+            message,
+            user_email: email, // 如果有 email 可以传入
+            user_id: userId,
+            metadata: {
+                ...environmentInfo,
+                ...meta,
+                timestamp_client: new Date().toISOString()
+            }
+        }]).then(({ error }) => {
+            if (error) console.warn("Log upload failed:", error);
+        });
+    } catch (e) {
+        console.error("Logger exception:", e);
+    }
+};
+
+// --- 二维码加载器 ---
 const loadQrCodeScript = () => {
     return new Promise((resolve, reject) => {
         const existingScript = document.getElementById('qrious-script');
@@ -28,62 +99,132 @@ const loadQrCodeScript = () => {
     });
 };
 
-
-// --- 组件 A: 文件发送器 (现在也包含接收器逻辑) ---
+// --- 主组件: FileSender (文件发送/管理页) ---
 export const FileSender = () => {
     const [fileList, setFileList] = useState([]);
     const [loading, setLoading] = useState(false);
-    const { messageApi, notificationApi } = useNotification(); // 5. 获取 notificationApi
-    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+    const { messageApi, notificationApi } = useNotification();
+    const currentUser = useMemo(() => {
+        try {
+            return JSON.parse(localStorage.getItem('user'));
+        } catch (e) { return null; }
+    }, []);
+    
     const [isQrModalVisible, setIsQrModalVisible] = useState(false);
     const qrCodeRef = useRef(null);
 
-    // --- 6. 新增 State 用于显示已同步的文件列表 ---
     const [syncedFiles, setSyncedFiles] = useState([]);
     const [filesLoading, setFilesLoading] = useState(true);
-
     const [searchTerm, setSearchTerm] = useState('');
-
     const [dateRange, setDateRange] = useState(null);
 
-    // --- 7. (来自 FileReceiver) 下载文件的函数 ---
-    // (注意：此版本 *不会* 在下载后删除记录)
+    // --- 全局错误监听与页面访问日志 ---
+    useEffect(() => {
+        // 1. 记录页面访问
+        if (currentUser) {
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'PAGE_VIEW',
+                severity: 'INFO',
+                message: 'User visited File Share Page',
+                userId: currentUser.id,
+                email: currentUser.email
+            });
+        }
+
+        // 2. 运行时错误监听
+        const handleRuntimeError = (event) => {
+            logSystemEvent({
+                category: 'RUNTIME',
+                eventType: 'JS_ERROR',
+                severity: 'ERROR',
+                message: event.message,
+                userId: currentUser?.id,
+                meta: { filename: event.filename, lineno: event.lineno, stack: event.error?.stack }
+            });
+        };
+        const handleUnhandledRejection = (event) => {
+            logSystemEvent({
+                category: 'RUNTIME',
+                eventType: 'UNHANDLED_PROMISE',
+                severity: 'ERROR',
+                message: event.reason?.message || 'Unknown Promise Error',
+                userId: currentUser?.id,
+                meta: { reason: JSON.stringify(event.reason) }
+            });
+        };
+
+        window.addEventListener('error', handleRuntimeError);
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+        return () => {
+            window.removeEventListener('error', handleRuntimeError);
+            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+        };
+    }, [currentUser]);
+
+    // --- 下载文件逻辑 ---
     const handleDownload = async (fileRow) => {
         const key = `download-${fileRow.id}`;
         message.loading({ content: `正在准备下载 ${fileRow.file_name}...`, key });
+        
+        // 日志：记录下载行为
+        logSystemEvent({
+            category: 'FILE',
+            eventType: 'FILE_DOWNLOAD',
+            message: `Downloading file: ${fileRow.file_name}`,
+            userId: currentUser?.id,
+            meta: { file_id: fileRow.id, file_name: fileRow.file_name }
+        });
+
         try {
             const { data, error } = await supabase.storage
                 .from('file_sync')
-                .download(fileRow.file_path); // 使用安全路径下载
+                .download(fileRow.file_path);
             
             if (error) throw error;
             
-            saveAs(data, fileRow.file_name); // 使用原始文件名保存
+            saveAs(data, fileRow.file_name);
             message.success({ content: '下载已开始！', key });
-
-            // (可选) 我们不再自动删除它
-            // await supabase.from('user_files').delete().eq('id', fileRow.id);
 
         } catch (error) {
             console.error('下载失败:', error);
             message.error({ content: `下载失败: ${error.message}`, key });
+            
+            // 日志：记录下载失败
+            logSystemEvent({
+                category: 'FILE',
+                eventType: 'DOWNLOAD_FAILED',
+                severity: 'ERROR',
+                message: `Download failed: ${error.message}`,
+                userId: currentUser?.id,
+                meta: { file_id: fileRow.id, error: error.message }
+            });
         }
     };
 
-    // --- 8. 新增：删除文件的函数 ---
+    // --- 删除文件逻辑 ---
     const handleDelete = async (fileRow) => {
          const key = `delete-${fileRow.id}`;
          message.loading({ content: `正在删除 ${fileRow.file_name}...`, key });
-        try {
+
+         try {
             // 1. 从 Storage 删除
             const { error: storageError } = await supabase.storage
                 .from('file_sync')
                 .remove([fileRow.file_path]);
 
             if (storageError) {
-                 // 即便存储删除失败，也继续尝试删除数据库记录
                  console.error("Storage deletion failed:", storageError.message);
-                 // throw storageError; // 我们可以选择不在这里抛出，而是继续
+                 // 即使 Storage 删除失败，也记录日志并尝试删 DB
+                 logSystemEvent({
+                    category: 'FILE',
+                    eventType: 'DELETE_STORAGE_FAILED',
+                    severity: 'WARN',
+                    message: `Storage delete failed: ${storageError.message}`,
+                    userId: currentUser?.id,
+                    meta: { file_path: fileRow.file_path }
+                });
             }
 
             // 2. 从数据库删除
@@ -95,29 +236,51 @@ export const FileSender = () => {
             if (dbError) throw dbError;
 
             message.success({ content: '文件已删除！', key });
-            // (UI 将通过 Realtime 自动更新, 无需手动 setSyncedFiles)
+            
+            // 日志：记录删除成功
+            logSystemEvent({
+                category: 'FILE',
+                eventType: 'FILE_DELETED',
+                message: `File deleted: ${fileRow.file_name}`,
+                userId: currentUser?.id,
+                meta: { file_id: fileRow.id, file_name: fileRow.file_name }
+            });
 
         } catch (error) {
              console.error('删除失败:', error);
              message.error({ content: `删除失败: ${error.message}`, key });
+             
+             // 日志：记录删除失败
+             logSystemEvent({
+                category: 'FILE',
+                eventType: 'DELETE_FAILED',
+                severity: 'ERROR',
+                message: `Delete failed: ${error.message}`,
+                userId: currentUser?.id,
+                meta: { file_id: fileRow.id, error: error.message }
+            });
         }
     };
 
-
-    // --- 9. useEffect Hook，用于在弹窗打开时生成 QR 码 ---
-   useEffect(() => {
-        if (isQrModalVisible && qrCodeRef.current && currentUser?.id) { // 确保拿到 currentUser.id
+    // --- 二维码生成 ---
+    useEffect(() => {
+        if (isQrModalVisible && qrCodeRef.current && currentUser?.id) {
             loadQrCodeScript().then(() => {
                 if (window.QRious) {
-                    // 构建移动端专属链接
-                    // 例如: https://your-domain.com/mobile-transfer?uid=user_123
                     const mobileUrl = `${window.location.origin}/mobile-transfer?uid=${currentUser.id}`;
-
                     new window.QRious({
                         element: qrCodeRef.current,
-                        value: mobileUrl, // 使用新链接
+                        value: mobileUrl,
                         size: 256,
                         level: 'H'
+                    });
+                    
+                    // 日志：记录用户打开了手机上传二维码
+                    logSystemEvent({
+                        category: 'INTERACTION',
+                        eventType: 'QR_CODE_GENERATED',
+                        message: 'User opened mobile upload QR code',
+                        userId: currentUser.id
                     });
                 }
             }).catch(err => {
@@ -125,16 +288,15 @@ export const FileSender = () => {
                 messageApi.error("无法加载二维码生成器，请刷新页面重试。");
             });
         }
-    }, [isQrModalVisible, messageApi, currentUser]); // 添加 currentUser 依赖
+    }, [isQrModalVisible, messageApi, currentUser]);
 
-    // --- 10. useEffect Hook，用于加载初始文件 + 监听实时变化 ---
+    // --- 文件加载与 Realtime 订阅 ---
     useEffect(() => {
         if (!currentUser?.id) {
             setFilesLoading(false);
-            return; // 未登录
+            return;
         }
 
-        // 10a. 加载初始文件列表
         const fetchFiles = async () => {
             setFilesLoading(true);
             try {
@@ -142,13 +304,21 @@ export const FileSender = () => {
                     .from('user_files')
                     .select('*')
                     .eq('user_id', currentUser.id)
-                    .order('created_at', { ascending: false }); // 最新在最前
+                    .order('created_at', { ascending: false });
                 
                 if (error) throw error;
                 setSyncedFiles(data || []);
             } catch (error) {
                 console.error("加载已同步文件失败:", error);
                 messageApi.error(`加载文件列表失败: ${error.message}`);
+                
+                logSystemEvent({
+                    category: 'FILE',
+                    eventType: 'FETCH_LIST_FAILED',
+                    severity: 'ERROR',
+                    message: error.message,
+                    userId: currentUser.id
+                });
             } finally {
                 setFilesLoading(false);
             }
@@ -156,23 +326,26 @@ export const FileSender = () => {
 
         fetchFiles();
 
-        // 10b. 设置 Realtime 订阅 (合并 FileReceiver 的逻辑)
         const channel = supabase
-            .channel(`user_files_page:${currentUser.id}`) // 使用唯一的频道名称
+            .channel(`user_files_page:${currentUser.id}`)
             .on(
                 'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'user_files',
-                    filter: `user_id=eq.${currentUser.id}`
-                },
+                { event: 'INSERT', schema: 'public', table: 'user_files', filter: `user_id=eq.${currentUser.id}` },
                 (payload) => {
-                    console.log('Realtime 收到新文件:', payload);
-                    // 将新文件添加到列表顶部
+                    // console.log('Realtime 收到新文件:', payload);
                     setSyncedFiles(prevFiles => [payload.new, ...prevFiles]);
                     
-                    // 弹出通知 (与 MainLayout 中的 FileReceiver 功能相同)
+                    // 仅当文件来源不是当前设备时，才显得比较有意思（这里简单记录所有同步）
+                    if (payload.new.source_device !== 'web') {
+                         logSystemEvent({
+                            category: 'SYNC',
+                            eventType: 'FILE_RECEIVED_REALTIME',
+                            message: `Received file from ${payload.new.source_device || 'other device'}`,
+                            userId: currentUser.id,
+                            meta: { file_id: payload.new.id, device: payload.new.source_device }
+                        });
+                    }
+
                     notificationApi.info({
                         message: '收到一个新文件',
                         description: `文件 "${payload.new.file_name}" 已同步。`,
@@ -184,41 +357,25 @@ export const FileSender = () => {
             )
             .on(
                 'postgres_changes',
-                {
-                    event: 'DELETE',
-                    schema: 'public',
-                    table: 'user_files',
-                    filter: `user_id=eq.${currentUser.id}`
-                },
+                { event: 'DELETE', schema: 'public', table: 'user_files', filter: `user_id=eq.${currentUser.id}` },
                 (payload) => {
-                    console.log('Realtime 收到删除:', payload);
-                    // 从列表中移除
                     setSyncedFiles(prevFiles => prevFiles.filter(file => file.id !== payload.old.id));
                 }
             )
-            .subscribe((status, err) => {
-                 if (status === 'SUBSCRIBED') {
-                    console.log('已连接文件同步页面通道。');
-                 }
-                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.error('文件同步页面通道连接失败: ', err);
-                 }
-            });
+            .subscribe();
 
-        // 清理订阅
         return () => {
             supabase.removeChannel(channel);
         };
     
-    }, [currentUser, notificationApi, messageApi]); // 依赖项
-
+    }, [currentUser, notificationApi, messageApi]);
 
     const handleFileChange = ({ fileList }) => {
         setFileList(fileList);
     };
 
+    // --- 上传并同步逻辑 (核心修改：添加时长统计 + exe拦截) ---
     const handleUploadAndSync = async () => {
-        // ... (此函数保持不变) ...
         if (fileList.length === 0) {
             messageApi.warning('请先选择要同步的文件！');
             return;
@@ -228,34 +385,66 @@ export const FileSender = () => {
             return;
         }
 
+        // --- 1. 安全检查：拦截 .exe 文件 ---
+        const hasExe = fileList.some(file => file.name.toLowerCase().endsWith('.exe'));
+        if (hasExe) {
+            messageApi.error('安全限制：不支持上传 .exe 可执行文件。');
+            
+            // 记录拦截日志
+            logSystemEvent({
+                category: 'FILE',
+                eventType: 'UPLOAD_BLOCKED',
+                severity: 'WARN',
+                message: 'Upload blocked due to .exe file extension',
+                userId: currentUser.id,
+                meta: { file_names: fileList.map(f => f.name) }
+            });
+            return;
+        }
+
         setLoading(true);
         messageApi.loading({ content: '正在同步文件...', key: 'syncing', duration: 0 });
 
+        // 2. 记录开始时间 和 总文件大小
+        const startTime = Date.now();
+        // originFileObj.size 是文件的字节数
+        const totalSizeBytes = fileList.reduce((acc, file) => acc + (file.originFileObj?.size || 0), 0);
+
+        // 日志：开始上传
+        logSystemEvent({
+            category: 'FILE',
+            eventType: 'UPLOAD_ATTEMPT',
+            message: `Attempting to upload ${fileList.length} files`,
+            userId: currentUser.id,
+            meta: { 
+                file_count: fileList.length,
+                total_size_bytes: totalSizeBytes // 记录本次上传总量
+            }
+        });
+
         const uploadPromises = fileList.map(async (fileInfo) => {
             const file = fileInfo.originFileObj;
-            if (!file) {
-                throw new Error(`无法获取文件 ${fileInfo.name}`);
-            }
+            if (!file) throw new Error(`无法获取文件 ${fileInfo.name}`);
             
             const fileExt = file.name.split('.').pop();
             const safeFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}${fileExt ? '.' + fileExt : ''}`;
             const filePath = `${currentUser.id}/${safeFileName}`;
 
+            // 1. Upload Storage
             const { error: uploadError } = await supabase.storage
                 .from('file_sync')
                 .upload(filePath, file);
 
-            if (uploadError) {
-                throw new Error(`上传 ${file.name} 失败: ${uploadError.message}`);
-            }
+            if (uploadError) throw new Error(`上传 ${file.name} 失败: ${uploadError.message}`);
 
+            // 2. Insert DB
             const { error: insertError } = await supabase
                 .from('user_files')
                 .insert({
                     user_id: currentUser.id,
                     file_name: file.name,
                     file_path: filePath,
-                    source_device: 'web' // 假设这是从网页端发送的
+                    source_device: 'web'
                 });
             
             if (insertError) {
@@ -268,17 +457,61 @@ export const FileSender = () => {
 
         try {
             const uploadedFiles = await Promise.all(uploadPromises);
+            
+            // 3. 记录结束时间，计算耗时
+            const endTime = Date.now();
+            const durationMs = endTime - startTime;
+            
+            // 4. 计算简单平均速度 (KB/s)
+            // (Total Bytes / 1024) / (Duration ms / 1000)
+            const speedKbps = totalSizeBytes > 0 && durationMs > 0 
+                ? (totalSizeBytes / 1024) / (durationMs / 1000) 
+                : 0;
+
             messageApi.success({ 
-                content: `成功同步 ${uploadedFiles.length} 个文件！`, 
+                // 显示本次耗时给用户看
+                content: `成功同步 ${uploadedFiles.length} 个文件！(耗时: ${(durationMs / 1000).toFixed(1)}秒)`, 
                 key: 'syncing', 
                 duration: 3 
             });
             setFileList([]);
+
+            // 日志：上传成功 (包含关键的预测指标数据)
+            logSystemEvent({
+                category: 'FILE',
+                eventType: 'UPLOAD_SUCCESS',
+                severity: 'INFO',
+                message: `Successfully uploaded ${uploadedFiles.length} files`,
+                userId: currentUser.id,
+                meta: { 
+                    file_count: uploadedFiles.length,
+                    total_size_bytes: totalSizeBytes,
+                    duration_ms: durationMs,
+                    average_speed_kbps: speedKbps.toFixed(2)
+                }
+            });
+
         } catch (error) {
+            // 计算失败时的耗时也有分析价值（例如超时）
+            const durationMs = Date.now() - startTime;
+
             messageApi.error({ 
                 content: error.message, 
                 key: 'syncing', 
                 duration: 5 
+            });
+
+            // 日志：上传失败
+            logSystemEvent({
+                category: 'FILE',
+                eventType: 'UPLOAD_FAILED',
+                severity: 'ERROR',
+                message: `Upload failed: ${error.message}`,
+                userId: currentUser.id,
+                meta: { 
+                    error: error.message,
+                    duration_ms: durationMs 
+                }
             });
         } finally {
             setLoading(false);
@@ -287,18 +520,13 @@ export const FileSender = () => {
 
     const filteredFiles = useMemo(() => {
         return syncedFiles.filter(file => {
-            // 搜索过滤
             const matchesSearch = file.file_name.toLowerCase().includes(searchTerm.toLowerCase());
-
-            // 日期过滤
             let matchesDate = true;
             if (dateRange && dateRange[0] && dateRange[1]) {
                 const fileDate = dayjs(file.created_at);
-                // 使用 startOf 和 endOf 确保涵盖所选日期的全天
                 matchesDate = fileDate.isAfter(dateRange[0].startOf('day')) && 
                               fileDate.isBefore(dateRange[1].endOf('day'));
             }
-
             return matchesSearch && matchesDate;
         });
     }, [syncedFiles, searchTerm, dateRange]);
@@ -311,7 +539,7 @@ export const FileSender = () => {
                     <Paragraph type="secondary">
                         上传文件到您的私有云端。文件将实时推送到您已登录的其他设备（如电脑或手机）。
                     </Paragraph>
-                     <Alert
+                      <Alert
                       message="如何从手机上传？"
                       description="点击下方的“从手机上传”按钮，用您的手机扫描弹出的二维码。在手机浏览器中登录同一个账户，即可上传文件并同步回电脑。"
                       type="info"
@@ -328,7 +556,7 @@ export const FileSender = () => {
                 >
                     <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                     <p className="ant-upload-text">点击或拖拽文件到此区域</p>
-                    <p className="ant-upload-hint">支持单个或多个文件。文件将被安全存储并同步到您的账户。</p>
+                    <p className="ant-upload-hint">支持单个或多个文件。文件将被安全存储并同步到您的账户。（不支持 .exe 格式）</p>
                 </Dragger>
 
                 <Space style={{ width: '100%', marginTop: 24 }} direction="vertical" size="middle">
@@ -355,12 +583,10 @@ export const FileSender = () => {
                 </Space>
             </Card>
 
-            {/* --- 11. 新增：显示已同步文件的卡片 --- */}
-           <Card 
+            <Card 
                 title={
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span>已同步的文件 ({filteredFiles.length})</span>
-                        {/* 筛选控件 */}
                         <Space size="small" style={{ fontWeight: 'normal' }}>
                             <Search
                                 placeholder="搜索文件名"
@@ -381,8 +607,8 @@ export const FileSender = () => {
             >
                 <List
                     loading={filesLoading}
-                    dataSource={filteredFiles} // 使用过滤后的数据
-                    pagination={{ pageSize: 5 }} // 添加分页
+                    dataSource={filteredFiles}
+                    pagination={{ pageSize: 5 }}
                     renderItem={(file) => (
                         <List.Item
                             actions={[
@@ -403,8 +629,6 @@ export const FileSender = () => {
                 />
             </Card>
 
-
-            {/* QR 码弹窗 */}
             <Modal 
                 title="从手机上传" 
                 open={isQrModalVisible} 
@@ -422,86 +646,5 @@ export const FileSender = () => {
     );
 };
 
-// --- 组件 B: 文件接收器 ---
-// (此组件现在仅用于 MainLayout.js)
-export const FileReceiver = () => {
-    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-    const { notificationApi } = useNotification();
-
-    useEffect(() => {
-        if (!currentUser?.id) {
-            return;
-        }
-
-        const handleDownload = async (fileRow) => {
-            const key = `download-${fileRow.id}`;
-            message.loading({ content: `正在准备下载 ${fileRow.file_name}...`, key });
-            try {
-                const { data, error } = await supabase.storage
-                    .from('file_sync')
-                    .download(fileRow.file_path); 
-                
-                if (error) throw error;
-                
-                saveAs(data, fileRow.file_name);
-                message.success({ content: '下载已开始！', key });
-
-                // --- ✨ 推荐修改：在通知处下载 *不* 应该删除文件 ---
-                // await supabase.from('user_files').delete().eq('id', fileRow.id);
-
-            } catch (error) {
-                console.error('下载失败:', error);
-                message.error({ content: `下载失败: ${error.message}`, key });
-            }
-        };
-
-        const channel = supabase
-            .channel(`user_files:${currentUser.id}`) // 注意：这个 Channel 名称应与 Page 上的不同
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'user_files',
-                    filter: `user_id=eq.${currentUser.id}`
-                },
-                (payload) => {
-                    console.log('收到新文件通知 (Layout):', payload);
-                    const newFile = payload.new;
-                    
-                    // 仅当来源不是 'web' 时才通知 (避免自己通知自己)
-                    // (如果您希望所有设备都收到通知，可以移除此 if 判断)
-                    if (newFile.source_device !== 'web') {
-                        notificationApi.info({
-                            message: '收到一个新文件',
-                            description: `文件 "${newFile.file_name}" 已从您的另一台设备同步。`,
-                            placement: 'topRight',
-                            duration: 10,
-                            icon: <DownloadOutlined style={{ color: '#1890ff' }} />,
-                            btn: (
-                                <Button type="primary" size="small" onClick={() => handleDownload(newFile)}>
-                                    立即下载
-                                </Button>
-                            ),
-                            key: newFile.id
-                        });
-                    }
-                }
-            )
-            .subscribe((status, err) => {
-                 if (status === 'SUBSCRIBED') {
-                    console.log('已连接实时文件同步通道 (Layout)。');
-                 }
-                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.error('文件同步通道连接失败 (Layout): ', err);
-                 }
-            });
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    
-    }, [currentUser, notificationApi]);
-
-    return null; 
-};
+// 导出页面组件
+export default FileSender;
