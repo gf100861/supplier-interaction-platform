@@ -3,15 +3,86 @@ import { Layout, Menu, Input, Button, List, Card, Typography, Spin, Avatar, Spac
 import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, LikeOutlined, DislikeOutlined, StarOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
-import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal'; // 确保路径正确
+import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal'; 
 import { useNotification } from '../contexts/NotificationContext';
 import dayjs from 'dayjs';
 import { supabase } from '../supabaseClient';
-import './IntelligentSearchPage.css'; // 我们需要一些CSS来美化布局
+import './IntelligentSearchPage.css'; 
 
 const { Title, Paragraph, Text } = Typography;
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
+
+// --- 日志系统工具函数 (复用自 LoginPage/OfflineSharePage) ---
+
+// 1. Session ID 管理 (用于串联用户单次访问的操作路径)
+const getSessionId = () => {
+    let sid = sessionStorage.getItem('app_session_id');
+    if (!sid) {
+        sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        sessionStorage.setItem('app_session_id', sid);
+    }
+    return sid;
+};
+
+// 2. IP 获取与缓存
+let cachedIpAddress = null;
+const getClientIp = async () => {
+    if (cachedIpAddress) return cachedIpAddress;
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        cachedIpAddress = data.ip;
+        return data.ip;
+    } catch (error) {
+        return 'unknown';
+    }
+};
+
+// 3. 通用日志上报函数
+const logSystemEvent = async (params) => {
+    const { 
+        category = 'SYSTEM', 
+        eventType, 
+        severity = 'INFO', 
+        message, 
+        email = null, 
+        userId = null, 
+        meta = {} 
+    } = params;
+
+    try {
+        const clientIp = await getClientIp();
+        const sessionId = getSessionId();
+
+        const environmentInfo = {
+            ip_address: clientIp,
+            session_id: sessionId,
+            userAgent: navigator.userAgent,
+            url: window.location.href,
+            page: 'IntelligentSearchPage' // 标记来源页面
+        };
+
+        // Fire-and-forget
+        supabase.from('system_logs').insert([{
+            category,
+            event_type: eventType,
+            severity,
+            message,
+            user_email: email, 
+            user_id: userId,
+            metadata: {
+                ...environmentInfo,
+                ...meta,
+                timestamp_client: new Date().toISOString()
+            }
+        }]).then(({ error }) => {
+            if (error) console.warn("Log upload failed:", error);
+        });
+    } catch (e) {
+        console.error("Logger exception:", e);
+    }
+};
 
 const IntelligentSearchPage = () => {
     const [inputValue, setInputValue] = useState('');
@@ -22,24 +93,72 @@ const IntelligentSearchPage = () => {
     const [isLoading, setIsLoading] = useState(false); // AI回复的加载状态
     const [isHistoryLoading, setIsHistoryLoading] = useState(true); // 页面初始加载状态
 
-    const { notices } = useNotices(); // 确保 useNotices 提供了 notices 列表
+    const { notices } = useNotices(); 
     const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
     const { messageApi } = useNotification();
-    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+    const currentUser = useMemo(() => {
+        try {
+            return JSON.parse(localStorage.getItem('user'));
+        } catch (e) { return null; }
+    }, []);
     const messagesEndRef = useRef(null);
 
     // --- 评星弹窗 State ---
     const [showRatingModal, setShowRatingModal] = useState(false);
     const [currentRating, setCurrentRating] = useState(0);
-    // 确保 rating comment state 也已定义
     const [ratingComment, setRatingComment] = useState('');
 
     const navigate = useNavigate();
 
+    // --- 全局错误监听与页面访问日志 ---
+    useEffect(() => {
+        if (currentUser?.role === 'Supplier') {
+            navigate('/'); 
+            return;
+        }
 
-    if (currentUser.role === 'Supplier') {
-        navigate('/'); // 跳转到初始页面
-    }
+        // 1. 记录页面访问
+        if (currentUser) {
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'PAGE_VIEW',
+                severity: 'INFO',
+                message: 'User visited Intelligent Search Page',
+                userId: currentUser.id,
+                email: currentUser.email
+            });
+        }
+
+        // 2. 运行时错误监听
+        const handleRuntimeError = (event) => {
+            logSystemEvent({
+                category: 'RUNTIME',
+                eventType: 'JS_ERROR',
+                severity: 'ERROR',
+                message: event.message,
+                userId: currentUser?.id,
+                meta: { filename: event.filename, lineno: event.lineno, stack: event.error?.stack }
+            });
+        };
+        const handleUnhandledRejection = (event) => {
+            logSystemEvent({
+                category: 'RUNTIME',
+                eventType: 'UNHANDLED_PROMISE',
+                severity: 'ERROR',
+                message: event.reason?.message || 'Unknown Promise Error',
+                userId: currentUser?.id,
+                meta: { reason: JSON.stringify(event.reason) }
+            });
+        };
+
+        window.addEventListener('error', handleRuntimeError);
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+        return () => {
+            window.removeEventListener('error', handleRuntimeError);
+            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+        };
+    }, [currentUser, navigate]);
 
 
     // 1. --- 加载会话列表 (Sider) ---
@@ -66,6 +185,14 @@ const IntelligentSearchPage = () => {
             }
         } catch (error) {
             messageApi.error(`加载会话列表失败: ${error.message}`);
+            // 日志：加载会话失败
+            logSystemEvent({
+                category: 'DATA',
+                eventType: 'FETCH_SESSIONS_FAILED',
+                severity: 'ERROR',
+                message: error.message,
+                userId: currentUser?.id
+            });
         } finally {
             setIsHistoryLoading(false);
         }
@@ -132,6 +259,15 @@ const IntelligentSearchPage = () => {
             })));
         } catch (error) {
             messageApi.error(`加载聊天记录失败: ${error.message}`);
+            // 日志：加载消息失败
+            logSystemEvent({
+                category: 'DATA',
+                eventType: 'FETCH_MESSAGES_FAILED',
+                severity: 'ERROR',
+                message: error.message,
+                userId: currentUser?.id,
+                meta: { session_id: sessionId }
+            });
         } finally {
             setIsHistoryLoading(false);
         }
@@ -151,7 +287,7 @@ const IntelligentSearchPage = () => {
             // 这是 "新建对话" 状态
             setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请问您想查找哪方面的通知单？', feedback: null }]);
         }
-    }, [activeSessionId]); // <-- 移除 'notices' 依赖
+    }, [activeSessionId]); 
 
     // --- ✨ 核心修正: 新增 Effect，当 notices 列表更新时，重新渲染消息内容 ---
     // 这解决了消息（含ID）先加载，而 `notices` 数据后加载导致无法显示详情的问题
@@ -164,7 +300,7 @@ const IntelligentSearchPage = () => {
                 }))
             );
         }
-    }, [notices]); // <-- 仅依赖 'notices'
+    }, [notices]); 
 
     // 滚动到底部
     useEffect(() => {
@@ -175,6 +311,12 @@ const IntelligentSearchPage = () => {
     const handleNewChat = (activate = true) => {
         if (activate) {
             setActiveSessionId(null);
+            // 日志：用户点击新建会话
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'NEW_CHAT_INITIATED',
+                userId: currentUser?.id
+            });
         }
         setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请问您想查找哪方面的通知单？', feedback: null }]);
     };
@@ -194,6 +336,14 @@ const IntelligentSearchPage = () => {
 
             messageApi.success('对话已删除！');
 
+            // 日志：删除会话成功
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'SESSION_DELETED',
+                userId: currentUser?.id,
+                meta: { session_id: sessionId }
+            });
+
             // 立即从Sider的UI上移除
             const newSessions = sessions.filter(s => s.id !== sessionId);
             setSessions(newSessions);
@@ -209,6 +359,15 @@ const IntelligentSearchPage = () => {
 
         } catch (error) {
             messageApi.error(`删除失败: ${error.message}`);
+            // 日志：删除会话失败
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'SESSION_DELETE_FAILED',
+                severity: 'ERROR',
+                message: error.message,
+                userId: currentUser?.id,
+                meta: { session_id: sessionId }
+            });
         }
     };
 
@@ -221,6 +380,17 @@ const IntelligentSearchPage = () => {
         };
 
         setIsLoading(true);
+        const startTime = Date.now(); // 记录开始时间
+
+        // 日志：搜索尝试
+        logSystemEvent({
+            category: 'AI',
+            eventType: 'SEARCH_ATTEMPT',
+            message: 'User initiated a search',
+            userId: currentUser.id,
+            meta: { query_length: userQuery.length } // 隐私考虑，通常不直接记录原始query，只记录长度或脱敏信息
+        });
+
         let currentSessionId = activeSessionId;
         let isNewSession = false;
 
@@ -259,14 +429,31 @@ const IntelligentSearchPage = () => {
                 .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery, timestamp: optimisticUserMessage.timestamp });
             if (userSaveError) throw userSaveError;
 
-            // 2. --- TODO: 调用您的 AI Edge Function ---
+            // 2. --- TODO: 调用您的 AI Edge Function (这里模拟) ---
             await new Promise(resolve => setTimeout(resolve, 1500));
             const lowerCaseQuery = userQuery.toLowerCase();
             const mockResults = notices.filter(n => {
                 // 将整个通知单对象（包括所有历史记录和详情）转换为一个可搜索的字符串
                 const searchableText = JSON.stringify(n).toLowerCase();
                 return searchableText.includes(lowerCaseQuery);
-            }).slice(0, 5); // 仍然只返回最相关的3条
+            }).slice(0, 5); 
+
+            // 计算耗时
+            const durationMs = Date.now() - startTime;
+
+            // 日志：搜索完成（记录性能和结果数量）
+            logSystemEvent({
+                category: 'AI',
+                eventType: 'SEARCH_COMPLETED',
+                severity: 'INFO',
+                message: `Search returned ${mockResults.length} results`,
+                userId: currentUser.id,
+                meta: { 
+                    result_count: mockResults.length,
+                    duration_ms: durationMs,
+                    session_id: currentSessionId
+                }
+            });
 
             let systemResponseContent; // <-- 存入DB的 (将是JSON字符串)
             let systemResponseRenderableContent; // <-- 立即显示的 (将是JSX)
@@ -318,8 +505,19 @@ const IntelligentSearchPage = () => {
             ));
 
         } catch (error) {
+            const durationMs = Date.now() - startTime;
             messageApi.error(`发送失败: ${error.message}`);
             setMessages(prev => prev.filter(msg => !msg.isThinking)); // 移除“思考中”
+
+            // 日志：搜索失败
+            logSystemEvent({
+                category: 'AI',
+                eventType: 'SEARCH_FAILED',
+                severity: 'ERROR',
+                message: error.message,
+                userId: currentUser.id,
+                meta: { duration_ms: durationMs }
+            });
         } finally {
             setIsLoading(false);
         }
@@ -335,92 +533,103 @@ const IntelligentSearchPage = () => {
             const { error } = await supabase.from('chat_ratings').insert({
                 user_id: currentUser.id,
                 session_id: activeSessionId,
-                rating: currentRating
+                rating: currentRating,
+                comment: ratingComment // 如果有评论表字段，可以一起插入
             });
             if (error) throw error;
             messageApi.success(`感谢您的评分 (${currentRating} 星)!`);
+            
+            // 日志：用户评分
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'SESSION_RATED',
+                message: 'User rated session',
+                userId: currentUser.id,
+                meta: { 
+                    session_id: activeSessionId,
+                    rating: currentRating,
+                    has_comment: !!ratingComment
+                }
+            });
+
             setShowRatingModal(false);
             setCurrentRating(0);
+            setRatingComment('');
         } catch (error) {
             messageApi.error(`提交评分失败: ${error.message}`);
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'RATE_FAILED',
+                severity: 'ERROR',
+                message: error.message,
+                userId: currentUser.id
+            });
         }
     };
 
-
-
     const handleFeedback = async (messageId, feedbackType) => {
-
         const originalFeedback = messages.find(msg => msg.id === messageId)?.feedback;
-
         const newFeedback = originalFeedback === feedbackType ? null : feedbackType;
 
-
-
         setMessages(prevMessages => prevMessages.map(msg =>
-
             msg.id === messageId ? { ...msg, feedback: newFeedback } : msg
-
         ));
 
-
-
         try {
-
             const { error } = await supabase
-
                 .from('chat_messages')
-
                 .update({ feedback: newFeedback })
-
                 .eq('id', messageId)
-
                 .eq('user_id', currentUser?.id);
 
-
-
             if (error) {
-
                 setMessages(prevMessages => prevMessages.map(msg =>
-
                     msg.id === messageId ? { ...msg, feedback: originalFeedback } : msg
-
                 ));
-
                 throw error;
-
+            }
+            
+            // 日志：用户点赞/点踩
+            if (newFeedback) {
+                logSystemEvent({
+                    category: 'INTERACTION',
+                    eventType: 'MESSAGE_FEEDBACK',
+                    message: `User ${newFeedback}d a message`,
+                    userId: currentUser.id,
+                    meta: { 
+                        session_id: activeSessionId,
+                        message_id: messageId,
+                        feedback_type: newFeedback
+                    }
+                });
             }
 
-            console.log(`Feedback updated for message ID ${messageId}: ${newFeedback}`);
-
         } catch (error) {
-
             console.error("Failed to update feedback:", error);
-
             messageApi.error(`更新反馈失败: ${error.message}`);
-
         }
-
     };
 
     // --- ✨ 核心修正: 确保 handleEndSession 函数已定义 ---
-
     const handleEndSession = () => {
-
         setShowRatingModal(true);
-
     };
 
     const handleRatingCancel = () => {
-
         setShowRatingModal(false);
-
         setCurrentRating(0);
-
     };
 
-
-
-    const showDetailsModal = (notice) => setDetailsModal({ visible: true, notice });
+    const showDetailsModal = (notice) => {
+        // 日志：查看详情
+        logSystemEvent({
+            category: 'INTERACTION',
+            eventType: 'VIEW_NOTICE_DETAIL',
+            userId: currentUser?.id,
+            meta: { notice_id: notice.id, notice_code: notice.noticeCode }
+        });
+        setDetailsModal({ visible: true, notice });
+    };
 
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
 

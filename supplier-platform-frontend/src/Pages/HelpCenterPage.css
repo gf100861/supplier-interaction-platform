@@ -162,6 +162,11 @@
     border-radius: 12px;
     padding: 20px;
     border: 1px solid #e5e7eb;
+    /* 增加最小高度，防止切换内容时高度跳动 */
+    min-height: 180px; 
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .bubble {
     padding: 10px 16px;
@@ -169,12 +174,15 @@
     margin-bottom: 12px;
     font-size: 13px;
     max-width: 80%;
+    position: relative;
 }
 .bubble.user {
     background: #1890ff;
     color: #fff;
     margin-left: auto;
     border-bottom-right-radius: 4px;
+    /* 增加阴影增加立体感 */
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25);
 }
 .bubble.ai {
     background: #fff;
@@ -191,4 +199,32 @@
 
 .ant-timeline-item-content {
     margin-left: 28px !important;
+}
+
+/* --- 新增动画样式 --- */
+
+/* 打字机光标 */
+.typing-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background-color: #1890ff;
+    margin-left: 4px;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* 气泡弹出动画 */
+@keyframes popIn {
+    0% { opacity: 0; transform: scale(0.9) translateY(10px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-pop-in {
+    animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
