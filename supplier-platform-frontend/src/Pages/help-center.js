@@ -10,7 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient'; // 假设您有这个文件导出
 import './HelpCenterPage.css';
-
+import SystemIntroVideo from './SystemIntroVideo';
 const { Title, Paragraph, Text } = Typography;
 const { Content, Sider } = Layout;
 const { Step } = Steps;
@@ -86,6 +86,9 @@ const QuickStartContent = () => (
     <div id="quick-start" className="animate-fade-in">
         <div className="hero-section">
             <Title level={1} style={{ marginBottom: 16 }}>👋 欢迎使用供应商交互平台</Title>
+            <div style={{ marginBottom: 32 }}>
+                <SystemIntroVideo />
+            </div>
             <Paragraph style={{ fontSize: 18, color: '#666', maxWidth: 800 }}>
                 这是一个连接供应商与 SD (Supplier Development) 团队的高效协作平台，旨在实现质量问题的全流程闭环管理、数据透明化及经验共享。
             </Paragraph>

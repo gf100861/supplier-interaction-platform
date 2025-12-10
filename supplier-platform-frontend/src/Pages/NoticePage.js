@@ -928,11 +928,16 @@ const NoticePage = () => {
         );
     };
 
+    const supplier_special_text ='若您找不到下载模板选项，请您筛选待提交ActionPlan并点击分组'
     return (
         <div style={{ padding: '24px' }}>
             <Card style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                    <div><Title level={4} style={{ margin: 0 }}>整改通知单</Title><Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单</Paragraph></div>
+                    <div>
+                        <Title level={4} style={{ margin: 0 }}>整改通知单</Title>
+                        <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单 {currentUser.role === 'Supplier' ? supplier_special_text : ''}</Paragraph>
+                    
+                    </div>
 
                     <Space wrap>
                         <Radio.Group
