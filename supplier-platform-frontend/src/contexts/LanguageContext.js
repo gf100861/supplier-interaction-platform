@@ -24,6 +24,7 @@ const translations = {
         'menu.offlineShare': '文件互传',
         'menu.settings': '系统设置和建议',
         'menu.admin': '系统管理',
+        'menu.historicalImport': '历史数据导入',
 
         // Header & Common
         'header.welcome': '欢迎您',
@@ -100,6 +101,7 @@ const translations = {
         'menu.offlineShare': 'File Transfer',
         'menu.settings': 'Settings & Suggestions',
         'menu.admin': 'System Admin',
+        'menu.historicalImport': 'Historical Data Import',
 
         // Header & Common
         'header.welcome': 'Welcome',

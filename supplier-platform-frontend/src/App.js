@@ -33,6 +33,7 @@ import IntelligentSearchPage from './Pages/IntelligentSearchPage';
 import MobileTransferPage from './Pages/MobileTransferPage';
 import HelpCenterPage from './Pages/help-center';
 import { FileSender } from './Pages/OfflineSharePage';
+import HistoricalImportPage from './Pages/HistoricalImportPage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -76,7 +77,9 @@ const ThemedApp = () => {
                                                     <Route path="intelligence-search" element={<IntelligentSearchPage />}></Route>
                                                     <Route path="offline-share" element={< FileSender/>}></Route>
                                                     <Route path="/mobile-transfer" element={<MobileTransferPage />} />
-                                              
+                                                    
+                                                    <Route path="/historical-import" element={<HistoricalImportPage />} />
+
                                                     <Route path="*" element={< NotFoundPage />} />
                                                 </Route>
                                             </Route>

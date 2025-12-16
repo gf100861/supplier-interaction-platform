@@ -62,6 +62,7 @@ const MainLayout = () => {
                 { key: '/notices', label: t('menu.notices'), roles: ['SD', 'Manager', 'Supplier'] },
                 { key: '/upload', label: t('menu.manualUpload'), roles: ['SD', 'Manager'] },
                 { key: '/batch-create', label: t('menu.batchCreate'), roles: ['SD', 'Manager'] },
+                { key: '/historical-import', label: t('menu.historicalImport'), roles: ['SD', 'Manager'] },
             ]
         },
         {
