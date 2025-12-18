@@ -1,32 +1,45 @@
 const { createClient } = require('@supabase/supabase-js');
+const cors = require('cors');
 
-// 辅助函数：CORS 和请求方法处理
-const allowCors = fn => async (req, res) => {
-    // 强制设置 CORS 头
-    res.setHeader('Access-Control-Allow-Credentials', true);
-    res.setHeader('Access-Control-Allow-Origin', '*'); // 或指定你的前端域名
-    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-    res.setHeader(
-        'Access-Control-Allow-Headers',
-        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-    );
+// 初始化 CORS 中间件
+// 允许所有来源 (*)，允许 POST 和 OPTIONS 方法
+const corsMiddleware = cors({
+    origin: '*', 
+    methods: ['POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
+    credentials: true,
+});
 
-    // 如果是预检请求，直接返回 200，不进入业务逻辑
+// 辅助函数：运行中间件
+function runMiddleware(req, res, fn) {
+    return new Promise((resolve, reject) => {
+        fn(req, res, (result) => {
+            if (result instanceof Error) {
+                return reject(result);
+            }
+            return resolve(result);
+        });
+    });
+}
+
+module.exports = async (req, res) => {
+    // 1. 首先运行 CORS 中间件
+    // 这会自动处理 OPTIONS 请求并设置 Access-Control-Allow-Origin 等头信息
+    await runMiddleware(req, res, corsMiddleware);
+
+    // 2. 如果是 OPTIONS 请求，直接结束，不进入业务逻辑
+    // 虽然 cors 中间件通常会处理，但显式返回 200 是个双重保险
     if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
+        return res.status(200).end();
     }
-    
-    // 执行业务逻辑
-    return await fn(req, res);
-};
 
-const handler = async (req, res) => {
-    // 再次检查方法，确保非 POST 请求被拦截
+    // 3. 检查请求方法
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
+    // --- 业务逻辑开始 ---
+    
     // 初始化带有 Service Role 权限的 Supabase 客户端
     const supabaseAdmin = createClient(
         process.env.SUPABASE_URL,
@@ -46,7 +59,7 @@ const handler = async (req, res) => {
     }
 
     try {
-        // 1. 在 Supabase Auth 中创建用户
+        // 4. 在 Supabase Auth 中创建用户
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: password,
@@ -59,7 +72,7 @@ const handler = async (req, res) => {
 
         let supplierId = null;
 
-        // 2. 如果是供应商角色，处理供应商公司逻辑
+        // 5. 如果是供应商角色，处理供应商公司逻辑
         if (role === 'Supplier' && supplierData) {
             if (supplierData.isNew) {
                 const { data: newSupplier, error: supError } = await supabaseAdmin
@@ -79,7 +92,7 @@ const handler = async (req, res) => {
             }
         }
 
-        // 3. 在 public.users 表中创建记录
+        // 6. 在 public.users 表中创建记录
         const { error: profileError } = await supabaseAdmin
             .from('users')
             .insert({
@@ -104,6 +117,3 @@ const handler = async (req, res) => {
         return res.status(500).json({ error: error.message });
     }
 };
-
-// 导出包装后的处理函数
-module.exports = allowCors(handler);
