@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Tabs, Upload, Button, Form, Input, Select, DatePicker, message, Row, Col, Typography, Divider, Alert, Space, Spin, Collapse, Switch } from 'antd';
 import { InboxOutlined, FileExcelOutlined, FilePdfOutlined, UploadOutlined, CloudUploadOutlined, RobotOutlined, ThunderboltOutlined, CaretRightOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-
+import { useNotification } from '../contexts/NotificationContext';
+import { useSuppliers } from '../contexts/SupplierContext';
 // --- 第三方库 CDN 导入 ---
 import * as ExcelJS from 'https://esm.sh/exceljs@4.4.0';
 import Tesseract from 'https://esm.sh/tesseract.js@5.0.3';
@@ -20,13 +21,7 @@ const { TextArea } = Input;
 const { Option } = Select;
 const { Panel } = Collapse;
 
-// --- 模拟数据 ---
-const mockSuppliers = [
-    { id: '1', short_code: '54267', name: 'Guiyang Yongqing' },
-    { id: '2', short_code: 'A001', name: 'Alpha Electronics' },
-    { id: '3', short_code: 'B002', name: 'Beta Mechanics' },
-];
-
+// 模拟的添加通知单函数
 const mockAddNotices = async (notices) => {
     console.log("模拟写入数据库:", notices);
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -48,10 +43,8 @@ const mockSupabase = {
     }
 };
 
-// *** 修改点 1: 在这里填入你的 API Key 作为默认值 (可选) ***
-// 如果不想硬编码，保持为空字符串 ''，然后在页面输入框里填
+// *** 修改点 1: 默认 API Key ***
 const DEFAULT_API_KEY = '';
-// 例如: const DEFAULT_API_KEY = 'AIzaSyD......';
 
 const HistoricalImportPage = () => {
     // --- 状态管理 ---
@@ -60,60 +53,85 @@ const HistoricalImportPage = () => {
     const [parseProgress, setParseProgress] = useState('');
     const [useGemini, setUseGemini] = useState(true);
 
-    // *** 修改点 2: 初始化状态时使用默认 Key ***
-    // 尝试从环境变量读取 (Vite使用 import.meta.env, CRA使用 process.env) 或者使用上面的常量
+    const { messageApi } = useNotification();
+    const { suppliers } = useSuppliers();
+
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+
+    const managedSuppliers = useMemo(() => {
+        if (!currentUser) return [];
+        if (currentUser.role === 'Manager') return suppliers;
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier);
+        }
+        return [];
+    }, [currentUser, suppliers]);
+
+    // *** 修改点 2: API Key ***
     const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
 
-    // *** 修改点 3: 更新默认模型为当前稳定版本 ***
-    const [geminiModel, setGeminiModel] = useState('gemini-1.5-flash');
+    // *** 修改点 3: 模型选择 ***
+    const [geminiModel, setGeminiModel] = useState('gemini-2.5-pro');
 
-    const suppliers = mockSuppliers;
     const addNotices = mockAddNotices;
-
     const [form] = Form.useForm();
 
-    // --- Google Gemini API 调用核心逻辑 ---
-    const callGeminiVisionAPI = async (base64Image) => {
+    // --- Google Gemini API 调用核心逻辑 (支持多页 + 图片深度解析) ---
+    const callGeminiVisionAPI = async (base64Images) => {
         if (!apiKey) {
             throw new Error("API Key 为空！请在设置栏输入 Google API Key。");
         }
 
         const prompt = `
-        You are a Quality Engineer expert. Analyze this 8D Report / NCR image.
+        You are a Super Quality Engineer expert. Analyze this 8D Report / NCR document (which may contain multiple pages).
         Extract the information into a pure JSON object. 
         
         Strict Rules:
-        1. Output ONLY JSON. No Markdown block quotes (like \`\`\`json).
+        1. Output ONLY JSON. No Markdown block quotes.
         2. If a field is not found, return null or empty string.
-        3. Translate content to Simplified Chinese if it is in English.
+        3. Do not omit any information.
+        4. **CRITICAL**: Read ALL pages provided. The Root Cause (D4) and Interim/Corrective Actions (D5/D6) might be on the 2nd or 3rd page.
+        5. **Root Cause Analysis**: Combine content from all pages. Look for "4.", "D4", "Root Cause", "Why". Flatten any 5-Why structure into a readable string.
+        6. **Interim/Corrective Action**: Combine content from all pages. Look for "5.", "D5", "6.", "D6", "Action", "Measures".
+        7. **Embedded Images Analysis (EXPERIMENTAL)**:
+           - If there are photos or screenshots embedded in the "Problem Description" or "Root Cause" sections, please analyze them.
+           - Briefly describe what the defect looks like in the image (e.g., "Image shows a crack on the weld seam" or "Photo indicates rust on the surface").
+           - Append this visual description to the corresponding text field (summary or rootCause) in brackets, like: "[Visual Analysis: ...]".
         
         Fields to extract:
         - reportNo: Report number / NCR No.
+        - supplierCode: Supplier code.
+        - subject: Subject / Description / Title of the issue.
         - partNo: Material number / Part No.
         - partName: Part name.
-        - quantity: Defect quantity (number or string).
+        - quantity: Defect quantity.
         - date: Issue date (Format: YYYY-MM-DD).
-        - summary: Problem description / Defect phenomenon (D2).
-        - rootCause: Root cause analysis.
-        - interimAction: Interim & Potential Corrective Action.
+        - summary: Problem description (D2). Include visual analysis of any embedded photos here.
+        - rootCause: Root cause analysis (D4). EXTRACT FULL TEXT. Include visual analysis of any evidence photos here.
+        - interimAction: Interim & Potential Corrective Action (D5/D6). EXTRACT FULL TEXT.
         `;
 
+        // *** 核心修改：构建包含多张图片的 Payload ***
+        const parts = [{ text: prompt }];
+        
+        // 确保输入是数组
+        const images = Array.isArray(base64Images) ? base64Images : [base64Images];
+        
+        images.forEach(imgData => {
+            parts.push({
+                inline_data: {
+                    mime_type: "image/jpeg",
+                    data: imgData
+                }
+            });
+        });
+
         const payload = {
-            contents: [{
-                parts: [
-                    { text: prompt },
-                    {
-                        inline_data: {
-                            mime_type: "image/jpeg",
-                            data: base64Image
-                        }
-                    }
-                ]
-            }],
-            // *** 修改点 4: 增加生成配置，降低随机性 ***
+            contents: [{ parts: parts }],
             generationConfig: {
-                temperature: 0.2, // 较低的温度使输出更准确
-                maxOutputTokens: 2048,
+                temperature: 0.2,
+                maxOutputTokens: 4096, // 增加 Token 限制以容纳更多内容
             }
         };
 
@@ -134,7 +152,6 @@ const HistoricalImportPage = () => {
 
             if (!textResponse) throw new Error("API 返回了空内容");
 
-            // 清洗 Markdown 标记
             const jsonStr = textResponse.replace(/```json|```/g, '').trim();
 
             try {
@@ -150,24 +167,31 @@ const HistoricalImportPage = () => {
         }
     };
 
-    // --- 辅助：将 PDF 页面转换为 Base64 图片 ---
-    const convertPdfPageToImage = async (file) => {
+    // --- 辅助：将 PDF 所有页面转换为 Base64 图片数组 ---
+    const convertPdfToImages = async (file) => {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-        const page = await pdf.getPage(1); // 默认取第一页
-        const viewport = page.getViewport({ scale: 1.5 });
+        const totalPages = pdf.numPages;
+        const images = [];
 
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+        // 限制最大页数以防 Token 超限，通常 8D 报告前 3 页足矣
+        const maxPagesToProcess = Math.min(totalPages, 5);
 
-        await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-        return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        for (let i = 1; i <= maxPagesToProcess; i++) {
+            setParseProgress(`正在处理第 ${i} / ${totalPages} 页...`);
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            images.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+        }
+        return images;
     };
 
-    // --- 核心功能 1: Excel 批量导入 (保持原样) ---
+    // --- 核心功能 1: Excel 批量导入 ---
     const handleExcelBatchImport = async (file) => {
         setLoading(true);
         const reader = new FileReader();
@@ -207,13 +231,13 @@ const HistoricalImportPage = () => {
                 });
                 if (noticesToInsert.length > 0) {
                     await addNotices(noticesToInsert);
-                    message.success(`成功模拟导入 ${successCount} 条数据！`);
+                    messageApi.success(`成功模拟导入 ${successCount} 条数据！`);
                 } else {
-                    message.warning("未解析到有效数据。");
+                    messageApi.warning("未解析到有效数据。");
                 }
             } catch (error) {
                 console.error(error);
-                message.error("Excel 解析失败: " + error.message);
+                messageApi.error("Excel 解析失败: " + error.message);
             } finally {
                 setLoading(false);
             }
@@ -222,7 +246,7 @@ const HistoricalImportPage = () => {
         return false;
     };
 
-    // --- 本地正则提取 (Fallback) ---
+    // --- 本地正则提取 (Fallback - 仅做文本提取) ---
     const extractTextLocal = async (file) => {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
@@ -274,10 +298,10 @@ const HistoricalImportPage = () => {
         };
 
         const reportNo = extractField(['Report No', 'NCR No', '8D No', 'No.'], 30);
+        const supplierCode = extractField(['Supplier Code', 'Vendor Code', 'Supplier No', 'Vendor ID', 'Parma No', 'Parma'], 20);
         const partNo = extractField(['Part number', 'Part No', 'P/N', 'Material No', 'Material number'], 30);
         const partName = extractField(['Part name', 'Description', 'Part Description'], 50);
         const quantity = extractField(['Quantity', 'Qty', 'Amount'], 20);
-
         const dateRegex = /(\d{4}[-./年]\d{1,2}[-./月]\d{1,2})|(\d{1,2}[-./]\d{1,2}[-./]\d{4})/;
         const dateMatch = cleanText.match(dateRegex);
         let date = dayjs();
@@ -285,38 +309,28 @@ const HistoricalImportPage = () => {
             const dateStr = dateMatch[0].replace(/[年月.]/g, '-').replace('日', '');
             date = dayjs(dateStr).isValid() ? dayjs(dateStr) : dayjs();
         }
-
-        const summary = extractBlock(
-            ['Problem description', 'Phenomenon', 'Subject', 'Defect', '2. Problem', '问题描述', '现象'],
-            ['3. Containment', '4. Root Cause', 'Root Cause', 'Date', 'Analysis']
-        );
-        const rootCause = extractBlock(
-            ['4. Root Cause Analysis', 'Root Cause', 'Analysis', 'Why', '根本原因', '原因分析'],
-            ['5. Interim', 'Potential Corrective', 'Corrective Action', 'Action', 'Solution', 'Date']
-        );
-        const interimAction = extractBlock(
-            ['5. Interim', 'Potential Corrective Action', 'Interim Action', 'Corrective Action', 'Solution', '对策', '措施'],
-            ['6. Verification', 'Verification', 'Prevent Recurrence', 'Date', 'Effectiveness']
-        );
+        const summary = extractBlock(['Problem description', 'Phenomenon', 'Subject', 'Defect', '2. Problem'], ['3. Containment', '4. Root Cause', 'Root Cause']);
+        const rootCause = extractBlock(['4. Root Cause Analysis', 'Root Cause', 'Analysis', 'Why'], ['5. Interim', 'Potential Corrective', 'Corrective Action']);
+        const interimAction = extractBlock(['5. Interim', 'Potential Corrective Action', 'Interim Action', 'Corrective Action'], ['6. Verification', 'Verification', 'Prevent Recurrence']);
 
         let title = "NCR Report";
         if (partNo || summary) {
             const safeSummary = (summary || "未识别问题").substring(0, 30).replace(/[\r\n]/g, ' ');
             title = `${partNo ? `[${partNo}] ` : ''}${partName ? `${partName} - ` : ''}${safeSummary}...`;
         }
-        return { reportNo, partNo, partName, quantity, title, summary: summary || "未识别到详细描述", rootCause: rootCause || "未识别到根本原因", interimAction: interimAction || "未识别到解决措施", date };
+        return { reportNo, supplierCode, partNo, partName, quantity, title, summary: summary || "未识别到详细描述", rootCause: rootCause || "未识别到根本原因", interimAction: interimAction || "未识别到解决措施", date };
     };
 
     // --- 智能解析入口 ---
     const handleSmartParse = async () => {
         const fileList = form.getFieldValue('file');
         if (!fileList || fileList.length === 0) {
-            message.warning("请先选择一个 PDF 文件！");
+            messageApi.warning("请先选择一个 PDF 文件！");
             return;
         }
         const file = fileList[0].originFileObj;
         if (file.type !== 'application/pdf') {
-            message.error("仅支持 PDF 解析");
+            messageApi.error("仅支持 PDF 解析");
             return;
         }
 
@@ -326,34 +340,51 @@ const HistoricalImportPage = () => {
             let data = {};
 
             if (useGemini) {
-                // Google API 模式
                 if (!apiKey) {
-                    message.error("请先在下方输入框填写 Google API Key");
+                    messageApi.error("请先在下方输入框填写 Google API Key");
                     setParsing(false);
                     return;
                 }
-                setParseProgress('正在转换 PDF 为图像...');
-                const base64Img = await convertPdfPageToImage(file);
+                
+                // *** 核心修改：将 PDF 所有页面转换为图片数组 ***
+                setParseProgress('正在扫描 PDF 所有页面...');
+                const base64Images = await convertPdfToImages(file);
 
-                setParseProgress(`正在请求 ${geminiModel} 模型分析...`);
-                const result = await callGeminiVisionAPI(base64Img);
+                setParseProgress(`正在请求 ${geminiModel} 模型分析 (${base64Images.length} 页)...`);
+                // *** 核心修改：发送图片数组给 AI ***
+                const result = await callGeminiVisionAPI(base64Images);
+
+                console.log('AI 解析结果:', result);
 
                 data = {
                     ...result,
                     date: result.date ? dayjs(result.date) : dayjs(),
-                    title: `${result.partNo ? `[${result.partNo}] ` : ''}${result.partName ? `${result.partName} - ` : ''}${result.summary ? result.summary.substring(0, 20) : 'Gemini Analysis'}...`
+                    // 优先使用 AI 提取的 Subject 作为标题
+                    title: result.subject ? result.subject : `${result.partNo ? `[${result.partNo}] ` : ''}${result.partName ? `${result.partName} - ` : ''}${result.summary ? result.summary.substring(0, 20) : 'Gemini Analysis'}...`
                 };
-                message.success("Gemini AI 解析成功！");
+                messageApi.success("Gemini AI 解析成功！");
 
             } else {
-                // 本地 Tesseract 模式
                 setParseProgress('初始化 Tesseract OCR 引擎...');
                 const rawText = await extractTextLocal(file);
                 data = parse8DReportTextLocal(rawText);
-                message.success("本地 OCR 解析完成");
+                messageApi.success("本地 OCR 解析完成");
             }
 
-            // 填充表单
+            // 自动匹配供应商
+            let matchedSupplierId = undefined;
+            if (data.supplierCode && suppliers) {
+                const targetCode = data.supplierCode.toString().trim().toUpperCase();
+                const found = suppliers.find(s => 
+                    (s.short_code && s.short_code.toUpperCase() === targetCode) || 
+                    (s.parma_id && s.parma_id.toString() === targetCode)
+                );
+                if (found) {
+                    matchedSupplierId = found.id;
+                    messageApi.success(`已自动匹配供应商: ${found.name}`);
+                }
+            }
+
             form.setFieldsValue({
                 title: data.title,
                 partNo: data.partNo,
@@ -361,11 +392,12 @@ const HistoricalImportPage = () => {
                 summary: data.summary,
                 rootCause: data.rootCause,
                 interimAction: data.interimAction,
-                date: data.date
+                date: data.date,
+                supplierId: matchedSupplierId
             });
         } catch (error) {
             console.error(error);
-            message.error(`解析失败: ${error.message}`);
+            messageApi.error(`解析失败: ${error.message}`);
         } finally {
             setParsing(false);
             setParseProgress('');
@@ -379,12 +411,7 @@ const HistoricalImportPage = () => {
             const fileName = `history/${Date.now()}_${file.name}`;
             await mockSupabase.storage.from('public-assets').upload(fileName, file);
 
-            const aiContext = `
-[Part Number]: ${values.partNo || 'N/A'}
-[Problem]: ${values.summary}
-[Root Cause]: ${values.rootCause}
-[Interim/Permanent Action]: ${values.interimAction}
-            `.trim();
+            const aiContext = `[Part Number]: ${values.partNo || 'N/A'}\n[Problem]: ${values.summary}\n[Root Cause]: ${values.rootCause}\n[Interim/Permanent Action]: ${values.interimAction}`.trim();
 
             const newNotice = {
                 title: values.title,
@@ -399,14 +426,15 @@ const HistoricalImportPage = () => {
                     finding: values.summary,
                     root_cause: values.rootCause,
                     action_plan: values.interimAction,
+            
                 }
             };
             await addNotices([newNotice]);
-            message.success("归档成功！");
+            messageApi.success("归档成功！");
             form.resetFields();
         } catch (error) {
             console.error(error);
-            message.error("归档失败: " + error.message);
+            messageApi.error("归档失败: " + error.message);
         } finally {
             setLoading(false);
         }
@@ -429,7 +457,7 @@ const HistoricalImportPage = () => {
                                         <Col span={12}>
                                             <Form.Item name="supplierId" label="供应商" rules={[{ required: true }]}>
                                                 <Select placeholder="选择供应商">
-                                                    {suppliers.map(s => <Option key={s.id} value={s.id}>{s.short_code} - {s.name}</Option>)}
+                                                    {managedSuppliers.map(s => <Option key={s.id} value={s.id}>{s.short_code} - {s.name}</Option>)}
                                                 </Select>
                                             </Form.Item>
                                         </Col>
@@ -454,7 +482,6 @@ const HistoricalImportPage = () => {
 
                                             {useGemini && (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                                    {/* *** 修改点 5: 优化了 API Key 输入框体验 *** */}
                                                     <Input.Password
                                                         placeholder="请输入 Google Gemini API Key (AIza...)"
                                                         value={apiKey}
@@ -462,20 +489,15 @@ const HistoricalImportPage = () => {
                                                         prefix={<GoogleOutlined style={{ color: '#999' }} />}
                                                         addonBefore="API Key"
                                                     />
-                                                    {/* *** 修改点 6: 更新了模型列表，移除旧的和无效的 *** */}
                                                     <Select
                                                         value={geminiModel}
                                                         onChange={setGeminiModel}
                                                         placeholder="选择模型"
                                                         style={{ width: '100%' }}
                                                     >
-                                                        {/* 推荐：目前最稳定、速度最快且免费额度较高的模型 */}
-                                                        <Option value="gemini-2.5-flash">Gemini 2.5 Flash </Option>
-
-                                                        {/* 如果你想用 Pro 版本，请尝试使用 -latest 后缀 */}
+                                                        <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flash </Option>
                                                         <Option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Pro(推荐 - 稳定) </Option>
-
-                                                        {/* 备用：旧版视觉模型 (有时候这个也能用) */}
+                                                        <Option value="gemini-3-flash">Gemini 3.0 flash </Option>
                                                         <Option value="gemini-flash-latest">Gemini (最新版)</Option>
                                                     </Select>
                                                     <div style={{ fontSize: 10, color: '#999' }}>* 如果 Key 无效，请检查是否有多余空格</div>

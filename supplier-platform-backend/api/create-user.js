@@ -2,22 +2,27 @@ const { createClient } = require('@supabase/supabase-js');
 
 // 辅助函数：CORS 和请求方法处理
 const allowCors = fn => async (req, res) => {
+    // 强制设置 CORS 头
     res.setHeader('Access-Control-Allow-Credentials', true);
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', '*'); // 或指定你的前端域名
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
     res.setHeader(
         'Access-Control-Allow-Headers',
         'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
     );
 
+    // 如果是预检请求，直接返回 200，不进入业务逻辑
     if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;
     }
+    
+    // 执行业务逻辑
     return await fn(req, res);
 };
 
 const handler = async (req, res) => {
+    // 再次检查方法，确保非 POST 请求被拦截
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
@@ -25,7 +30,7 @@ const handler = async (req, res) => {
     // 初始化带有 Service Role 权限的 Supabase 客户端
     const supabaseAdmin = createClient(
         process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY, 
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
         {
             auth: {
                 autoRefreshToken: false,
@@ -45,7 +50,7 @@ const handler = async (req, res) => {
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: password,
-            email_confirm: true, 
+            email_confirm: true,
             user_metadata: { username: username, role: role }
         });
 
@@ -87,6 +92,7 @@ const handler = async (req, res) => {
             });
 
         if (profileError) {
+            // 如果 user profile 创建失败，回滚删除 Auth 用户
             await supabaseAdmin.auth.admin.deleteUser(newUserId);
             throw profileError;
         }
@@ -99,4 +105,5 @@ const handler = async (req, res) => {
     }
 };
 
+// 导出包装后的处理函数
 module.exports = allowCors(handler);

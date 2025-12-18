@@ -1,633 +1,615 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Card, Typography, Upload, Button, notification, message, Spin, Space, Modal, Alert, List, Popconfirm, Avatar, DatePicker, Input } from 'antd';
-import { ShareAltOutlined, UploadOutlined, InboxOutlined, DownloadOutlined, QrcodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
-import { useNotification } from '../contexts/NotificationContext';
-import { supabase } from '../supabaseClient';
-import { saveAs } from 'file-saver';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card, Tabs, Upload, Button, Form, Input, Select, DatePicker, message, Row, Col, Typography, Divider, Alert, Space, Spin, Collapse, Switch } from 'antd';
+import { InboxOutlined, FileExcelOutlined, FilePdfOutlined, UploadOutlined, CloudUploadOutlined, RobotOutlined, ThunderboltOutlined, CaretRightOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNotification } from '../contexts/NotificationContext';
+import { useSuppliers } from '../contexts/SupplierContext';
+// --- 第三方库 CDN 导入 ---
+import * as ExcelJS from 'https://esm.sh/exceljs@4.4.0';
+import Tesseract from 'https://esm.sh/tesseract.js@5.0.3';
+import * as pdfjsLibProxy from 'https://esm.sh/pdfjs-dist@3.11.174';
+
+const pdfjsLib = pdfjsLibProxy.default?.GlobalWorkerOptions ? pdfjsLibProxy.default : pdfjsLibProxy;
+
+if (pdfjsLib.GlobalWorkerOptions) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+}
 
 const { Title, Paragraph, Text } = Typography;
 const { Dragger } = Upload;
-const { RangePicker } = DatePicker;
-const { Search } = Input;
+const { TextArea } = Input;
+const { Option } = Select;
+const { Panel } = Collapse;
 
-// --- 日志系统工具函数 (复用自 LoginPage.js) ---
-
-// 1. Session ID 管理
-const getSessionId = () => {
-    let sid = sessionStorage.getItem('app_session_id');
-    if (!sid) {
-        sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-        sessionStorage.setItem('app_session_id', sid);
-    }
-    return sid;
+// 模拟的添加通知单函数
+const mockAddNotices = async (notices) => {
+    console.log("模拟写入数据库:", notices);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return true;
 };
 
-// 2. IP 获取与缓存
-let cachedIpAddress = null;
-const getClientIp = async () => {
-    if (cachedIpAddress) return cachedIpAddress;
-    try {
-        const response = await fetch('https://api.ipify.org?format=json');
-        const data = await response.json();
-        cachedIpAddress = data.ip;
-        return data.ip;
-    } catch (error) {
-        return 'unknown';
+const mockSupabase = {
+    storage: {
+        from: (bucket) => ({
+            upload: async (path, file) => {
+                console.log(`模拟上传文件 ${file.name} 到 ${bucket}/${path}`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                return { data: { path }, error: null };
+            },
+            getPublicUrl: (path) => ({
+                data: { publicUrl: `https://mock-storage.com/${path}` }
+            })
+        })
     }
 };
 
-// 3. 通用日志上报函数
-const logSystemEvent = async (params) => {
-    const { 
-        category = 'SYSTEM', 
-        eventType, 
-        severity = 'INFO', 
-        message, 
-        email = null, 
-        userId = null, 
-        meta = {} 
-    } = params;
+// *** 修改点 1: 默认 API Key ***
+const DEFAULT_API_KEY = '';
 
-    try {
-        const clientIp = await getClientIp();
-        const sessionId = getSessionId();
-
-        const environmentInfo = {
-            ip_address: clientIp,
-            session_id: sessionId,
-            userAgent: navigator.userAgent,
-            url: window.location.href,
-            page: 'OfflineSharePage' // 标记来源页面
-        };
-
-        // Fire-and-forget
-        supabase.from('system_logs').insert([{
-            category,
-            event_type: eventType,
-            severity,
-            message,
-            user_email: email, // 如果有 email 可以传入
-            user_id: userId,
-            metadata: {
-                ...environmentInfo,
-                ...meta,
-                timestamp_client: new Date().toISOString()
-            }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
-        });
-    } catch (e) {
-        console.error("Logger exception:", e);
-    }
-};
-
-// --- 二维码加载器 ---
-const loadQrCodeScript = () => {
-    return new Promise((resolve, reject) => {
-        const existingScript = document.getElementById('qrious-script');
-        if (existingScript) {
-            resolve();
-            return;
-        }
-        const script = document.createElement('script');
-        script.id = 'qrious-script';
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js';
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error('Failed to load QR code script'));
-        document.body.appendChild(script);
-    });
-};
-
-// --- 主组件: FileSender (文件发送/管理页) ---
-export const FileSender = () => {
-    const [fileList, setFileList] = useState([]);
+const HistoricalImportPage = () => {
+    // --- 状态管理 ---
     const [loading, setLoading] = useState(false);
-    const { messageApi, notificationApi } = useNotification();
-    const currentUser = useMemo(() => {
-        try {
-            return JSON.parse(localStorage.getItem('user'));
-        } catch (e) { return null; }
-    }, []);
-    
-    const [isQrModalVisible, setIsQrModalVisible] = useState(false);
-    const qrCodeRef = useRef(null);
+    const [parsing, setParsing] = useState(false);
+    const [parseProgress, setParseProgress] = useState('');
+    const [useGemini, setUseGemini] = useState(true);
 
-    const [syncedFiles, setSyncedFiles] = useState([]);
-    const [filesLoading, setFilesLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [dateRange, setDateRange] = useState(null);
+    const { messageApi } = useNotification();
+    const { suppliers } = useSuppliers();
 
-    // --- 全局错误监听与页面访问日志 ---
-    useEffect(() => {
-        // 1. 记录页面访问
-        if (currentUser) {
-            logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'PAGE_VIEW',
-                severity: 'INFO',
-                message: 'User visited File Share Page',
-                userId: currentUser.id,
-                email: currentUser.email
-            });
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+
+    const managedSuppliers = useMemo(() => {
+        if (!currentUser) return [];
+        if (currentUser.role === 'Manager') return suppliers;
+        if (currentUser.role === 'SD') {
+            const managed = currentUser.managed_suppliers || [];
+            return managed.map(assignment => assignment.supplier);
+        }
+        return [];
+    }, [currentUser, suppliers]);
+
+    // *** 修改点 2: API Key ***
+    const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
+
+    // *** 修改点 3: 模型选择 ***
+    const [geminiModel, setGeminiModel] = useState('gemini-2.5-pro');
+
+    const addNotices = mockAddNotices;
+    const [form] = Form.useForm();
+
+    // --- Google Gemini API 调用核心逻辑 (支持多页) ---
+    const callGeminiVisionAPI = async (base64Images) => {
+        if (!apiKey) {
+            throw new Error("API Key 为空！请在设置栏输入 Google API Key。");
         }
 
-        // 2. 运行时错误监听
-        const handleRuntimeError = (event) => {
-            logSystemEvent({
-                category: 'RUNTIME',
-                eventType: 'JS_ERROR',
-                severity: 'ERROR',
-                message: event.message,
-                userId: currentUser?.id,
-                meta: { filename: event.filename, lineno: event.lineno, stack: event.error?.stack }
-            });
-        };
-        const handleUnhandledRejection = (event) => {
-            logSystemEvent({
-                category: 'RUNTIME',
-                eventType: 'UNHANDLED_PROMISE',
-                severity: 'ERROR',
-                message: event.reason?.message || 'Unknown Promise Error',
-                userId: currentUser?.id,
-                meta: { reason: JSON.stringify(event.reason) }
-            });
-        };
-
-        window.addEventListener('error', handleRuntimeError);
-        window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-        return () => {
-            window.removeEventListener('error', handleRuntimeError);
-            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-        };
-    }, [currentUser]);
-
-    // --- 下载文件逻辑 ---
-    const handleDownload = async (fileRow) => {
-        const key = `download-${fileRow.id}`;
-        message.loading({ content: `正在准备下载 ${fileRow.file_name}...`, key });
+        const prompt = `
+        You are a Super Quality Engineer expert. Analyze this 8D Report / NCR document (which may contain multiple pages).
+        Extract the information into a pure JSON object. 
         
-        // 日志：记录下载行为
-        logSystemEvent({
-            category: 'FILE',
-            eventType: 'FILE_DOWNLOAD',
-            message: `Downloading file: ${fileRow.file_name}`,
-            userId: currentUser?.id,
-            meta: { file_id: fileRow.id, file_name: fileRow.file_name }
+       Strict Rules:
+
+        1. Output ONLY JSON. No Markdown block quotes (like \`\`\`json).
+        2. If a field is not found, return null or empty string.
+        3. Do not omit any information in any field, including both English and Chinese if possible.
+        4. Root Cause Analysis and Interim & Potential Corrective Action should be as detailed as possible.
+        5. Root Cause Analysis: Extract all numbered items under section 4. Combine the question (e.g., '为什么...') and the answer below it into a single string per item.
+        6. Interim & Potential Corrective Action: Extract all numbered items under section 5 and the answer below it into a single string per item.
+        7. Ignore the text inside the embedded screenshots/photos within the table cells.
+        
+        Fields to extract:
+        - reportNo: Report number / NCR No.
+        - supplierCode: Supplier code.
+        - subject: Subject / Description / Title of the issue.
+        - partNo: Material number / Part No.
+        - partName: Part name.
+        - quantity: Defect quantity.
+        - date: Issue date (Format: YYYY-MM-DD).
+        - summary: Problem description (D2).
+        - rootCause: Root cause analysis (D4). EXTRACT FULL TEXT.
+        - interimAction: Interim & Potential Corrective Action (D5/D6). EXTRACT FULL TEXT.
+        `;
+
+        // *** 核心修改：构建包含多张图片的 Payload ***
+        const parts = [{ text: prompt }];
+        
+        // 确保输入是数组
+        const images = Array.isArray(base64Images) ? base64Images : [base64Images];
+        
+        images.forEach(imgData => {
+            parts.push({
+                inline_data: {
+                    mime_type: "image/jpeg",
+                    data: imgData
+                }
+            });
         });
 
+        const payload = {
+            contents: [{ parts: parts }],
+            generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 4096, // 增加 Token 限制以容纳更多内容
+            }
+        };
+
         try {
-            const { data, error } = await supabase.storage
-                .from('file_sync')
-                .download(fileRow.file_path);
-            
-            if (error) throw error;
-            
-            saveAs(data, fileRow.file_name);
-            message.success({ content: '下载已开始！', key });
-
-        } catch (error) {
-            console.error('下载失败:', error);
-            message.error({ content: `下载失败: ${error.message}`, key });
-            
-            // 日志：记录下载失败
-            logSystemEvent({
-                category: 'FILE',
-                eventType: 'DOWNLOAD_FAILED',
-                severity: 'ERROR',
-                message: `Download failed: ${error.message}`,
-                userId: currentUser?.id,
-                meta: { file_id: fileRow.id, error: error.message }
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
-        }
-    };
 
-    // --- 删除文件逻辑 ---
-    const handleDelete = async (fileRow) => {
-         const key = `delete-${fileRow.id}`;
-         message.loading({ content: `正在删除 ${fileRow.file_name}...`, key });
-
-         try {
-            // 1. 从 Storage 删除
-            const { error: storageError } = await supabase.storage
-                .from('file_sync')
-                .remove([fileRow.file_path]);
-
-            if (storageError) {
-                 console.error("Storage deletion failed:", storageError.message);
-                 // 即使 Storage 删除失败，也记录日志并尝试删 DB
-                 logSystemEvent({
-                    category: 'FILE',
-                    eventType: 'DELETE_STORAGE_FAILED',
-                    severity: 'WARN',
-                    message: `Storage delete failed: ${storageError.message}`,
-                    userId: currentUser?.id,
-                    meta: { file_path: fileRow.file_path }
-                });
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error?.message || `API 请求失败: ${response.status}`);
             }
 
-            // 2. 从数据库删除
-            const { error: dbError } = await supabase
-                .from('user_files')
-                .delete()
-                .eq('id', fileRow.id);
+            const data = await response.json();
+            const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-            if (dbError) throw dbError;
+            if (!textResponse) throw new Error("API 返回了空内容");
 
-            message.success({ content: '文件已删除！', key });
-            
-            // 日志：记录删除成功
-            logSystemEvent({
-                category: 'FILE',
-                eventType: 'FILE_DELETED',
-                message: `File deleted: ${fileRow.file_name}`,
-                userId: currentUser?.id,
-                meta: { file_id: fileRow.id, file_name: fileRow.file_name }
-            });
+            const jsonStr = textResponse.replace(/```json|```/g, '').trim();
 
-        } catch (error) {
-             console.error('删除失败:', error);
-             message.error({ content: `删除失败: ${error.message}`, key });
-             
-             // 日志：记录删除失败
-             logSystemEvent({
-                category: 'FILE',
-                eventType: 'DELETE_FAILED',
-                severity: 'ERROR',
-                message: `Delete failed: ${error.message}`,
-                userId: currentUser?.id,
-                meta: { file_id: fileRow.id, error: error.message }
-            });
-        }
-    };
-
-    // --- 二维码生成 ---
-    useEffect(() => {
-        if (isQrModalVisible && qrCodeRef.current && currentUser?.id) {
-            loadQrCodeScript().then(() => {
-                if (window.QRious) {
-                    const mobileUrl = `${window.location.origin}/mobile-transfer?uid=${currentUser.id}`;
-                    new window.QRious({
-                        element: qrCodeRef.current,
-                        value: mobileUrl,
-                        size: 256,
-                        level: 'H'
-                    });
-                    
-                    // 日志：记录用户打开了手机上传二维码
-                    logSystemEvent({
-                        category: 'INTERACTION',
-                        eventType: 'QR_CODE_GENERATED',
-                        message: 'User opened mobile upload QR code',
-                        userId: currentUser.id
-                    });
-                }
-            }).catch(err => {
-                console.error(err);
-                messageApi.error("无法加载二维码生成器，请刷新页面重试。");
-            });
-        }
-    }, [isQrModalVisible, messageApi, currentUser]);
-
-    // --- 文件加载与 Realtime 订阅 ---
-    useEffect(() => {
-        if (!currentUser?.id) {
-            setFilesLoading(false);
-            return;
-        }
-
-        const fetchFiles = async () => {
-            setFilesLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('user_files')
-                    .select('*')
-                    .eq('user_id', currentUser.id)
-                    .order('created_at', { ascending: false });
-                
-                if (error) throw error;
-                setSyncedFiles(data || []);
-            } catch (error) {
-                console.error("加载已同步文件失败:", error);
-                messageApi.error(`加载文件列表失败: ${error.message}`);
-                
-                logSystemEvent({
-                    category: 'FILE',
-                    eventType: 'FETCH_LIST_FAILED',
-                    severity: 'ERROR',
-                    message: error.message,
-                    userId: currentUser.id
-                });
-            } finally {
-                setFilesLoading(false);
+                return JSON.parse(jsonStr);
+            } catch (e) {
+                console.error("JSON Parse Error. Raw Text:", textResponse);
+                throw new Error("AI 返回的数据格式无法解析为 JSON，请重试。");
             }
-        };
-
-        fetchFiles();
-
-        const channel = supabase
-            .channel(`user_files_page:${currentUser.id}`)
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'user_files', filter: `user_id=eq.${currentUser.id}` },
-                (payload) => {
-                    // console.log('Realtime 收到新文件:', payload);
-                    setSyncedFiles(prevFiles => [payload.new, ...prevFiles]);
-                    
-                    // 仅当文件来源不是当前设备时，才显得比较有意思（这里简单记录所有同步）
-                    if (payload.new.source_device !== 'web') {
-                         logSystemEvent({
-                            category: 'SYNC',
-                            eventType: 'FILE_RECEIVED_REALTIME',
-                            message: `Received file from ${payload.new.source_device || 'other device'}`,
-                            userId: currentUser.id,
-                            meta: { file_id: payload.new.id, device: payload.new.source_device }
-                        });
-                    }
-
-                    notificationApi.info({
-                        message: '收到一个新文件',
-                        description: `文件 "${payload.new.file_name}" 已同步。`,
-                        placement: 'topRight',
-                        icon: <DownloadOutlined style={{ color: '#1890ff' }} />,
-                        key: payload.new.id
-                    });
-                }
-            )
-            .on(
-                'postgres_changes',
-                { event: 'DELETE', schema: 'public', table: 'user_files', filter: `user_id=eq.${currentUser.id}` },
-                (payload) => {
-                    setSyncedFiles(prevFiles => prevFiles.filter(file => file.id !== payload.old.id));
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    
-    }, [currentUser, notificationApi, messageApi]);
-
-    const handleFileChange = ({ fileList }) => {
-        setFileList(fileList);
-    };
-
-    // --- 上传并同步逻辑 (核心修改：添加时长统计) ---
-    const handleUploadAndSync = async () => {
-        if (fileList.length === 0) {
-            messageApi.warning('请先选择要同步的文件！');
-            return;
-        }
-        if (!currentUser?.id) {
-            messageApi.error('无法同步：用户未登录。');
-            return;
-        }
-
-        setLoading(true);
-        messageApi.loading({ content: '正在同步文件...', key: 'syncing', duration: 0 });
-
-        // 1. 记录开始时间 和 总文件大小
-        const startTime = Date.now();
-        // originFileObj.size 是文件的字节数
-        const totalSizeBytes = fileList.reduce((acc, file) => acc + (file.originFileObj?.size || 0), 0);
-
-        // 日志：开始上传
-        logSystemEvent({
-            category: 'FILE',
-            eventType: 'UPLOAD_ATTEMPT',
-            message: `Attempting to upload ${fileList.length} files`,
-            userId: currentUser.id,
-            meta: { 
-                file_count: fileList.length,
-                total_size_bytes: totalSizeBytes // 记录本次上传总量
-            }
-        });
-
-        const uploadPromises = fileList.map(async (fileInfo) => {
-            const file = fileInfo.originFileObj;
-            if (!file) throw new Error(`无法获取文件 ${fileInfo.name}`);
-            
-            const fileExt = file.name.split('.').pop();
-            const safeFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}${fileExt ? '.' + fileExt : ''}`;
-            const filePath = `${currentUser.id}/${safeFileName}`;
-
-            // 1. Upload Storage
-            const { error: uploadError } = await supabase.storage
-                .from('file_sync')
-                .upload(filePath, file);
-
-            if (uploadError) throw new Error(`上传 ${file.name} 失败: ${uploadError.message}`);
-
-            // 2. Insert DB
-            const { error: insertError } = await supabase
-                .from('user_files')
-                .insert({
-                    user_id: currentUser.id,
-                    file_name: file.name,
-                    file_path: filePath,
-                    source_device: 'web'
-                });
-            
-            if (insertError) {
-                 await supabase.storage.from('file_sync').remove([filePath]);
-                 throw new Error(`上传 ${file.name} 成功，但同步记录失败: ${insertError.message}`);
-            }
-
-            return file.name;
-        });
-
-        try {
-            const uploadedFiles = await Promise.all(uploadPromises);
-            
-            // 2. 记录结束时间，计算耗时
-            const endTime = Date.now();
-            const durationMs = endTime - startTime;
-            
-            // 3. 计算简单平均速度 (KB/s)
-            // (Total Bytes / 1024) / (Duration ms / 1000)
-            const speedKbps = totalSizeBytes > 0 && durationMs > 0 
-                ? (totalSizeBytes / 1024) / (durationMs / 1000) 
-                : 0;
-
-            messageApi.success({ 
-                // 显示本次耗时给用户看
-                content: `成功同步 ${uploadedFiles.length} 个文件！(耗时: ${(durationMs / 1000).toFixed(1)}秒)`, 
-                key: 'syncing', 
-                duration: 3 
-            });
-            setFileList([]);
-
-            // 日志：上传成功 (包含关键的预测指标数据)
-            logSystemEvent({
-                category: 'FILE',
-                eventType: 'UPLOAD_SUCCESS',
-                severity: 'INFO',
-                message: `Successfully uploaded ${uploadedFiles.length} files`,
-                userId: currentUser.id,
-                meta: { 
-                    file_count: uploadedFiles.length,
-                    total_size_bytes: totalSizeBytes,
-                    duration_ms: durationMs,
-                    average_speed_kbps: speedKbps.toFixed(2)
-                }
-            });
 
         } catch (error) {
-            // 计算失败时的耗时也有分析价值（例如超时）
-            const durationMs = Date.now() - startTime;
+            console.error("Gemini API Error:", error);
+            throw error;
+        }
+    };
 
-            messageApi.error({ 
-                content: error.message, 
-                key: 'syncing', 
-                duration: 5 
-            });
+    // --- 辅助：将 PDF 所有页面转换为 Base64 图片数组 ---
+    const convertPdfToImages = async (file) => {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        const totalPages = pdf.numPages;
+        const images = [];
 
-            // 日志：上传失败
-            logSystemEvent({
-                category: 'FILE',
-                eventType: 'UPLOAD_FAILED',
-                severity: 'ERROR',
-                message: `Upload failed: ${error.message}`,
-                userId: currentUser.id,
-                meta: { 
-                    error: error.message,
-                    duration_ms: durationMs 
+        // 限制最大页数以防 Token 超限，通常 8D 报告前 3 页足矣
+        const maxPagesToProcess = Math.min(totalPages, 5);
+
+        for (let i = 1; i <= maxPagesToProcess; i++) {
+            setParseProgress(`正在处理第 ${i} / ${totalPages} 页...`);
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            images.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+        }
+        return images;
+    };
+
+    // --- 核心功能 1: Excel 批量导入 ---
+    const handleExcelBatchImport = async (file) => {
+        setLoading(true);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
+                const noticesToInsert = [];
+                let successCount = 0;
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 1) return;
+                    const supplierCode = row.getCell(1).value?.toString();
+                    const dateVal = row.getCell(2).value;
+                    const problemDesc = row.getCell(3).value?.toString();
+                    const rootCause = row.getCell(4).value?.toString();
+                    const action = row.getCell(5).value?.toString();
+                    const reportNo = row.getCell(6).value?.toString();
+
+                    if (supplierCode && problemDesc) {
+                        const supplier = suppliers.find(s => s.short_code === supplierCode);
+                        const aiTrainingText = `[Problem]: ${problemDesc}\n[Root Cause]: ${rootCause}\n[Action]: ${action}`;
+                        noticesToInsert.push({
+                            title: problemDesc.substring(0, 50) + (problemDesc.length > 50 ? '...' : ''),
+                            description: aiTrainingText,
+                            notice_code: reportNo || `HIST-${Date.now()}-${rowNumber}`,
+                            assigned_supplier_id: supplier?.id || null,
+                            assigned_supplier_name: supplier?.name || 'Unknown History Supplier',
+                            status: '已完成',
+                            category: 'Historical 8D',
+                            created_at: dateVal ? dayjs(dateVal).toISOString() : new Date().toISOString(),
+                            details: { finding: problemDesc, root_cause: rootCause, action_plan: action }
+                        });
+                        successCount++;
+                    }
+                });
+                if (noticesToInsert.length > 0) {
+                    await addNotices(noticesToInsert);
+                    messageApi.success(`成功模拟导入 ${successCount} 条数据！`);
+                } else {
+                    messageApi.warning("未解析到有效数据。");
                 }
+            } catch (error) {
+                console.error(error);
+                messageApi.error("Excel 解析失败: " + error.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        return false;
+    };
+
+    // --- 本地正则提取 (Fallback - 仅做文本提取) ---
+    const extractTextLocal = async (file) => {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        let fullText = '';
+        const totalPages = pdf.numPages;
+
+        for (let i = 1; i <= totalPages; i++) {
+            setParseProgress(`正在解析第 ${i} / ${totalPages} 页...`);
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            const result = await Tesseract.recognize(canvas, 'chi_sim+eng', {
+                logger: m => { if (m.status === 'recognizing text') setParseProgress(`第 ${i} 页识别中: ${Math.floor(m.progress * 100)}%`); }
             });
+            fullText += result.data.text + '\n';
+        }
+        return fullText;
+    };
+
+    const parse8DReportTextLocal = (text) => {
+        const cleanText = text.replace(/[\r\n]+/g, '\n').trim();
+        const extractField = (keywords, maxLength = 100) => {
+            const pattern = new RegExp(`(${keywords.join('|')})[:\\s]*([^\\n]+)`, 'i');
+            const match = cleanText.match(pattern);
+            return (match && match[2]) ? match[2].trim().replace(/^[:：\.]/, '').substring(0, maxLength) : null;
+        };
+        const extractBlock = (startKeywords, endKeywords) => {
+            let startIndex = -1;
+            for (const kw of startKeywords) {
+                const idx = cleanText.search(new RegExp(kw, 'i'));
+                if (idx !== -1) { startIndex = idx; break; }
+            }
+            if (startIndex === -1) return "";
+            const textFromStart = cleanText.substring(startIndex);
+            let endIndex = textFromStart.length;
+            let minIndex = textFromStart.length;
+            for (const kw of endKeywords) {
+                const idx = textFromStart.search(new RegExp(kw, 'i'));
+                if (idx > 20 && idx < minIndex) { minIndex = idx; }
+            }
+            endIndex = minIndex;
+            let content = textFromStart.substring(0, endIndex);
+            content = content.replace(/^.+?\n/, '').trim();
+            return content;
+        };
+
+        const reportNo = extractField(['Report No', 'NCR No', '8D No', 'No.'], 30);
+        const supplierCode = extractField(['Supplier Code', 'Vendor Code', 'Supplier No', 'Vendor ID', 'Parma No', 'Parma'], 20);
+        const partNo = extractField(['Part number', 'Part No', 'P/N', 'Material No', 'Material number'], 30);
+        const partName = extractField(['Part name', 'Description', 'Part Description'], 50);
+        const quantity = extractField(['Quantity', 'Qty', 'Amount'], 20);
+        const dateRegex = /(\d{4}[-./年]\d{1,2}[-./月]\d{1,2})|(\d{1,2}[-./]\d{1,2}[-./]\d{4})/;
+        const dateMatch = cleanText.match(dateRegex);
+        let date = dayjs();
+        if (dateMatch) {
+            const dateStr = dateMatch[0].replace(/[年月.]/g, '-').replace('日', '');
+            date = dayjs(dateStr).isValid() ? dayjs(dateStr) : dayjs();
+        }
+        const summary = extractBlock(['Problem description', 'Phenomenon', 'Subject', 'Defect', '2. Problem'], ['3. Containment', '4. Root Cause', 'Root Cause']);
+        const rootCause = extractBlock(['4. Root Cause Analysis', 'Root Cause', 'Analysis', 'Why'], ['5. Interim', 'Potential Corrective', 'Corrective Action']);
+        const interimAction = extractBlock(['5. Interim', 'Potential Corrective Action', 'Interim Action', 'Corrective Action'], ['6. Verification', 'Verification', 'Prevent Recurrence']);
+
+        let title = "NCR Report";
+        if (partNo || summary) {
+            const safeSummary = (summary || "未识别问题").substring(0, 30).replace(/[\r\n]/g, ' ');
+            title = `${partNo ? `[${partNo}] ` : ''}${partName ? `${partName} - ` : ''}${safeSummary}...`;
+        }
+        return { reportNo, supplierCode, partNo, partName, quantity, title, summary: summary || "未识别到详细描述", rootCause: rootCause || "未识别到根本原因", interimAction: interimAction || "未识别到解决措施", date };
+    };
+
+    // --- 智能解析入口 ---
+    const handleSmartParse = async () => {
+        const fileList = form.getFieldValue('file');
+        if (!fileList || fileList.length === 0) {
+            messageApi.warning("请先选择一个 PDF 文件！");
+            return;
+        }
+        const file = fileList[0].originFileObj;
+        if (file.type !== 'application/pdf') {
+            messageApi.error("仅支持 PDF 解析");
+            return;
+        }
+
+        setParsing(true);
+
+        try {
+            let data = {};
+
+            if (useGemini) {
+                if (!apiKey) {
+                    messageApi.error("请先在下方输入框填写 Google API Key");
+                    setParsing(false);
+                    return;
+                }
+                
+                // *** 核心修改：将 PDF 所有页面转换为图片数组 ***
+                setParseProgress('正在扫描 PDF 所有页面...');
+                const base64Images = await convertPdfToImages(file);
+
+                setParseProgress(`正在请求 ${geminiModel} 模型分析 (${base64Images.length} 页)...`);
+                // *** 核心修改：发送图片数组给 AI ***
+                const result = await callGeminiVisionAPI(base64Images);
+
+                console.log('AI 解析结果:', result);
+
+                data = {
+                    ...result,
+                    date: result.date ? dayjs(result.date) : dayjs(),
+                    // 优先使用 AI 提取的 Subject 作为标题
+                    title: result.subject ? result.subject : `${result.partNo ? `[${result.partNo}] ` : ''}${result.partName ? `${result.partName} - ` : ''}${result.summary ? result.summary.substring(0, 20) : 'Gemini Analysis'}...`
+                };
+                messageApi.success("Gemini AI 解析成功！");
+
+            } else {
+                setParseProgress('初始化 Tesseract OCR 引擎...');
+                const rawText = await extractTextLocal(file);
+                data = parse8DReportTextLocal(rawText);
+                messageApi.success("本地 OCR 解析完成");
+            }
+
+            // 自动匹配供应商
+            let matchedSupplierId = undefined;
+            if (data.supplierCode && suppliers) {
+                const targetCode = data.supplierCode.toString().trim().toUpperCase();
+                const found = suppliers.find(s => 
+                    (s.short_code && s.short_code.toUpperCase() === targetCode) || 
+                    (s.parma_id && s.parma_id.toString() === targetCode)
+                );
+                if (found) {
+                    matchedSupplierId = found.id;
+                    messageApi.success(`已自动匹配供应商: ${found.name}`);
+                }
+            }
+
+            form.setFieldsValue({
+                title: data.title,
+                partNo: data.partNo,
+                reportNo: data.reportNo,
+                summary: data.summary,
+                rootCause: data.rootCause,
+                interimAction: data.interimAction,
+                date: data.date,
+                supplierId: matchedSupplierId
+            });
+        } catch (error) {
+            console.error(error);
+            messageApi.error(`解析失败: ${error.message}`);
+        } finally {
+            setParsing(false);
+            setParseProgress('');
+        }
+    };
+
+    const handleSingleFileArchive = async (values) => {
+        setLoading(true);
+        try {
+            const file = values.file[0].originFileObj;
+            const fileName = `history/${Date.now()}_${file.name}`;
+            await mockSupabase.storage.from('public-assets').upload(fileName, file);
+
+            const aiContext = `[Part Number]: ${values.partNo || 'N/A'}\n[Problem]: ${values.summary}\n[Root Cause]: ${values.rootCause}\n[Interim/Permanent Action]: ${values.interimAction}`.trim();
+
+            const newNotice = {
+                title: values.title,
+                description: aiContext,
+                notice_code: values.reportNo || `DOC-${Date.now()}`,
+                assigned_supplier_id: values.supplierId,
+                assigned_supplier_name: suppliers.find(s => s.id === values.supplierId)?.name,
+                status: '已完成',
+                category: 'Historical 8D',
+                details: {
+                    part_number: values.partNo,
+                    finding: values.summary,
+                    root_cause: values.rootCause,
+                    action_plan: values.interimAction,
+                }
+            };
+            await addNotices([newNotice]);
+            messageApi.success("归档成功！");
+            form.resetFields();
+        } catch (error) {
+            console.error(error);
+            messageApi.error("归档失败: " + error.message);
         } finally {
             setLoading(false);
         }
     };
 
-    const filteredFiles = useMemo(() => {
-        return syncedFiles.filter(file => {
-            const matchesSearch = file.file_name.toLowerCase().includes(searchTerm.toLowerCase());
-            let matchesDate = true;
-            if (dateRange && dateRange[0] && dateRange[1]) {
-                const fileDate = dayjs(file.created_at);
-                matchesDate = fileDate.isAfter(dateRange[0].startOf('day')) && 
-                              fileDate.isBefore(dateRange[1].endOf('day'));
-            }
-            return matchesSearch && matchesDate;
-        });
-    }, [syncedFiles, searchTerm, dateRange]);
-
     return (
-        <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
-            <Card>
-                <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                    <Title level={4}>跨设备文件同步</Title>
-                    <Paragraph type="secondary">
-                        上传文件到您的私有云端。文件将实时推送到您已登录的其他设备（如电脑或手机）。
-                    </Paragraph>
-                      <Alert
-                      message="如何从手机上传？"
-                      description="点击下方的“从手机上传”按钮，用您的手机扫描弹出的二维码。在手机浏览器中登录同一个账户，即可上传文件并同步回电脑。"
-                      type="info"
-                      showIcon
-                      style={{ marginBottom: 24, textAlign: 'left' }}
-                    />
-                </div>
-                
-                <Dragger
-                    fileList={fileList}
-                    onChange={handleFileChange}
-                    beforeUpload={() => false}
-                    multiple={true}
-                >
-                    <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                    <p className="ant-upload-text">点击或拖拽文件到此区域</p>
-                    <p className="ant-upload-hint">支持单个或多个文件。文件将被安全存储并同步到您的账户。</p>
-                </Dragger>
+        <div style={{ padding: 24, maxWidth: 1000, margin: '0 auto' }}>
+            <Title level={2}>📚 历史经验导入中心</Title>
+            <Paragraph type="secondary">
+                将历史 8D 报告、Excel 跟踪表导入系统，构建企业质量知识库。
+            </Paragraph>
 
-                <Space style={{ width: '100%', marginTop: 24 }} direction="vertical" size="middle">
-                    <Button
-                        type="primary"
-                        icon={<ShareAltOutlined />}
-                        size="large"
-                        loading={loading}
-                        disabled={fileList.length === 0}
-                        onClick={handleUploadAndSync}
-                        style={{ width: '100%' }}
-                    >
-                        {loading ? '正在同步...' : '上传并同步'}
-                    </Button>
-                    
-                    <Button
-                        icon={<QrcodeOutlined />}
-                        size="large"
-                        onClick={() => setIsQrModalVisible(true)}
-                        style={{ width: '100%' }}
-                    >
-                        从手机上传文件
-                    </Button>
-                </Space>
-            </Card>
+            <Tabs defaultActiveKey="file" type="card" size="large">
+                <Tabs.TabPane tab={<span><FilePdfOutlined /> PDF 文档归档 (OCR/AI)</span>} key="file">
+                    <Card title="单份 8D 报告归档">
+                        <Row gutter={24}>
+                            <Col span={14}>
+                                <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
+                                    <Row gutter={16}>
+                                        <Col span={12}>
+                                            <Form.Item name="supplierId" label="供应商" rules={[{ required: true }]}>
+                                                <Select placeholder="选择供应商">
+                                                    {managedSuppliers.map(s => <Option key={s.id} value={s.id}>{s.short_code} - {s.name}</Option>)}
+                                                </Select>
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={12}>
+                                            <Form.Item name="date" label="发生日期" rules={[{ required: true }]}>
+                                                <DatePicker style={{ width: '100%' }} />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
 
-            <Card 
-                title={
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span>已同步的文件 ({filteredFiles.length})</span>
-                        <Space size="small" style={{ fontWeight: 'normal' }}>
-                            <Search
-                                placeholder="搜索文件名"
-                                allowClear
-                                onSearch={setSearchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{ width: 200 }}
-                            />
-                            <RangePicker 
-                                onChange={setDateRange} 
-                                style={{ width: 240 }}
-                                placeholder={['开始日期', '结束日期']}
-                            />
-                        </Space>
-                    </div>
-                } 
-                style={{ marginTop: 24 }}
-            >
-                <List
-                    loading={filesLoading}
-                    dataSource={filteredFiles}
-                    pagination={{ pageSize: 5 }}
-                    renderItem={(file) => (
-                        <List.Item
-                            actions={[
-                                <Button type="link" icon={<DownloadOutlined />} onClick={() => handleDownload(file)}>下载</Button>,
-                                <Popconfirm title="确定删除此文件吗？" description="文件将从云端永久删除。" onConfirm={() => handleDelete(file)} okText="删除" cancelText="取消">
-                                    <Button danger type="link" icon={<DeleteOutlined />} />
-                                </Popconfirm>
-                            ]}
-                        >
-                            <List.Item.Meta
-                                avatar={<Avatar icon={<FileTextOutlined />} style={{ backgroundColor: '#1890ff' }} />}
-                                title={<Text strong>{file.file_name}</Text>}
-                                description={`同步于: ${dayjs(file.created_at).format('YYYY-MM-DD HH:mm')}`}
-                            />
-                        </List.Item>
-                    )}
-                    locale={{ emptyText: "没有找到符合条件的文件。" }}
-                />
-            </Card>
+                                    <Form.Item label="文件与解析设置" style={{ marginBottom: 12 }}>
+                                        <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 6, marginBottom: 12 }}>
+                                            <Space style={{ marginBottom: 8, width: '100%', justifyContent: 'space-between' }}>
+                                                <span><ApiOutlined /> 解析引擎:</span>
+                                                <Switch
+                                                    checkedChildren={<><GoogleOutlined /> Google Gemini</>}
+                                                    unCheckedChildren={<><RobotOutlined /> 本地 OCR</>}
+                                                    checked={useGemini}
+                                                    onChange={setUseGemini}
+                                                />
+                                            </Space>
 
-            <Modal 
-                title="从手机上传" 
-                open={isQrModalVisible} 
-                onCancel={() => setIsQrModalVisible(false)} 
-                footer={null}
-            >
-                <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <Paragraph>1. 请使用您手机的浏览器或微信扫描下方二维码。</Paragraph>
-                    <canvas ref={qrCodeRef} style={{ border: '1px solid #f0f0f0', borderRadius: '8px' }}></canvas>
-                    <Paragraph style={{ marginTop: '16px' }}>2. 在手机浏览器中**登录您的账户**。</Paragraph>
-                    <Paragraph type="secondary">3. 登录后，您将看到相同的上传界面，上传的文件将实时同步到这里。</Paragraph>
-                </div>
-            </Modal>
+                                            {useGemini && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                    <Input.Password
+                                                        placeholder="请输入 Google Gemini API Key (AIza...)"
+                                                        value={apiKey}
+                                                        onChange={e => setApiKey(e.target.value)}
+                                                        prefix={<GoogleOutlined style={{ color: '#999' }} />}
+                                                        addonBefore="API Key"
+                                                    />
+                                                    <Select
+                                                        value={geminiModel}
+                                                        onChange={setGeminiModel}
+                                                        placeholder="选择模型"
+                                                        style={{ width: '100%' }}
+                                                    >
+                                                        <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flash </Option>
+                                                        <Option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Pro(推荐 - 稳定) </Option>
+                                                        <Option value="gemini-3-flash">Gemini 3.0 flash </Option>
+                                                        <Option value="gemini-flash-latest">Gemini (最新版)</Option>
+                                                    </Select>
+                                                    <div style={{ fontSize: 10, color: '#999' }}>* 如果 Key 无效，请检查是否有多余空格</div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <Row gutter={8}>
+                                            <Col span={14}>
+                                                <Form.Item name="file" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e && e.fileList} rules={[{ required: true, message: '请上传文件' }]} noStyle>
+                                                    <Upload maxCount={1} beforeUpload={() => false} accept=".pdf">
+                                                        <Button icon={<UploadOutlined />} block>选择 PDF 文件</Button>
+                                                    </Upload>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={10}>
+                                                <Button
+                                                    icon={<ThunderboltOutlined />}
+                                                    onClick={handleSmartParse}
+                                                    loading={parsing}
+                                                    type="primary"
+                                                    ghost
+                                                    block
+                                                    style={useGemini ? { borderColor: '#722ed1', color: '#722ed1' } : {}}
+                                                >
+                                                    {parsing ? '正在分析...' : (useGemini ? 'Gemini 智能提取' : 'OCR 本地提取')}
+                                                </Button>
+                                            </Col>
+                                        </Row>
+                                        {parsing && <div style={{ marginTop: 8, color: useGemini ? '#722ed1' : '#1890ff', fontSize: 12 }}><Spin size="small" /> {parseProgress}</div>}
+                                    </Form.Item>
+
+                                    <Divider orientation="left" style={{ fontSize: 12, color: '#999' }}>识别结果 (请核对)</Divider>
+
+                                    <Form.Item name="title" label="问题标题 (Title)" rules={[{ required: true }]}>
+                                        <Input placeholder="自动生成或手动填写" />
+                                    </Form.Item>
+
+                                    <Row gutter={16}>
+                                        <Col span={12}>
+                                            <Form.Item name="reportNo" label="报告编号 (Report No)">
+                                                <Input placeholder="OCR 提取" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={12}>
+                                            <Form.Item name="partNo" label="零件号 (Material No)">
+                                                <Input placeholder="OCR 提取" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+
+                                    <Form.Item name="summary" label="问题摘要 (Problem Description)" rules={[{ required: true }]}>
+                                        <TextArea rows={3} showCount maxLength={500} />
+                                    </Form.Item>
+
+                                    <Collapse defaultActiveKey={['1']} ghost expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}>
+                                        <Panel header="详细分析与措施 (点击展开)" key="1">
+                                            <Form.Item name="rootCause" label="根本原因 (Root Cause Analysis)">
+                                                <TextArea rows={3} placeholder="D4 根本原因分析..." />
+                                            </Form.Item>
+                                            <Form.Item name="interimAction" label="临时/永久措施 (Interim & Corrective Action)">
+                                                <TextArea rows={3} placeholder="D5/D6 解决措施..." />
+                                            </Form.Item>
+                                        </Panel>
+                                    </Collapse>
+
+                                    <Button type="primary" htmlType="submit" loading={loading} block icon={<CloudUploadOutlined />} size="large" style={{ marginTop: 16 }}>
+                                        归档并生成索引
+                                    </Button>
+                                </Form>
+                            </Col>
+
+                            <Col span={10} style={{ background: '#f9f9f9', padding: 24, borderRadius: 8 }}>
+                                <Title level={5}><ApiOutlined /> AI 引擎说明</Title>
+                                <Paragraph type="secondary" style={{ fontSize: 13 }}>
+                                    支持两种解析模式：
+                                </Paragraph>
+
+                                <div style={{ marginBottom: 16 }}>
+                                    <Text strong style={{ color: '#722ed1' }}><GoogleOutlined /> Google Gemini (推荐)</Text>
+                                    <p style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                                        使用多模态大模型进行视觉分析。
+                                        <br />
+                                        1. 请在https://aistudio.google.com/welcome 注册并获取API Key。
+                                        <br />
+                                        2. 请在左侧 "API Key" 输入框填入你的 Key。一般为AIza... 开头。
+                                        <br />
+                                        3. 选择 <b>Gemini 2.5 pro</b> 速度最快。选择<b>Gemini最新版</b>体验最新版的模型。
+                                        <br />
+                                        4. 免费额度有限，请合理使用，避免频繁调用。
+                                    </p>
+
+                                    <Divider style={{ margin: '12px 0' }} />
+
+                                    <Text strong style={{ color: '#1890ff' }}><RobotOutlined /> 本地 Tesseract OCR</Text>
+                                    <p style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                                        无需 Key，完全本地运行，隐私性好，但准确率低于 Gemini。
+                                    </p>
+                                </div>
+                            </Col>
+                        </Row>
+                    </Card>
+                </Tabs.TabPane>
+
+                <Tabs.TabPane tab={<span><FileExcelOutlined /> Excel 批量迁移</span>} key="excel">
+                    <Card title="旧版 8D 跟踪表导入">
+                        <Dragger beforeUpload={handleExcelBatchImport} showUploadList={false} accept=".xlsx, .xls">
+                            <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: '#1890ff' }} /></p>
+                            <p className="ant-upload-text">点击或拖拽历史 Excel 跟踪表到此区域</p>
+                        </Dragger>
+                    </Card>
+                </Tabs.TabPane>
+            </Tabs>
         </div>
     );
 };
 
-// 导出页面组件
-export default FileSender;
+export default HistoricalImportPage;

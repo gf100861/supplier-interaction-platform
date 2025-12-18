@@ -579,7 +579,7 @@ const McpGuideContent = () => (
                 <Tag icon={<ApiOutlined />} color="#2db7f5" style={{ marginBottom: 16 }}>Beta</Tag>
             </div>
             <Paragraph style={{ fontSize: 16 }}>
-                本平台支持 <strong>Model Context Protocol (MCP)</strong> 标准。通过此接口，您可以将本系统的数据（供应商、通知单、计划）安全地暴露给 Claude、ChatGPT 或自定义 AI Agent，实现自动化运维与智能分析。
+                本平台支持 <strong>Model Context Protocol (MCP)</strong> 标准。通过此接口，您可以将本系统的数据（供应商、通知单、计划）安全地暴露给 Claude、ChatGPT 或自定义 AI Agent，实现自动化运维与智能分析。未来我们将开放给供应商伙伴使用，敬请期待！
             </Paragraph>
         </div>
 
@@ -769,6 +769,7 @@ const FaqContent = () => {
         { q: "上传文件失败？", a: "请检查文件大小（建议<10MB）和格式。目前不支持 .exe, .bat 等可执行文件。图片建议使用 jpg/png。" },
         { q: "在批量输入actions的阶段时输入错误日期（2025/31/12）？", a: "系统会自动转换成正确的格式（建议SD作废）" },
         { q: "为什么无法将日期重分配到下一年", a: "请在年度战略规划面板下拉选择年份，或联系系统管理员。" },
+        { q: "供应商可以填写空的action plan吗", a: "支持空的action plan提交，请删除所有提交框即可" },
     ];
     return (
         <div className="animate-fade-in">
