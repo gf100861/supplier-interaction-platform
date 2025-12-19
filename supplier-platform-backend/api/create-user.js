@@ -3,11 +3,8 @@ const cors = require('cors');
 
 // 初始化 CORS 中间件
 const corsMiddleware = cors({
-    // 关键修改：将 '*' 改为 true。
-    // 这会让服务器自动返回请求端的域名（Reflect Origin），
-    // 从而完美兼容 credentials: true，避免浏览器报错。
-    origin: true, 
-    methods: ['GET', 'POST', 'OPTIONS'], 
+    origin: true, // 允许所有 Origin，并返回正确的 Access-Control-Allow-Origin
+    methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
     credentials: true,
 });
@@ -24,36 +21,30 @@ function runMiddleware(req, res, fn) {
     });
 }
 
-// 确保无论如何都会返回 CORS 头（fallback）
-res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
-res.setHeader('Access-Control-Allow-Credentials', 'true');
-
 module.exports = async (req, res) => {
-    try {
-        // 1. 运行 CORS 中间件
-        await runMiddleware(req, res, corsMiddleware);
-    } catch (e) {
-        console.error("CORS Middleware Error:", e);
-        return res.status(500).json({ error: 'Internal Server Error (CORS)' });
-    }
-
-    // 1.5 确保返回 CORS 头（fallback，防止平台或其他原因导致没有返回）
+    // 1. 手动设置 CORS 头（双重保险）
+    // 必须写在函数内部！
     const requestOrigin = req.headers.origin || '*';
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    // 2. 处理 OPTIONS 请求
+    // 2. 处理 OPTIONS 预检请求（直接返回成功，不再往下走）
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
-    // 3. 检查请求方法
+    try {
+        // 3. 运行 CORS 中间件
+        await runMiddleware(req, res, corsMiddleware);
+    } catch (e) {
+        console.error("CORS Middleware Error:", e);
+        return res.status(500).json({ error: 'Internal Server Error (CORS)' });
+    }
+
+    // 4. 检查请求方法
     if (req.method !== 'POST') {
-        // 这里就是你浏览器访问时看到的 405 错误，这是正常的防御逻辑
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
@@ -62,7 +53,7 @@ module.exports = async (req, res) => {
     // 初始化 Supabase
     const supabaseAdmin = createClient(
         process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        process.env.SUPABASE_SERVICE_ROLE_KEY, // 确保 .env 里有这个 Key
         {
             auth: {
                 autoRefreshToken: false,
@@ -78,7 +69,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // 4. 创建 Auth 用户
+        // 创建 Auth 用户
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: password,
@@ -91,7 +82,7 @@ module.exports = async (req, res) => {
 
         let supplierId = null;
 
-        // 5. 处理供应商逻辑
+        // 处理供应商逻辑
         if (role === 'Supplier' && supplierData) {
             if (supplierData.isNew) {
                 const { data: newSupplier, error: supError } = await supabaseAdmin
@@ -111,7 +102,7 @@ module.exports = async (req, res) => {
             }
         }
 
-        // 6. 创建 public.users 记录
+        // 创建 public.users 记录
         const { error: profileError } = await supabaseAdmin
             .from('users')
             .insert({
@@ -124,6 +115,7 @@ module.exports = async (req, res) => {
             });
 
         if (profileError) {
+            // 回滚：如果资料表创建失败，删除刚刚创建的 Auth 账号
             await supabaseAdmin.auth.admin.deleteUser(newUserId);
             throw profileError;
         }

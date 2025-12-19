@@ -5,33 +5,44 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 
+// --- 新增：引入 create-user 处理逻辑 ---
+// ⚠️ 注意：请确保 api/create-user.js 里的语法错误已经按照上一步修复，
+// 否则这里引入时会导致服务器启动报错。
+const createUserHandler = require('./api/create-user');
+
 const app = express();
 const server = http.createServer(app);
 
 // 允许跨域
-app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] })); // 建议把 OPTIONS 也加上
 app.use(express.json());
 
-// --- 1. Socket.IO (仅本地有效，Vercel 不支持 WebSocket) ---
+// --- 1. Socket.IO (仅本地有效) ---
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 io.on('connection', (socket) => {
     console.log('Local Socket connected:', socket.id);
-    // ... 保留原有的 socket 逻辑 ...
     socket.on('disconnect', () => console.log('User disconnected:', socket.id));
 });
 
-// --- 2. 邮件 API (为了本地调试，逻辑与 api/send-alert-email.js 保持一致) ---
+// ==========================================
+// --- 新增：注册 Create User 路由 ---
+// ==========================================
+app.all('/api/create-user', async (req, res) => {
+    // 将请求转发给 api/create-user.js 处理
+    await createUserHandler(req, res);
+});
+
+
+// --- 2. 邮件 API ---
 app.post('/api/send-alert-email', async (req, res) => {
     console.log('Local Server receiving email request...');
     const { recipients, supplierCount, user, timestamp } = req.body;
 
-    // 简单的参数校验
     if (!recipients || !recipients.length) return res.status(400).json({ error: 'No recipients' });
 
-    // 读取环境变量
     const smtpHost = process.env.SMTP_HOST;
     const smtpPort = parseInt(process.env.SMTP_PORT || '587');
     const smtpUser = process.env.SMTP_USER;
@@ -48,7 +59,7 @@ app.post('/api/send-alert-email', async (req, res) => {
             port: smtpPort,
             secure: smtpPort === 465,
             auth: { user: smtpUser, pass: smtpPass },
-            connectionTimeout: 10000, // 10秒超时
+            connectionTimeout: 10000, 
             tls: { rejectUnauthorized: false }
         });
 
@@ -72,4 +83,5 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`✅ Local Backend running on http://localhost:${PORT}`);
     console.log(`📧 Email endpoint: http://localhost:${PORT}/api/send-alert-email`);
+    console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`); // 打印出来确认路由生效
 });
