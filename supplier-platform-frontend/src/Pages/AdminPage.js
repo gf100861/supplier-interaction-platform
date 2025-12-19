@@ -5,12 +5,14 @@ import {
 } from 'antd';
 import { 
     EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, MessageOutlined, BookOutlined, PaperClipOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, StopOutlined, ExclamationCircleOutlined, SaveOutlined, FilterOutlined, 
-    UserAddOutlined // 确保引入了 UserAddOutlined
+    UserAddOutlined 
 } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNotices } from '../contexts/NoticeContext';
+// 引入新的日志组件
+import SystemLogViewer from './SystemLogViewer';
 
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
@@ -36,7 +38,7 @@ const AdminPage = () => {
     const [users, setUsers] = useState([]);
     const [allSuppliers, setAllSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [logs, setLogs] = useState([]);
+    // const [logs, setLogs] = useState([]); // Removed old logs state
     const { messageApi } = useNotification();
     const { notices, updateNotice, loading: noticesLoading } = useNotices();
 
@@ -147,18 +149,11 @@ const AdminPage = () => {
         }
     };
 
-    const fetchLogs = () => {
-        setLogs([
-            { id: 1, timestamp: '2025-09-29 10:30:05', level: 'INFO', message: '用户 louis.xin@volvo.com 登录成功' },
-            { id: 2, timestamp: '2025-09-29 10:32:15', level: 'INFO', message: '用户 admin@example.com 创建了新的整改通知单 #N-20250929-ABCDEF' },
-            { id: 3, timestamp: '2025-09-29 10:35:00', level: 'ERROR', message: '尝试连接到外部API失败: 超时' },
-            { id: 4, timestamp: '2025-09-29 10:40:22', level: 'WARN', message: '用户密码将在 5 天后过期' },
-        ]);
-    }
+    // Removed old fetchLogs function
 
     useEffect(() => {
         fetchData();
-        fetchLogs();
+        // fetchLogs(); // Removed
     }, []);
 
     // --- Handlers ---
@@ -467,22 +462,7 @@ const AdminPage = () => {
         },
     ];
 
-    const logColumns = [
-        { title: '时间戳', dataIndex: 'timestamp', key: 'timestamp' },
-        {
-            title: '级别',
-            dataIndex: 'level',
-            key: 'level',
-            render: level => {
-                let color;
-                if (level === 'ERROR') color = 'volcano';
-                else if (level === 'WARN') color = 'orange';
-                else color = 'geekblue';
-                return <Tag color={color}>{level}</Tag>;
-            }
-        },
-        { title: '信息', dataIndex: 'message', key: 'message' },
-    ];
+    // Removed logColumns
 
     // --- 核心修复：使用 items 属性定义 Tabs ---
     const items = [
@@ -720,7 +700,7 @@ const AdminPage = () => {
         {
             key: '4',
             label: <Space><FileTextOutlined />系统日志</Space>,
-            children: <Table columns={logColumns} dataSource={logs} rowKey="id" />
+            children: <SystemLogViewer /> // 使用新组件
         },
         {
             key: '5',

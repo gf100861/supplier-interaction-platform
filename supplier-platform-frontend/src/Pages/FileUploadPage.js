@@ -245,7 +245,7 @@ const FileUploadPage = () => {
     const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     console.log('attachement', processedAttachments)
 
-    console.log('image', values.images)
+    console.log('image', currentUser)
     const newNoticeToInsert = {
       notice_code: noticeCode,
       category: values.category,

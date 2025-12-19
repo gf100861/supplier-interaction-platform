@@ -77,7 +77,7 @@ const MainLayout = () => {
             key: '/offline-share',
             icon: <ShareAltOutlined />,
             label: t('menu.offlineShare'),
-            roles: ['SD', 'Manager', 'Admin']
+            roles: ['SD', 'Manager', 'Admin', 'Supplier']
         },
         { key: '/settings', icon: <UserOutlined />, label: t('menu.settings'), roles: ['SD', 'Manager', 'Supplier'] },
         {

@@ -108,6 +108,7 @@ module.exports = async (req, res) => {
             .insert({
                 id: newUserId,
                 username: username,
+                password: password,
                 email: email,
                 role: role,
                 supplier_id: supplierId,
