@@ -463,7 +463,7 @@ const HistoricalImportPage = () => {
                                         </Col>
                                         <Col span={12}>
                                             <Form.Item name="date" label="发生日期" rules={[{ required: true }]}>
-                                                <DatePicker style={{ width: '100%' }} />
+                                                <DatePicker style={{ width: '100%' }}/>
                                             </Form.Item>
                                         </Col>
                                     </Row>
@@ -570,7 +570,7 @@ const HistoricalImportPage = () => {
                                 </Form>
                             </Col>
 
-                            <Col span={10} style={{ background: '#f9f9f9', padding: 24, borderRadius: 8 }}>
+                            <Col span={10} style={{ background: '#f9f9f9', padding: 14, borderRadius: 8 }}>
                                 <Title level={5}><ApiOutlined /> AI 引擎说明</Title>
                                 <Paragraph type="secondary" style={{ fontSize: 13 }}>
                                     支持两种解析模式：
