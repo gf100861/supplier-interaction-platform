@@ -3,8 +3,10 @@ const cors = require('cors');
 
 // 初始化 CORS 中间件
 const corsMiddleware = cors({
-    origin: '*', 
-    // 关键修改：允许 GET，这样浏览器直接访问时能看到 405 错误而不是连接中断
+    // 关键修改：将 '*' 改为 true。
+    // 这会让服务器自动返回请求端的域名（Reflect Origin），
+    // 从而完美兼容 credentials: true，避免浏览器报错。
+    origin: true, 
     methods: ['GET', 'POST', 'OPTIONS'], 
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
     credentials: true,
@@ -27,7 +29,6 @@ module.exports = async (req, res) => {
         // 1. 运行 CORS 中间件
         await runMiddleware(req, res, corsMiddleware);
     } catch (e) {
-        // 如果 CORS 中间件出错，返回 500
         console.error("CORS Middleware Error:", e);
         return res.status(500).json({ error: 'Internal Server Error (CORS)' });
     }
@@ -39,6 +40,7 @@ module.exports = async (req, res) => {
 
     // 3. 检查请求方法
     if (req.method !== 'POST') {
+        // 这里就是你浏览器访问时看到的 405 错误，这是正常的防御逻辑
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
