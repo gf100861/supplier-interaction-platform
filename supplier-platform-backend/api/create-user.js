@@ -24,6 +24,12 @@ function runMiddleware(req, res, fn) {
     });
 }
 
+// 确保无论如何都会返回 CORS 头（fallback）
+res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
+res.setHeader('Access-Control-Allow-Credentials', 'true');
+
 module.exports = async (req, res) => {
     try {
         // 1. 运行 CORS 中间件
@@ -32,6 +38,13 @@ module.exports = async (req, res) => {
         console.error("CORS Middleware Error:", e);
         return res.status(500).json({ error: 'Internal Server Error (CORS)' });
     }
+
+    // 1.5 确保返回 CORS 头（fallback，防止平台或其他原因导致没有返回）
+    const requestOrigin = req.headers.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     // 2. 处理 OPTIONS 请求
     if (req.method === 'OPTIONS') {
