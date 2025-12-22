@@ -192,113 +192,134 @@ const FileUploadPage = () => {
 
   const onFinish = async (values) => {
     setLoading(true);
-    messageApi.loading({ content: '正在处理数据...', key: 'submitting' });
-
-    const processFiles = async (fileList) => {
-      console.log('filelist', fileList)
-      if (!fileList || fileList.length === 0) return [];
-
-      const processed = await Promise.all(
-        fileList.map(async (file) => {
-          // 如果文件有 originFileObj，说明它是新上传的，需要处理
-          if (file.originFileObj) {
-            try {
-              const base64Url = await getBase64(file.originFileObj);
-              // 返回一个干净、可序列化的对象
-              return {
-                uid: file.uid,
-                name: file.name,
-                type: file.type,
-                size: file.size,
-                url: base64Url,
-              };
-            } catch (error) {
-              console.error("文件转换为 Base64 失败:", file.name, error);
-              messageApi.error(`文件 ${file.name} 处理失败！`);
-              return null; // 如果转换失败，则返回 null
-            }
-          }
-
-          // 如果文件已经有 url (例如，来自一个已保存的记录)，只需确保它是一个干净的对象
-          if (file.url) {
-            return {
-              uid: file.uid,
-              name: file.name,
-              url: file.url,
-            };
-          }
-
-          // 忽略无法处理的文件
-          return null;
-        })
-      );
-
-      // 过滤掉所有处理失败的 (null) 文件
-      return processed.filter(Boolean);
-    };
-
-
-    const processedImages = await processFiles(values.images);
-    const processedAttachments = await processFiles(values.attachments);
-
-    const selectedSupplierInfo = suppliers.find(s => s.id === values.supplierId);
-    const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    console.log('attachement', processedAttachments)
-
-    console.log('image', currentUser)
-    const newNoticeToInsert = {
-      notice_code: noticeCode,
-      category: values.category,
-      // 修改后
-      title: values.details.process || values.details.parameter || values.details.criteria || 'New Notice',
-      assigned_supplier_id: values.supplierId,
-      assigned_supplier_name: selectedSupplierInfo?.name || '',
-      status: '待提交Action Plan',
-      creator_id: currentUser.id,
-      sd_notice: {
-        creatorId: currentUser.id,
-        creator: currentUser.name,
-        // --- 使用表单中选择的日期 ---
-        createTime: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
-        images: processedImages,
-        attachments: processedAttachments,
-        details: values.details,
-        // --- 核心修正：在这里将选择的标签写入数据库 ---
-        problem_source: values.problem_source || null,
-        cause: values.cause || null,
-      },
-      history: [],
-    };
+    // --- 核心修正：设置 duration 为 0，确保 loading 消息不会自动消失 ---
+    messageApi.open({
+      type: 'loading',
+      content: '正在处理数据并上传...',
+      key: 'submitting',
+      duration: 0, 
+    });
 
     try {
-      await addNotices([newNoticeToInsert]);
+        const processFiles = async (fileList) => {
+          console.log('filelist', fileList)
+          if (!fileList || fileList.length === 0) return [];
+    
+          const processed = await Promise.all(
+            fileList.map(async (file) => {
+              // 如果文件有 originFileObj，说明它是新上传的，需要处理
+              if (file.originFileObj) {
+                try {
+                  const base64Url = await getBase64(file.originFileObj);
+                  // 返回一个干净、可序列化的对象
+                  return {
+                    uid: file.uid,
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    url: base64Url,
+                  };
+                } catch (error) {
+                  console.error("文件转换为 Base64 失败:", file.name, error);
+                  messageApi.open({
+                    type: 'error',
+                    content: `文件 ${file.name} 处理失败！`,
+                    key: 'submitting', // 使用相同的 key 来更新消息
+                    duration: 3
+                  });
+                  return null; // 如果转换失败，则返回 null
+                }
+              }
+    
+              // 如果文件已经有 url (例如，来自一个已保存的记录)，只需确保它是一个干净的对象
+              if (file.url) {
+                return {
+                  uid: file.uid,
+                  name: file.name,
+                  url: file.url,
+                };
+              }
+    
+              // 忽略无法处理的文件
+              return null;
+            })
+          );
+    
+          // 过滤掉所有处理失败的 (null) 文件
+          return processed.filter(Boolean);
+        };
+    
+    
+        const processedImages = await processFiles(values.images);
+        const processedAttachments = await processFiles(values.attachments);
+    
+        const selectedSupplierInfo = suppliers.find(s => s.id === values.supplierId);
+        const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        console.log('attachement', processedAttachments)
+    
+        console.log('image', currentUser)
+        const newNoticeToInsert = {
+          notice_code: noticeCode,
+          category: values.category,
+          // 修改后
+          title: values.details.process || values.details.parameter || values.details.criteria || 'New Notice',
+          assigned_supplier_id: values.supplierId,
+          assigned_supplier_name: selectedSupplierInfo?.name || '',
+          status: '待提交Action Plan',
+          creator_id: currentUser.id,
+          sd_notice: {
+            creatorId: currentUser.id,
+            creator: currentUser.name,
+            // --- 使用表单中选择的日期 ---
+            createTime: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
+            images: processedImages,
+            attachments: processedAttachments,
+            details: values.details,
+            // --- 核心修正：在这里将选择的标签写入数据库 ---
+            problem_source: values.problem_source || null,
+            cause: values.cause || null,
+          },
+          history: [],
+        };
 
-      // --- ✨ 核心修正 1：在显示成功消息后，延迟一段时间再停止加载动画 ---
-      messageApi.success({ content: `提报成功！编号为：${noticeCode}`, key: 'submitting', duration: 2.5 });
-
-      const headerValues = {
-        category: form.getFieldValue('category'),
-        supplierId: form.getFieldValue('supplierId'),
-        date: form.getFieldValue('date'),
-      };
-      form.resetFields();
-      form.setFieldsValue(headerValues);
-      setSelectedCategory(headerValues.category);
-      setSelectedSource(null);
-      setHistoricalTags({});
-
-      setTimeout(() => {
-        setLoading(false);
-      }, 1500); // 延迟1.5秒，确保用户看到成功提示
+        // 关键点：这里添加 await 确保 addNotices 真正执行完毕
+        await addNotices([newNoticeToInsert]);
+    
+        // --- 成功：更新同一 key 的消息为 success 状态，并设置显示时长 ---
+        messageApi.open({
+          type: 'success',
+          content: `提报成功！编号为：${noticeCode}`,
+          key: 'submitting',
+          duration: 2.5
+        });
+    
+        const headerValues = {
+          category: form.getFieldValue('category'),
+          supplierId: form.getFieldValue('supplierId'),
+          date: form.getFieldValue('date'),
+        };
+        form.resetFields();
+        form.setFieldsValue(headerValues);
+        setSelectedCategory(headerValues.category);
+        setSelectedSource(null);
+        setHistoricalTags({});
+    
+        // 延迟关闭按钮 loading，给用户一点反馈时间
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
     } catch (error) {
-      // --- ✨ 核心修正 2：在显示失败消息后，也延迟停止加载动画 ---
-      messageApi.error({ content: `提交失败: ${error.message}`, key: 'submitting', duration: 3 });
-      setTimeout(() => {
+      console.error("提交失败:", error);
+      // --- 失败：更新同一 key 的消息为 error 状态 ---
+      messageApi.open({
+        type: 'error',
+        content: `提交失败: ${error.message}`,
+        key: 'submitting',
+        duration: 3
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } finally {
         setLoading(false);
-      }, 1500);
     }
-    // --- 核心修正 3：移除 finally 块，手动控制 setLoading ---
   };
 
   return (

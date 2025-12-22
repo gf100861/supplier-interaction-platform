@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
     Card, Typography, Table, Tabs, Tag, Space, Button, Modal, Form, Input, message, Spin, Transfer, Select, Radio, Popconfirm, Divider, List, Avatar, Image, Empty, Tooltip, Row, Col
 } from 'antd';
-import { 
-    EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, MessageOutlined, BookOutlined, PaperClipOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, StopOutlined, ExclamationCircleOutlined, SaveOutlined, FilterOutlined, 
-    UserAddOutlined 
+import {
+    EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, MessageOutlined, BookOutlined, PaperClipOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, StopOutlined, ExclamationCircleOutlined, SaveOutlined, FilterOutlined,
+    UserAddOutlined
 } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
@@ -20,9 +20,9 @@ const { Search, TextArea } = Input;
 
 // --- 配置后端 API 地址 ---
 const isDev = process.env.NODE_ENV === 'development';
-const API_BASE_URL = isDev 
-    ? 'http://localhost:3001' 
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+const API_BASE_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix', 'alarm'];
 const feedbackStatusConfig = {
@@ -52,7 +52,7 @@ const AdminPage = () => {
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [editForm] = Form.useForm();
-    
+
     // --- 新增：创建用户相关状态 ---
     const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
     const [createForm] = Form.useForm();
@@ -105,7 +105,7 @@ const AdminPage = () => {
         setFeedbackLoading(true);
         try {
             const usersPromise = supabase.from('users').select(`id, username, email, phone, role, managed_suppliers:sd_supplier_assignments(supplier_id)`).in('role', ['SD', 'Manager', 'Supplier', 'Admin']); // 获取所有角色的用户
-            const suppliersPromise = supabase.from('suppliers').select('id, name, short_code'); 
+            const suppliersPromise = supabase.from('suppliers').select('id, name, short_code');
             const feedbackPromise = supabase.from('feedback').select(`*, user:users ( username )`).order('created_at', { ascending: false });
 
             const [
@@ -120,21 +120,21 @@ const AdminPage = () => {
 
             setUsers(usersData || []);
             // 统一格式：key=id, title=name (为了Transfer组件), label=name (为了Select)
-            setAllSuppliers((suppliersData || []).map(s => ({ 
+            setAllSuppliers((suppliersData || []).map(s => ({
                 ...s,
-                key: s.id, 
+                key: s.id,
                 title: s.name,
                 value: s.id,
                 label: `${s.short_code} - ${s.name}`
             })));
-            
+
             const processedFeedback = (feedbackData || []).map(item => ({
                 ...item,
                 images: Array.isArray(item.images) ? item.images : [],
                 attachments: Array.isArray(item.attachments) ? item.attachments : []
             }));
             setFeedbackList(processedFeedback);
-            
+
             const initialResponses = {};
             processedFeedback.forEach(item => {
                 if (item.admin_response) initialResponses[item.id] = item.admin_response;
@@ -207,7 +207,7 @@ const AdminPage = () => {
             messageApi.success('用户及关联数据创建成功！');
             setIsCreateModalVisible(false);
             fetchData();
-            
+
         } catch (error) {
             messageApi.error(`操作失败: ${error.message}`);
         } finally {
@@ -215,9 +215,38 @@ const AdminPage = () => {
         }
     };
 
+    // --- 新增：删除用户逻辑 ---
+    // src/AdminPage.js 中的 handleDeleteUser 函数片段
+    const handleDeleteUser = async (userId) => {
+        setLoading(true);
+        try {
+            // 调用后端 API 删除
+            const response = await fetch(`${API_BASE_URL}/api/delete-user`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || '删除失败');
+            }
+
+            messageApi.success('用户已彻底删除（包括登录账号）！');
+            // 更新 UI
+            setUsers(prev => prev.filter(u => u.id !== userId));
+
+        } catch (error) {
+            messageApi.error(`删除用户失败: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const showCorrectionModal = (type, notice) => { setCorrectionModal({ visible: true, type, notice }); };
     const handleCorrectionCancel = () => { setCorrectionModal({ visible: false, type: null, notice: null }); correctionForm.resetFields(); };
-    
+
     const handleReassignment = async (values) => {
         const notice = correctionModal.notice;
         if (!notice) return;
@@ -282,7 +311,7 @@ const AdminPage = () => {
                 { creator_id: currentUser.id, target_user_id: notice.assignedSupplierId, message: `"${notice.title}" 已被作废，您无需再处理。`, link: `/notices` },
                 { creator_id: currentUser.id, target_user_id: notice.creatorId, message: `您创建的 "${notice.title}" 已被作废。`, link: `/notices?open=${notice.id}` },
             ];
-            
+
             await supabase.from('alerts').insert(alertsToInsert);
 
             messageApi.warning('通知单已作废！');
@@ -291,7 +320,7 @@ const AdminPage = () => {
             messageApi.error(`作废失败: ${error.message}`);
         }
     };
-    
+
     const showEditModal = (user) => { setEditingUser(user); editForm.setFieldsValue({ username: user.username, phone: user.phone, password: '' }); setIsEditModalVisible(true); };
     const handleCancel = () => { setIsEditModalVisible(false); setEditingUser(null); setIsManageModalVisible(false); setManagingUser(null); };
     const handleEditUser = async (values) => {
@@ -329,7 +358,7 @@ const AdminPage = () => {
 
             if (targetSupplierKeys.length > 0) {
                 const newAssignments = targetSupplierKeys.map(supplierId => ({
-                    sd_user_id: managingUser.id, 
+                    sd_user_id: managingUser.id,
                     supplier_id: supplierId,
                 }));
                 const { error: insertError } = await supabase
@@ -375,7 +404,7 @@ const AdminPage = () => {
         const responseText = feedbackResponses[id];
         const currentFeedbackItem = feedbackList.find(item => item.id === id);
         if (currentFeedbackItem && currentFeedbackItem.admin_response === responseText) {
-            return; 
+            return;
         }
 
         messageApi.loading({ content: '正在保存回复...', key: `response-${id}` });
@@ -427,6 +456,17 @@ const AdminPage = () => {
             render: (_, record) => (
                 <Space size="middle">
                     <Button icon={<EditOutlined />} onClick={() => showEditModal(record)}>编辑</Button>
+                    {/* --- 新增：删除用户按钮 --- */}
+                    <Popconfirm
+                        title="确定删除此用户吗?"
+                        description="此操作将删除该用户的所有数据（不包括已创建的通知单）。"
+                        onConfirm={() => handleDeleteUser(record.id)}
+                        okText="删除"
+                        cancelText="取消"
+                    >
+                        <Button icon={<DeleteOutlined />} danger>删除</Button>
+                    </Popconfirm>
+
                     {record.role === 'SD' && (
                         <Button icon={<UserSwitchOutlined />} onClick={() => showManageModal(record)}>管理供应商</Button>
                     )}
@@ -436,7 +476,7 @@ const AdminPage = () => {
     ];
 
     const noticeColumns = [
-        { title: '通知单号', dataIndex: 'noticeCode', key: 'noticeCode', width: 150 }, 
+        { title: '通知单号', dataIndex: 'noticeCode', key: 'noticeCode', width: 150 },
         { title: '标题', dataIndex: 'title', key: 'title' },
         { title: '类型', dataIndex: 'category', key: 'category', width: 100 },
         { title: '当前供应商', dataIndex: 'assignedSupplierName', key: 'assignedSupplierName' },
@@ -514,9 +554,9 @@ const AdminPage = () => {
                             <Col>
                                 <Space>
                                     <span>状态:</span>
-                                    <Select 
-                                        value={feedbackStatusFilter} 
-                                        onChange={setFeedbackStatusFilter} 
+                                    <Select
+                                        value={feedbackStatusFilter}
+                                        onChange={setFeedbackStatusFilter}
                                         style={{ width: 120 }}
                                         bordered={false}
                                     >
@@ -530,9 +570,9 @@ const AdminPage = () => {
                             <Col>
                                 <Space>
                                     <span>分类:</span>
-                                    <Select 
-                                        value={feedbackCategoryFilter} 
-                                        onChange={setFeedbackCategoryFilter} 
+                                    <Select
+                                        value={feedbackCategoryFilter}
+                                        onChange={setFeedbackCategoryFilter}
                                         style={{ width: 120 }}
                                         bordered={false}
                                     >
@@ -590,105 +630,105 @@ const AdminPage = () => {
                                                         )
                                                     })}
                                                 </Select>
+
+                                                <div style={{ paddingLeft: 48, marginTop: 12 }}>
+                                                    <Paragraph style={{ fontSize: 15, lineHeight: 1.6 }}>
+                                                        {item.content}
+                                                    </Paragraph>
+
+                                                    {/* 图片展示区域 - 九宫格样式 */}
+                                                    {item.images && item.images.length > 0 && (
+                                                        <div style={{ marginTop: 16 }}>
+                                                            <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>附图 ({item.images.length})</Text>
+                                                            <Image.PreviewGroup>
+                                                                <Space size={8} wrap>
+                                                                    {item.images.map((img, idx) => {
+                                                                        const imgSrc = typeof img === 'object' ? (img.url || img.thumbUrl || img.response?.url) : img;
+                                                                        return (
+                                                                            <div key={idx} style={{
+                                                                                width: 100,
+                                                                                height: 100,
+                                                                                borderRadius: 8,
+                                                                                overflow: 'hidden',
+                                                                                border: '1px solid #f0f0f0',
+                                                                                backgroundColor: '#fafafa',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center'
+                                                                            }}>
+                                                                                <Image
+                                                                                    width={100}
+                                                                                    height={100}
+                                                                                    src={imgSrc}
+                                                                                    style={{ objectFit: 'cover' }}
+                                                                                    fallback="https://via.placeholder.com/100x100?text=Image+Error"
+                                                                                />
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </Space>
+                                                            </Image.PreviewGroup>
+                                                        </div>
+                                                    )}
+
+                                                    {/* 附件展示区域 */}
+                                                    {item.attachments && item.attachments.length > 0 && (
+                                                        <div style={{ marginTop: 16 }}>
+                                                            <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>附件 ({item.attachments.length})</Text>
+                                                            <Space wrap>
+                                                                {item.attachments.map((file, idx) => {
+                                                                    const fileUrl = typeof file === 'object' ? (file.url || file.response?.url) : file;
+                                                                    const fileName = typeof file === 'object' ? file.name : `附件 ${idx + 1}`;
+
+                                                                    return (
+                                                                        <Button
+                                                                            key={idx}
+                                                                            icon={<PaperClipOutlined />}
+                                                                            size="small"
+                                                                            onClick={() => window.open(fileUrl, '_blank')}
+                                                                        >
+                                                                            {fileName}
+                                                                        </Button>
+                                                                    );
+                                                                })}
+                                                            </Space>
+                                                        </div>
+                                                    )}
+
+                                                    {/* 管理员回复区域 */}
+                                                    <div style={{ marginTop: 24, backgroundColor: '#fafafa', padding: 16, borderRadius: 8, border: '1px solid #f0f0f0' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                            <Text strong style={{ color: '#595959' }}><MessageOutlined /> 管理员回复</Text>
+                                                            {feedbackResponses[item.id] !== item.admin_response && (
+                                                                <Text type="warning" style={{ fontSize: 12 }}>* 未保存</Text>
+                                                            )}
+                                                        </div>
+                                                        <TextArea
+                                                            value={feedbackResponses[item.id] || ''}
+                                                            onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                                                            placeholder="在此输入处理意见或回复..."
+                                                            autoSize={{ minRows: 2, maxRows: 6 }}
+                                                            style={{ marginBottom: 8, backgroundColor: '#fff' }}
+                                                        />
+                                                        <div style={{ textAlign: 'right' }}>
+                                                            <Popconfirm title="确定删除此反馈吗?" onConfirm={() => handleDeleteFeedback(item.id)}>
+                                                                <Button type="text" danger size="small" icon={<DeleteOutlined />} style={{ float: 'left' }}>删除</Button>
+                                                            </Popconfirm>
+                                                            <Button
+                                                                type="primary"
+                                                                size="small"
+                                                                icon={<SaveOutlined />}
+                                                                onClick={() => handleSaveFeedbackResponse(item.id)}
+                                                                disabled={feedbackResponses[item.id] === item.admin_response}
+                                                            >
+                                                                保存回复
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         }
                                     />
-                                    
-                                    <div style={{ paddingLeft: 48, marginTop: 12 }}>
-                                        <Paragraph style={{ fontSize: 15, lineHeight: 1.6 }}>
-                                            {item.content}
-                                        </Paragraph>
-
-                                        {/* 图片展示区域 - 九宫格样式 */}
-                                        {item.images && item.images.length > 0 && (
-                                            <div style={{ marginTop: 16 }}>
-                                                <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>附图 ({item.images.length})</Text>
-                                                <Image.PreviewGroup>
-                                                    <Space size={8} wrap>
-                                                        {item.images.map((img, idx) => {
-                                                            const imgSrc = typeof img === 'object' ? (img.url || img.thumbUrl || img.response?.url) : img;
-                                                            return (
-                                                                <div key={idx} style={{ 
-                                                                    width: 100, 
-                                                                    height: 100, 
-                                                                    borderRadius: 8, 
-                                                                    overflow: 'hidden',
-                                                                    border: '1px solid #f0f0f0',
-                                                                    backgroundColor: '#fafafa',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center'
-                                                                }}>
-                                                                    <Image
-                                                                        width={100}
-                                                                        height={100}
-                                                                        src={imgSrc}
-                                                                        style={{ objectFit: 'cover' }}
-                                                                        fallback="https://via.placeholder.com/100x100?text=Image+Error"
-                                                                    />
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </Space>
-                                                </Image.PreviewGroup>
-                                            </div>
-                                        )}
-
-                                        {/* 附件展示区域 */}
-                                        {item.attachments && item.attachments.length > 0 && (
-                                            <div style={{ marginTop: 16 }}>
-                                                <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>附件 ({item.attachments.length})</Text>
-                                                <Space wrap>
-                                                    {item.attachments.map((file, idx) => {
-                                                        const fileUrl = typeof file === 'object' ? (file.url || file.response?.url) : file;
-                                                        const fileName = typeof file === 'object' ? file.name : `附件 ${idx + 1}`;
-                                                        
-                                                        return (
-                                                            <Button 
-                                                                key={idx} 
-                                                                icon={<PaperClipOutlined />} 
-                                                                size="small" 
-                                                                onClick={() => window.open(fileUrl, '_blank')}
-                                                            >
-                                                                {fileName}
-                                                            </Button>
-                                                        );
-                                                    })}
-                                                </Space>
-                                            </div>
-                                        )}
-
-                                        {/* 管理员回复区域 */}
-                                        <div style={{ marginTop: 24, backgroundColor: '#fafafa', padding: 16, borderRadius: 8, border: '1px solid #f0f0f0' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                                                <Text strong style={{ color: '#595959' }}><MessageOutlined /> 管理员回复</Text>
-                                                {feedbackResponses[item.id] !== item.admin_response && (
-                                                    <Text type="warning" style={{ fontSize: 12 }}>* 未保存</Text>
-                                                )}
-                                            </div>
-                                            <TextArea
-                                                value={feedbackResponses[item.id] || ''}
-                                                onChange={(e) => handleResponseChange(item.id, e.target.value)}
-                                                placeholder="在此输入处理意见或回复..."
-                                                autoSize={{ minRows: 2, maxRows: 6 }}
-                                                style={{ marginBottom: 8, backgroundColor: '#fff' }}
-                                            />
-                                            <div style={{ textAlign: 'right' }}>
-                                                <Popconfirm title="确定删除此反馈吗?" onConfirm={() => handleDeleteFeedback(item.id)}>
-                                                    <Button type="text" danger size="small" icon={<DeleteOutlined />} style={{ float: 'left' }}>删除</Button>
-                                                </Popconfirm>
-                                                <Button 
-                                                    type="primary" 
-                                                    size="small" 
-                                                    icon={<SaveOutlined />} 
-                                                    onClick={() => handleSaveFeedbackResponse(item.id)}
-                                                    disabled={feedbackResponses[item.id] === item.admin_response}
-                                                >
-                                                    保存回复
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
                                 </Card>
                             </List.Item>
                         )}
@@ -727,9 +767,16 @@ const AdminPage = () => {
                         - 报表与统计<br />
                         - 实时提醒<br />
                         - 管理后台<br />
-                        - (待开发) 智能检索与AI打标签
+                        - 智能检索与AI打标签
                     </Paragraph>
-                    {/* Add more sections like Deployment, API Reference etc. */}
+                    <Title level={5}>记录开发要点</Title>
+                    <Paragraph>
+                        - 如果需要在后端引入API别忘了在server.js进行注册<br />
+                        - 注意Supabase的Row Level Security (RLS)策略配置<br />
+                        - 前端与后端的数据交互均通过Supabase客户端完成<br />
+                        - 使用Supabase的Storage存储用户上传的文件和图片<br />
+                        - 详细的代码注释请参考各个组件和函数的实现
+                    </Paragraph>
                 </Typography>
             )
         }
@@ -746,8 +793,8 @@ const AdminPage = () => {
                 <Paragraph>在此页面管理系统用户、供应商分配以及查看系统日志。</Paragraph>
 
                 {/* Use items prop for Tabs */}
-                <Tabs 
-                    defaultActiveKey="1" 
+                <Tabs
+                    defaultActiveKey="1"
                     items={items}
                     tabBarExtraContent={
                         <Button type="primary" icon={<UserAddOutlined />} onClick={showCreateModal}>
@@ -771,8 +818,8 @@ const AdminPage = () => {
                     initialValues={{ role: 'SD', supplierMode: 'existing' }}
                 >
                     <Form.Item name="role" label="用户角色">
-                        <Radio.Group 
-                            onChange={(e) => setSelectedRole(e.target.value)} 
+                        <Radio.Group
+                            onChange={(e) => setSelectedRole(e.target.value)}
                             buttonStyle="solid"
                         >
                             <Radio.Button value="SD">SD (工程师)</Radio.Button>
@@ -793,7 +840,7 @@ const AdminPage = () => {
                             </Form.Item>
                         </Col>
                         <Col span={12}>
-                             <Form.Item
+                            <Form.Item
                                 name="username"
                                 label="显示名称"
                                 rules={[{ required: true, message: '请输入姓名' }]}
@@ -815,10 +862,10 @@ const AdminPage = () => {
                     {selectedRole === 'Supplier' && (
                         <div style={{ background: '#f9f9f9', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #eee' }}>
                             <Divider orientation="left" style={{ marginTop: 0, fontSize: '14px' }}>供应商归属配置</Divider>
-                            
+
                             <Form.Item label="归属模式" style={{ marginBottom: 16 }}>
-                                <Radio.Group 
-                                    value={supplierMode} 
+                                <Radio.Group
+                                    value={supplierMode}
                                     onChange={e => setSupplierMode(e.target.value)}
                                 >
                                     <Radio value="existing">绑定已有公司</Radio>
@@ -827,14 +874,14 @@ const AdminPage = () => {
                             </Form.Item>
 
                             {supplierMode === 'existing' ? (
-                                <Form.Item 
-                                    name="existingSupplierId" 
-                                    label="选择已有供应商" 
+                                <Form.Item
+                                    name="existingSupplierId"
+                                    label="选择已有供应商"
                                     rules={[{ required: true, message: '请选择一个供应商' }]}
                                 >
-                                    <Select 
-                                        showSearch 
-                                        placeholder="搜索公司名或代码..." 
+                                    <Select
+                                        showSearch
+                                        placeholder="搜索公司名或代码..."
                                         optionFilterProp="label"
                                         options={allSuppliers}
                                     />
@@ -869,8 +916,8 @@ const AdminPage = () => {
             </Modal>
 
             {/* ... (其他 Modals: EditUser, ManageSupplier, Correction 保持不变) ... */}
-             <Modal title={`编辑用户: ${editingUser?.username}`} open={isEditModalVisible} onCancel={handleCancel} footer={null}>
-                 <Form form={editForm} layout="vertical" onFinish={handleEditUser}>
+            <Modal title={`编辑用户: ${editingUser?.username}`} open={isEditModalVisible} onCancel={handleCancel} footer={null}>
+                <Form form={editForm} layout="vertical" onFinish={handleEditUser}>
                     <Form.Item name="username" label="姓名" rules={[{ required: true }]}><Input /></Form.Item>
                     <Form.Item name="phone" label="电话"><Input /></Form.Item>
                     <Form.Item name="password" label="新密码 (留空则不修改)"><Input.Password /></Form.Item>
@@ -878,7 +925,7 @@ const AdminPage = () => {
                 </Form>
             </Modal>
 
-             <Modal
+            <Modal
                 title={`管理 ${managingUser?.name} 的供应商`}
                 open={isManageModalVisible}
                 onOk={handleManageSuppliers}
@@ -917,10 +964,10 @@ const AdminPage = () => {
                             label="选择新的供应商"
                             rules={[{ required: true, message: '请选择一个新的供应商！' }]}
                         >
-                            <Select 
-                                showSearch 
-                                placeholder="搜索并选择供应商" 
-                                filterOption={(input, option) => 
+                            <Select
+                                showSearch
+                                placeholder="搜索并选择供应商"
+                                filterOption={(input, option) =>
                                     (option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                                 }
                                 getPopupContainer={triggerNode => triggerNode.parentNode}

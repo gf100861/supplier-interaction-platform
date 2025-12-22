@@ -18,6 +18,7 @@ const translateError = (error) => {
     if (msg.includes('violates row-level security policy')) return '权限不足，您无法执行此操作';
     if (msg.includes('violates not-null constraint')) return '缺少必填字段';
     if (msg.includes('JWT expired')) return '登录会话已过期，请刷新页面';
+    if (msg.includes('Cannot coerce the result to a single JSON object')) return '请求的数据不存在,请联系Louis';
     if (msg.includes('Failed to fetch')) return '网络请求失败，请检查网络连接';
     return msg; 
 };

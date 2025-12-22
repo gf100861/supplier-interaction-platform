@@ -5,16 +5,16 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 
-// --- 新增：引入 create-user 处理逻辑 ---
-// ⚠️ 注意：请确保 api/create-user.js 里的语法错误已经按照上一步修复，
-// 否则这里引入时会导致服务器启动报错。
+// --- 引入 API 处理逻辑 ---
 const createUserHandler = require('./api/create-user');
+const deleteUserHandler = require('./api/delete-user'); // 引入 delete-user
 
 const app = express();
 const server = http.createServer(app);
 
 // 允许跨域
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] })); // 建议把 OPTIONS 也加上
+// 注意：origin: '*' 方便开发，生产环境建议指定具体域名
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS', 'DELETE'] })); 
 app.use(express.json());
 
 // --- 1. Socket.IO (仅本地有效) ---
@@ -28,11 +28,19 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// --- 新增：注册 Create User 路由 ---
+// --- 注册 API 路由 ---
 // ==========================================
+
+// 注册 Create User 路由
+// 使用 app.all 捕获 POST 和 OPTIONS 请求
 app.all('/api/create-user', async (req, res) => {
-    // 将请求转发给 api/create-user.js 处理
     await createUserHandler(req, res);
+});
+
+// 注册 Delete User 路由
+// 同样使用 app.all 以支持 OPTIONS 预检请求
+app.all('/api/delete-user', async (req, res) => {
+    await deleteUserHandler(req, res);
 });
 
 
@@ -83,5 +91,6 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`✅ Local Backend running on http://localhost:${PORT}`);
     console.log(`📧 Email endpoint: http://localhost:${PORT}/api/send-alert-email`);
-    console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`); // 打印出来确认路由生效
+    console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`);
+    console.log(`🗑️ Delete User endpoint: http://localhost:${PORT}/api/delete-user`);
 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Tabs, Upload, Button, Form, Input, Select, DatePicker, message, Row, Col, Typography, Divider, Alert, Space, Spin, Collapse, Switch } from 'antd';
-import { InboxOutlined, FileExcelOutlined, FilePdfOutlined, UploadOutlined, CloudUploadOutlined, RobotOutlined, ThunderboltOutlined, CaretRightOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
+import { Card, Tabs, Upload, Button, Form, Input, Select, DatePicker, message, Row, Col, Typography, Divider, Alert, Space, Spin, Collapse, Switch, Table, Progress, Tag } from 'antd'; // 引入 Table, Progress, Tag
+import { InboxOutlined, FileExcelOutlined, FilePdfOutlined, UploadOutlined, CloudUploadOutlined, RobotOutlined, ThunderboltOutlined, CaretRightOutlined, ApiOutlined, GoogleOutlined, CheckCircleOutlined, SyncOutlined, CloseCircleOutlined, EyeOutlined } from '@ant-design/icons'; // 引入更多图标
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
@@ -52,6 +52,11 @@ const HistoricalImportPage = () => {
     const [parsing, setParsing] = useState(false);
     const [parseProgress, setParseProgress] = useState('');
     const [useGemini, setUseGemini] = useState(true);
+    
+    // 新增：批量解析相关状态
+    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, percent: 0 });
+    const [parsedResults, setParsedResults] = useState([]); // 存储批量解析的结果
+    const [activeResultIndex, setActiveResultIndex] = useState(-1); // 当前正在编辑/查看的结果索引
 
     const { messageApi } = useNotification();
     const { suppliers } = useSuppliers();
@@ -102,9 +107,9 @@ const HistoricalImportPage = () => {
         Fields to extract:
         - reportNo: Report number / NCR No.
         - supplierCode: Supplier code.
-        - subject: Subject / Description / Title of the issue.
-        - partNo: Material number / Part No.
-        - partName: Part name.
+        - subject: Subject / Description / Title of the issue. Use the main title or problem statement found in the header or D2 section.
+        - partNumber: Part number / Part No. Look for "Part number", "P/N".
+        - partName: Part name / Description.
         - quantity: Defect quantity.
         - date: Issue date (Format: YYYY-MM-DD).
         - summary: Problem description (D2). Include visual analysis of any embedded photos here.
@@ -131,7 +136,7 @@ const HistoricalImportPage = () => {
             contents: [{ parts: parts }],
             generationConfig: {
                 temperature: 0.2,
-                maxOutputTokens: 4096, // 增加 Token 限制以容纳更多内容
+                maxOutputTokens: 8192, // 增加 Token 限制以容纳更多内容
             }
         };
 
@@ -296,7 +301,6 @@ const HistoricalImportPage = () => {
             content = content.replace(/^.+?\n/, '').trim();
             return content;
         };
-
         const reportNo = extractField(['Report No', 'NCR No', '8D No', 'No.'], 30);
         const supplierCode = extractField(['Supplier Code', 'Vendor Code', 'Supplier No', 'Vendor ID', 'Parma No', 'Parma'], 20);
         const partNo = extractField(['Part number', 'Part No', 'P/N', 'Material No', 'Material number'], 30);
@@ -312,7 +316,6 @@ const HistoricalImportPage = () => {
         const summary = extractBlock(['Problem description', 'Phenomenon', 'Subject', 'Defect', '2. Problem'], ['3. Containment', '4. Root Cause', 'Root Cause']);
         const rootCause = extractBlock(['4. Root Cause Analysis', 'Root Cause', 'Analysis', 'Why'], ['5. Interim', 'Potential Corrective', 'Corrective Action']);
         const interimAction = extractBlock(['5. Interim', 'Potential Corrective Action', 'Interim Action', 'Corrective Action'], ['6. Verification', 'Verification', 'Prevent Recurrence']);
-
         let title = "NCR Report";
         if (partNo || summary) {
             const safeSummary = (summary || "未识别问题").substring(0, 30).replace(/[\r\n]/g, ' ');
@@ -321,117 +324,211 @@ const HistoricalImportPage = () => {
         return { reportNo, supplierCode, partNo, partName, quantity, title, summary: summary || "未识别到详细描述", rootCause: rootCause || "未识别到根本原因", interimAction: interimAction || "未识别到解决措施", date };
     };
 
-    // --- 智能解析入口 ---
-    const handleSmartParse = async () => {
+    // --- 修改后：批量解析逻辑 ---
+    const handleSmartParseBatch = async () => {
         const fileList = form.getFieldValue('file');
         if (!fileList || fileList.length === 0) {
-            messageApi.warning("请先选择一个 PDF 文件！");
+            messageApi.warning("请先选择至少一个 PDF 文件！");
             return;
         }
-        const file = fileList[0].originFileObj;
-        if (file.type !== 'application/pdf') {
-            messageApi.error("仅支持 PDF 解析");
+        
+        // 检查所有文件类型
+        const invalidFiles = fileList.filter(f => f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf'));
+        if (invalidFiles.length > 0) {
+            messageApi.error("包含不支持的文件类型，仅支持 PDF。");
             return;
         }
 
         setParsing(true);
+        setParsedResults([]); // 清空旧结果
+        setActiveResultIndex(-1);
+        setBatchProgress({ current: 0, total: fileList.length, percent: 0 });
 
-        try {
-            let data = {};
+        const results = [];
 
-            if (useGemini) {
-                if (!apiKey) {
-                    messageApi.error("请先在下方输入框填写 Google API Key");
-                    setParsing(false);
-                    return;
+        for (let i = 0; i < fileList.length; i++) {
+            const fileItem = fileList[i];
+            const file = fileItem.originFileObj;
+            
+            // 更新进度
+            setBatchProgress({ current: i + 1, total: fileList.length, percent: Math.round(((i) / fileList.length) * 100) });
+            setParseProgress(`正在处理 (${i + 1}/${fileList.length}): ${file.name}...`);
+
+            try {
+                let data = {};
+                let status = 'success';
+                let errorMsg = null;
+
+                if (useGemini) {
+                    if (!apiKey) throw new Error("缺少 Google API Key");
+                    
+                    const base64Images = await convertPdfToImages(file);
+                    setParseProgress(`正在 AI 分析 (${i + 1}/${fileList.length})...`);
+                    const result = await callGeminiVisionAPI(base64Images);
+                    
+                    data = {
+                        ...result,
+                        date: result.date ? dayjs(result.date) : dayjs(),
+                        title: result.subject ? result.subject : `${result.partNumber ? `[${result.partNumber}] ` : ''}${result.partName ? `${result.partName} - ` : ''}${result.summary ? result.summary.substring(0, 20) : 'Gemini Analysis'}...`
+                    };
+                } else {
+                    setParseProgress(`正在 OCR 识别 (${i + 1}/${fileList.length})...`);
+                    const rawText = await extractTextLocal(file);
+                    data = parse8DReportTextLocal(rawText);
                 }
-                
-                // *** 核心修改：将 PDF 所有页面转换为图片数组 ***
-                setParseProgress('正在扫描 PDF 所有页面...');
-                const base64Images = await convertPdfToImages(file);
 
-                setParseProgress(`正在请求 ${geminiModel} 模型分析 (${base64Images.length} 页)...`);
-                // *** 核心修改：发送图片数组给 AI ***
-                const result = await callGeminiVisionAPI(base64Images);
-
-                console.log('AI 解析结果:', result);
-
-                data = {
-                    ...result,
-                    date: result.date ? dayjs(result.date) : dayjs(),
-                    // 优先使用 AI 提取的 Subject 作为标题
-                    title: result.subject ? result.subject : `${result.partNo ? `[${result.partNo}] ` : ''}${result.partName ? `${result.partName} - ` : ''}${result.summary ? result.summary.substring(0, 20) : 'Gemini Analysis'}...`
-                };
-                messageApi.success("Gemini AI 解析成功！");
-
-            } else {
-                setParseProgress('初始化 Tesseract OCR 引擎...');
-                const rawText = await extractTextLocal(file);
-                data = parse8DReportTextLocal(rawText);
-                messageApi.success("本地 OCR 解析完成");
-            }
-
-            // 自动匹配供应商
-            let matchedSupplierId = undefined;
-            if (data.supplierCode && suppliers) {
-                const targetCode = data.supplierCode.toString().trim().toUpperCase();
-                const found = suppliers.find(s => 
-                    (s.short_code && s.short_code.toUpperCase() === targetCode) || 
-                    (s.parma_id && s.parma_id.toString() === targetCode)
-                );
-                if (found) {
-                    matchedSupplierId = found.id;
-                    messageApi.success(`已自动匹配供应商: ${found.name}`);
+                // 自动匹配供应商
+                let matchedSupplierId = undefined;
+                if (data.supplierCode && suppliers) {
+                    const targetCode = data.supplierCode.toString().trim().toUpperCase();
+                    const found = suppliers.find(s => 
+                        (s.short_code && s.short_code.toUpperCase() === targetCode) || 
+                        (s.parma_id && s.parma_id.toString() === targetCode)
+                    );
+                    if (found) matchedSupplierId = found.id;
                 }
-            }
 
-            form.setFieldsValue({
-                title: data.title,
-                partNo: data.partNo,
-                reportNo: data.reportNo,
-                summary: data.summary,
-                rootCause: data.rootCause,
-                interimAction: data.interimAction,
-                date: data.date,
-                supplierId: matchedSupplierId
-            });
-        } catch (error) {
-            console.error(error);
-            messageApi.error(`解析失败: ${error.message}`);
-        } finally {
-            setParsing(false);
-            setParseProgress('');
+                // 存入结果对象
+                results.push({
+                    key: i,
+                    fileName: file.name,
+                    fileObj: file,
+                    data: { ...data, supplierId: matchedSupplierId },
+                    status: 'success',
+                    isArchived: false // 是否已归档
+                });
+
+            } catch (error) {
+                console.error(`File ${file.name} failed:`, error);
+                results.push({
+                    key: i,
+                    fileName: file.name,
+                    fileObj: file,
+                    data: null,
+                    status: 'error',
+                    errorMsg: error.message
+                });
+            }
+        }
+
+        setBatchProgress({ current: fileList.length, total: fileList.length, percent: 100 });
+        setParsedResults(results);
+        setParsing(false);
+        setParseProgress('');
+        messageApi.success(`批量解析完成！成功: ${results.filter(r => r.status === 'success').length}, 失败: ${results.filter(r => r.status === 'error').length}`);
+        
+        // 如果有成功的结果，自动加载第一个到表单预览
+        const firstSuccess = results.findIndex(r => r.status === 'success');
+        if (firstSuccess !== -1) {
+            loadResultToForm(results[firstSuccess], firstSuccess);
         }
     };
 
+    // 将选中的解析结果填入表单以便编辑
+    const loadResultToForm = (resultItem, index) => {
+        setActiveResultIndex(index);
+        if (resultItem.status === 'success' && resultItem.data) {
+            form.setFieldsValue({
+                title: resultItem.data.title,
+                partNumber: resultItem.data.partNumber,
+                partName: resultItem.data.partName, // 新增：回填零件名称
+                reportNo: resultItem.data.reportNo,
+                summary: resultItem.data.summary,
+                rootCause: resultItem.data.rootCause,
+                interimAction: resultItem.data.interimAction,
+                date: resultItem.data.date,
+                supplierId: resultItem.data.supplierId
+            });
+        } else {
+            form.resetFields();
+        }
+    };
+
+    // 归档单个（当前表单内容 + 关联的原始文件）
     const handleSingleFileArchive = async (values) => {
+        // 如果是批量列表过来的，需要校验
+        if (activeResultIndex !== -1 && !parsedResults[activeResultIndex]) {
+             // 这种情况理论上不应发生，但也做个防御
+        }
+
         setLoading(true);
         try {
-            const file = values.file[0].originFileObj;
-            const fileName = `history/${Date.now()}_${file.name}`;
+            // 1. 获取文件对象 (如果是批量模式，从 parsedResults 取；如果是单文件模式，从 values.file 取)
+            let file;
+            let fileName;
+            
+            if (activeResultIndex !== -1 && parsedResults[activeResultIndex]) {
+                 file = parsedResults[activeResultIndex].fileObj;
+            } else if (values.file && values.file[0]) {
+                 file = values.file[0].originFileObj;
+            } else {
+                 throw new Error("未找到文件对象");
+            }
+
+            // 2. 上传原始 PDF 到 Supabase Storage (归档留底)
+            fileName = `history/${Date.now()}_${file.name}`;
             await mockSupabase.storage.from('public-assets').upload(fileName, file);
 
-            const aiContext = `[Part Number]: ${values.partNo || 'N/A'}\n[Problem]: ${values.summary}\n[Root Cause]: ${values.rootCause}\n[Interim/Permanent Action]: ${values.interimAction}`.trim();
+            // 3. 构建 AI 检索用的上下文摘要 (Description)
+            // 这部分文本将被用于向量化搜索，所以要尽可能包含关键信息
+            const aiContext = `
+[Part Number]: ${values.partNumber || 'N/A'}
+[Part Name]: ${values.partName || 'N/A'}
+[Quantity]: ${values.quantity || 'N/A'}
+[Problem]: ${values.summary}
+[Root Cause]: ${values.rootCause}
+[Interim/Permanent Action]: ${values.interimAction}
+            `.trim();
 
+            // 4. 构建插入 notices 表的数据对象
+            // 我们复用现有的 notices 表，但打上 "Historical 8D" 的标签
             const newNotice = {
                 title: values.title,
-                description: aiContext,
-                notice_code: values.reportNo || `DOC-${Date.now()}`,
+                description: aiContext, // 用于列表展示和简单搜索
+                notice_code: values.reportNo || `HIST-${dayjs().format('YYYYMMDD')}-${Math.floor(Math.random() * 1000)}`,
                 assigned_supplier_id: values.supplierId,
-                assigned_supplier_name: suppliers.find(s => s.id === values.supplierId)?.name,
-                status: '已完成',
-                category: 'Historical 8D',
-                details: {
-                    part_number: values.partNo,
-                    finding: values.summary,
-                    root_cause: values.rootCause,
-                    action_plan: values.interimAction,
-            
-                }
+                assigned_supplier_name: suppliers.find(s => s.id === values.supplierId)?.name || 'Unknown Supplier',
+                status: '已完成', // 历史数据直接标记为已完成
+                category: 'Historical 8D', // 特殊分类
+                created_at: values.date ? values.date.toISOString() : new Date().toISOString(), // 保持历史时间真实性
+                
+                // 关键：将所有详细的结构化数据存入 sd_notice (JSONB)
+                // 这样前端展示详情时，可以从这里取出 D4/D5 等具体字段
+                sd_notice: {
+                    details: {
+                        part_number: values.partNumber,
+                        part_name: values.partName, // 确保写入
+                        quantity: values.quantity,
+                        finding: values.summary, // D2
+                        root_cause: values.rootCause, // D4
+                        action_plan: values.interimAction, // D5/D6
+                        report_file_path: fileName // 关联原始 PDF
+                    },
+                    images: [], // 历史导入通常没有单独分离出的图片附件，除非我们做更复杂的切图
+                    attachments: [] 
+                },
+                history: [
+                    {
+                        type: 'system_import',
+                        submitter: currentUser.username,
+                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                        description: '通过历史归档模块导入',
+                    }
+                ]
             };
+            
             await addNotices([newNotice]);
             messageApi.success("归档成功！");
-            form.resetFields();
+            
+            // 如果是批量模式，更新列表状态
+            if (activeResultIndex !== -1) {
+                setParsedResults(prev => prev.map((item, idx) => 
+                    idx === activeResultIndex ? { ...item, isArchived: true } : item
+                ));
+            } else {
+                form.resetFields();
+            }
+
         } catch (error) {
             console.error(error);
             messageApi.error("归档失败: " + error.message);
@@ -439,6 +536,105 @@ const HistoricalImportPage = () => {
             setLoading(false);
         }
     };
+
+    // 批量归档所有成功且未归档的项目
+    const handleBatchArchiveAll = async () => {
+        const itemsToArchive = parsedResults.filter(item => item.status === 'success' && !item.isArchived);
+        if (itemsToArchive.length === 0) {
+            messageApi.info("没有需要归档的项目");
+            return;
+        }
+
+        setLoading(true);
+        let successCount = 0;
+        
+        for (const item of itemsToArchive) {
+            try {
+                const values = item.data;
+                const file = item.fileObj;
+                const fileName = `history/${Date.now()}_${file.name}`;
+                
+                await mockSupabase.storage.from('public-assets').upload(fileName, file);
+
+                const aiContext = `
+[Part Number]: ${values.partNumber || 'N/A'}
+[Part Name]: ${values.partName || 'N/A'}
+[Problem]: ${values.summary}
+[Root Cause]: ${values.rootCause}
+[Interim/Permanent Action]: ${values.interimAction}
+                `.trim();
+
+                const newNotice = {
+                    title: values.title,
+                    description: aiContext,
+                    notice_code: values.reportNo || `HIST-${dayjs().format('YYYYMMDD')}-${Math.floor(Math.random() * 1000)}`,
+                    assigned_supplier_id: values.supplierId,
+                    assigned_supplier_name: suppliers.find(s => s.id === values.supplierId)?.name || 'Unknown',
+                    status: '已完成',
+                    category: 'Historical 8D',
+                    created_at: values.date ? dayjs(values.date).toISOString() : new Date().toISOString(),
+                    sd_notice: {
+                        details: {
+                            part_number: values.partNumber,
+                            part_name: values.partName, // 确保写入
+                            finding: values.summary,
+                            root_cause: values.rootCause,
+                            action_plan: values.interimAction,
+                            report_file_path: fileName
+                        }
+                    },
+                    history: [{ type: 'system_import', submitter: currentUser.username, time: dayjs().format('YYYY-MM-DD HH:mm:ss') }]
+                };
+                await addNotices([newNotice]);
+                successCount++;
+                
+                // 更新该项状态
+                setParsedResults(prev => prev.map(p => p.key === item.key ? { ...p, isArchived: true } : p));
+
+            } catch (err) {
+                console.error(`Batch archive failed for ${item.fileName}`, err);
+            }
+        }
+        setLoading(false);
+        messageApi.success(`批量处理完成，成功归档 ${successCount} 个文件`);
+    };
+
+    const columns = [
+        {
+            title: '文件名',
+            dataIndex: 'fileName',
+            key: 'fileName',
+            render: (text, record) => <Text delete={record.isArchived}>{text}</Text>
+        },
+        {
+            title: '识别标题',
+            key: 'title',
+            render: (_, record) => record.data?.title || <Text type="secondary">N/A</Text>
+        },
+        {
+            title: '状态',
+            key: 'status',
+            render: (_, record) => {
+                if (record.isArchived) return <Tag color="green">已归档</Tag>;
+                if (record.status === 'error') return <Tag color="red">解析失败</Tag>;
+                return <Tag color="blue">待确认</Tag>;
+            }
+        },
+        {
+            title: '操作',
+            key: 'action',
+            render: (_, record, index) => (
+                <Button 
+                    type="link" 
+                    size="small" 
+                    onClick={() => loadResultToForm(record, index)}
+                    disabled={record.status === 'error'}
+                >
+                    {activeResultIndex === index ? '编辑中...' : '查看/编辑'}
+                </Button>
+            )
+        }
+    ];
 
     return (
         <div style={{ padding: 24, maxWidth: 1000, margin: '0 auto' }}>
@@ -449,157 +645,112 @@ const HistoricalImportPage = () => {
 
             <Tabs defaultActiveKey="file" type="card" size="large">
                 <Tabs.TabPane tab={<span><FilePdfOutlined /> PDF 文档归档 (OCR/AI)</span>} key="file">
-                    <Card title="单份 8D 报告归档">
-                        <Row gutter={24}>
-                            <Col span={14}>
+                    <Row gutter={24}>
+                        <Col span={14}>
+                             <Card title="PDF 批量智能解析" style={{marginBottom: 24}}>
                                 <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
-                                    <Row gutter={16}>
-                                        <Col span={12}>
-                                            <Form.Item name="supplierId" label="供应商" rules={[{ required: true }]}>
-                                                <Select placeholder="选择供应商">
-                                                    {managedSuppliers.map(s => <Option key={s.id} value={s.id}>{s.short_code} - {s.name}</Option>)}
-                                                </Select>
-                                            </Form.Item>
-                                        </Col>
-                                        <Col span={12}>
-                                            <Form.Item name="date" label="发生日期" rules={[{ required: true }]}>
-                                                <DatePicker style={{ width: '100%' }}/>
-                                            </Form.Item>
-                                        </Col>
-                                    </Row>
-
-                                    <Form.Item label="文件与解析设置" style={{ marginBottom: 12 }}>
-                                        <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 6, marginBottom: 12 }}>
-                                            <Space style={{ marginBottom: 8, width: '100%', justifyContent: 'space-between' }}>
-                                                <span><ApiOutlined /> 解析引擎:</span>
-                                                <Switch
-                                                    checkedChildren={<><GoogleOutlined /> Google Gemini</>}
-                                                    unCheckedChildren={<><RobotOutlined /> 本地 OCR</>}
-                                                    checked={useGemini}
-                                                    onChange={setUseGemini}
+                                    <Form.Item label="文件上传" style={{ marginBottom: 12 }}>
+                                        <Form.Item name="file" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e && e.fileList} noStyle>
+                                            <Upload multiple beforeUpload={() => false} accept=".pdf" fileList={form.getFieldValue('file')}>
+                                                <Button icon={<UploadOutlined />} block>选择 PDF 文件 (支持多选)</Button>
+                                            </Upload>
+                                        </Form.Item>
+                                    </Form.Item>
+                                    
+                                    <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 6, marginBottom: 16 }}>
+                                         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                            <span><ApiOutlined /> 解析引擎:</span>
+                                            <Switch
+                                                checkedChildren={<><GoogleOutlined /> Google Gemini</>}
+                                                unCheckedChildren={<><RobotOutlined /> 本地 OCR</>}
+                                                checked={useGemini}
+                                                onChange={setUseGemini}
+                                            />
+                                        </Space>
+                                         {useGemini && (
+                                            <div style={{ marginTop: 8 }}>
+                                                <Input.Password
+                                                    placeholder="Google API Key"
+                                                    value={apiKey}
+                                                    onChange={e => setApiKey(e.target.value)}
+                                                    style={{marginBottom: 8}}
                                                 />
-                                            </Space>
+                                                 <Select
+                                                    value={geminiModel}
+                                                    onChange={setGeminiModel}
+                                                    placeholder="选择模型"
+                                                    style={{ width: '100%' }}
+                                                >
+                                                    <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flash</Option>
+                                                    <Option value="gemini-2.5-pro">Gemini 2.5 Pro</Option>
+                                                </Select>
+                                            </div>
+                                         )}
+                                    </div>
 
-                                            {useGemini && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                                    <Input.Password
-                                                        placeholder="请输入 Google Gemini API Key (AIza...)"
-                                                        value={apiKey}
-                                                        onChange={e => setApiKey(e.target.value)}
-                                                        prefix={<GoogleOutlined style={{ color: '#999' }} />}
-                                                        addonBefore="API Key"
-                                                    />
-                                                    <Select
-                                                        value={geminiModel}
-                                                        onChange={setGeminiModel}
-                                                        placeholder="选择模型"
-                                                        style={{ width: '100%' }}
-                                                    >
-                                                        <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flash </Option>
-                                                        <Option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Pro(推荐 - 稳定) </Option>
-                                                        <Option value="gemini-3-flash">Gemini 3.0 flash </Option>
-                                                        <Option value="gemini-flash-latest">Gemini (最新版)</Option>
-                                                    </Select>
-                                                    <div style={{ fontSize: 10, color: '#999' }}>* 如果 Key 无效，请检查是否有多余空格</div>
-                                                </div>
-                                            )}
+                                    <Button 
+                                        type="primary" 
+                                        icon={<ThunderboltOutlined />} 
+                                        onClick={handleSmartParseBatch} 
+                                        loading={parsing} 
+                                        block
+                                    >
+                                        开始批量解析
+                                    </Button>
+                                    
+                                    {parsing && (
+                                        <div style={{ marginTop: 16 }}>
+                                            <Progress percent={batchProgress.percent} status="active" />
+                                            <div style={{ textAlign: 'center', fontSize: 12, color: '#666' }}>{parseProgress}</div>
                                         </div>
-
-                                        <Row gutter={8}>
-                                            <Col span={14}>
-                                                <Form.Item name="file" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e && e.fileList} rules={[{ required: true, message: '请上传文件' }]} noStyle>
-                                                    <Upload maxCount={1} beforeUpload={() => false} accept=".pdf">
-                                                        <Button icon={<UploadOutlined />} block>选择 PDF 文件</Button>
-                                                    </Upload>
+                                    )}
+                                </Form>
+                             </Card>
+                             
+                             {/* 结果编辑区 */}
+                             {activeResultIndex !== -1 && (
+                                <Card title="核对与归档 (当前选中文件)" style={{ borderColor: '#1890ff' }}>
+                                    <Alert message={`正在编辑: ${parsedResults[activeResultIndex]?.fileName}`} type="info" showIcon style={{marginBottom: 16}} />
+                                    <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
+                                        <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
+                                        <Row gutter={16}>
+                                            <Col span={12}><Form.Item name="reportNo" label="编号"><Input /></Form.Item></Col>
+                                            <Col span={12}>
+                                                <Form.Item name="supplierId" label="供应商" rules={[{ required: true }]}>
+                                                    <Select placeholder="选择供应商" options={managedSuppliers.map(s => ({ value: s.id, label: s.name }))} />
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={10}>
-                                                <Button
-                                                    icon={<ThunderboltOutlined />}
-                                                    onClick={handleSmartParse}
-                                                    loading={parsing}
-                                                    type="primary"
-                                                    ghost
-                                                    block
-                                                    style={useGemini ? { borderColor: '#722ed1', color: '#722ed1' } : {}}
-                                                >
-                                                    {parsing ? '正在分析...' : (useGemini ? 'Gemini 智能提取' : 'OCR 本地提取')}
-                                                </Button>
-                                            </Col>
                                         </Row>
-                                        {parsing && <div style={{ marginTop: 8, color: useGemini ? '#722ed1' : '#1890ff', fontSize: 12 }}><Spin size="small" /> {parseProgress}</div>}
-                                    </Form.Item>
+                                        {/* 新增的 Part 字段 */}
+                                        <Row gutter={16}>
+                                            <Col span={12}><Form.Item name="partNumber" label="零件号 (Part No)"><Input /></Form.Item></Col>
+                                            <Col span={12}><Form.Item name="partName" label="零件名称 (Part Name)"><Input /></Form.Item></Col>
+                                        </Row>
+                                        <Form.Item name="summary" label="问题摘要"><TextArea rows={3} /></Form.Item>
+                                        <Form.Item name="rootCause" label="根本原因"><TextArea rows={3} /></Form.Item>
+                                        <Form.Item name="interimAction" label="解决措施"><TextArea rows={3} /></Form.Item>
+                                        <Button type="primary" htmlType="submit" loading={loading} icon={<CloudUploadOutlined />} block>
+                                            确认并归档此条
+                                        </Button>
+                                    </Form>
+                                </Card>
+                             )}
+                        </Col>
 
-                                    <Divider orientation="left" style={{ fontSize: 12, color: '#999' }}>识别结果 (请核对)</Divider>
-
-                                    <Form.Item name="title" label="问题标题 (Title)" rules={[{ required: true }]}>
-                                        <Input placeholder="自动生成或手动填写" />
-                                    </Form.Item>
-
-                                    <Row gutter={16}>
-                                        <Col span={12}>
-                                            <Form.Item name="reportNo" label="报告编号 (Report No)">
-                                                <Input placeholder="OCR 提取" />
-                                            </Form.Item>
-                                        </Col>
-                                        <Col span={12}>
-                                            <Form.Item name="partNo" label="零件号 (Material No)">
-                                                <Input placeholder="OCR 提取" />
-                                            </Form.Item>
-                                        </Col>
-                                    </Row>
-
-                                    <Form.Item name="summary" label="问题摘要 (Problem Description)" rules={[{ required: true }]}>
-                                        <TextArea rows={3} showCount maxLength={500} />
-                                    </Form.Item>
-
-                                    <Collapse defaultActiveKey={['1']} ghost expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}>
-                                        <Panel header="详细分析与措施 (点击展开)" key="1">
-                                            <Form.Item name="rootCause" label="根本原因 (Root Cause Analysis)">
-                                                <TextArea rows={3} placeholder="D4 根本原因分析..." />
-                                            </Form.Item>
-                                            <Form.Item name="interimAction" label="临时/永久措施 (Interim & Corrective Action)">
-                                                <TextArea rows={3} placeholder="D5/D6 解决措施..." />
-                                            </Form.Item>
-                                        </Panel>
-                                    </Collapse>
-
-                                    <Button type="primary" htmlType="submit" loading={loading} block icon={<CloudUploadOutlined />} size="large" style={{ marginTop: 16 }}>
-                                        归档并生成索引
-                                    </Button>
-                                </Form>
-                            </Col>
-
-                            <Col span={10} style={{ background: '#f9f9f9', padding: 14, borderRadius: 8 }}>
-                                <Title level={5}><ApiOutlined /> AI 引擎说明</Title>
-                                <Paragraph type="secondary" style={{ fontSize: 13 }}>
-                                    支持两种解析模式：
-                                </Paragraph>
-
-                                <div style={{ marginBottom: 16 }}>
-                                    <Text strong style={{ color: '#722ed1' }}><GoogleOutlined /> Google Gemini (推荐)</Text>
-                                    <p style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                                        使用多模态大模型进行视觉分析。
-                                        <br />
-                                        1. 请在https://aistudio.google.com/welcome 注册并获取API Key。
-                                        <br />
-                                        2. 请在左侧 "API Key" 输入框填入你的 Key。一般为AIza... 开头。
-                                        <br />
-                                        3. 选择 <b>Gemini 2.5 pro</b> 速度最快。选择<b>Gemini最新版</b>体验最新版的模型。
-                                        <br />
-                                        4. 免费额度有限，请合理使用，避免频繁调用。
-                                    </p>
-
-                                    <Divider style={{ margin: '12px 0' }} />
-
-                                    <Text strong style={{ color: '#1890ff' }}><RobotOutlined /> 本地 Tesseract OCR</Text>
-                                    <p style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                                        无需 Key，完全本地运行，隐私性好，但准确率低于 Gemini。
-                                    </p>
-                                </div>
-                            </Col>
-                        </Row>
-                    </Card>
+                        <Col span={10}>
+                            {/* 解析结果列表 */}
+                            <Card title="解析结果队列" extra={<Button size="small" onClick={handleBatchArchiveAll} disabled={parsedResults.filter(r => r.status === 'success' && !r.isArchived).length === 0}>一键归档剩余</Button>}>
+                                <Table 
+                                    dataSource={parsedResults} 
+                                    columns={columns} 
+                                    size="small" 
+                                    pagination={false} 
+                                    scroll={{ y: 600 }}
+                                    rowClassName={(record, index) => index === activeResultIndex ? 'ant-table-row-selected' : ''}
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
                 </Tabs.TabPane>
 
                 <Tabs.TabPane tab={<span><FileExcelOutlined /> Excel 批量迁移</span>} key="excel">
