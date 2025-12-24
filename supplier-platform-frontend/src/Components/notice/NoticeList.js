@@ -31,7 +31,7 @@ const HighlightText = ({ text, keyword }) => {
 
     return (
         <span>
-            {parts.map((part, i) => 
+            {parts.map((part, i) =>
                 regex.test(part) ? (
                     <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
                         {part}
@@ -49,15 +49,15 @@ const getStatusTag = (status) => {
     let color;
     switch (status) {
         case '待提交Action Plan':
-        case '待供应商处理': 
+        case '待供应商处理':
             color = 'processing'; // 蓝色
             break;
         case '待供应商关闭':
             color = 'warning'; // 橙色
             break;
         case '待SD确认actions':
-             color = 'red'; 
-             break; 
+            color = 'red';
+            break;
         case '待SD关闭evidence':
         case '待SD审核计划':
             color = 'purple'; // 紫色
@@ -77,7 +77,7 @@ const getStatusTag = (status) => {
 const toPlainText = (val) => {
     if (val == null) return '';
     if (typeof val === 'object' && val.richText) {
-         return val.richText.map(r => r?.text || '').join('');
+        return val.richText.map(r => r?.text || '').join('');
     }
     if (typeof val === 'object' && Array.isArray(val.richText)) {
         return val.richText.map(r => r?.text || '').join('');
@@ -103,12 +103,16 @@ const SingleNoticeItem = ({
     searchTerm = '' // --- 2. 接收 searchTerm ---
 }) => {
 
+    const getChineseOnly = (text = '') =>
+        text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
+
     // 获取纯文本标题用于高亮
-    const rawTitle = toPlainText(item.title); 
-    
+    const rawTitle = item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.title)) : toPlainText(item.title);
+
     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
         ? noticeCategoryDetails[item.category]
-        : { id: 'N/A', color: 'default' };
+        : { id: 'N/A', color: 'orange' };
+
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
 
@@ -144,14 +148,14 @@ const SingleNoticeItem = ({
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
                         {/* 也可以选择高亮显示编号 */}
                         <Text type="secondary" style={{ fontSize: '12px' }}>
-                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
+                            (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
                         </Text>
                     </Space>
                 }
                 // 也可以选择高亮描述
                 description={
-                    <div style={{maxHeight: '42px', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                         <HighlightText text={toPlainText(item.sdNotice?.description || item.sdNotice?.details?.finding)} keyword={searchTerm} />
+                    <div style={{ maxHeight: '42px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <HighlightText text={item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.details?.rootCause || item.sdNotice?.details?.finding)) : toPlainText(item.sdNotice?.description || item.sdNotice?.details?.finding)} keyword={searchTerm} />
                     </div>
                 }
             />
@@ -167,9 +171,15 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
     const [sortOrder, setSortOrder] = useState('default');
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
-    const supplierName = batch.representative.supplier?.name || '未知供应商';
+    // const supplierName = batch.representative.supplier?.name || '未知供应商';
     const category = batch.representative?.category || '未知类型';
-    const createDate = batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期';
+    const sdNotice = batch.representative?.sdNotice;
+    //三元表达式应用
+    const createDate = sdNotice?.createTime
+        ? dayjs(sdNotice.createTime).format('YYYY-MM-DD')
+        : sdNotice?.planSubmitTime
+            ? sdNotice.planSubmitTime.slice(0, 10)
+            : '未知日期';
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const isRealBatch = batch.batchId.startsWith('BATCH-');
     const titleText = isRealBatch
@@ -183,13 +193,14 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
     const { messageApi } = useNotification();
 
+
     // 辅助函数：用于安全地将富文本转为纯文本
     const toPlainText = (val) => {
         if (val == null) return '';
         // 检查 ExcelJS 可能返回的富文本对象
         if (typeof val === 'object' && val.richText) {
-             console.log('检测到 Excel RichText:', val);
-             return val.richText.map(r => r?.text || '').join('');
+            console.log('检测到 Excel RichText:', val);
+            return val.richText.map(r => r?.text || '').join('');
         }
         // 检查您系统中存储的富文本对象
         if (typeof val === 'object' && Array.isArray(val.richText)) {
@@ -197,7 +208,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
             return val.richText.map(r => r?.text || '').join('');
         }
         if (typeof val === 'object' && typeof val.richText === 'string') {
-             console.log('检测到 System RichText String:', val);
+            console.log('检测到 System RichText String:', val);
             return val.richText;
         }
         // 已经是纯文本或数字
@@ -214,7 +225,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         const allPendingEvidence = batch.notices.every(notice => notice.status === '待供应商关闭');
         return allPendingEvidence && currentUser.role === 'Supplier';
     }, [batch.notices, currentUser]);
-    
+
     // 修正：SD/Manager/Admin 都可以批量删除
     const allowDeletion = useMemo(() => {
         const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
@@ -299,7 +310,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
             worksheet.getRow(5).font = { bold: true };
             // worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
 
-             const grayHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } }; // 深灰色
+            const grayHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } }; // 深灰色
             const blueHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; // 浅蓝色
 
             worksheet.getCell('A5').fill = grayHeaderFill;
@@ -322,7 +333,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
             batch.notices.forEach(notice => {
                 const processText = toPlainText(notice.title) || 'N/A';
                 const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description) || 'N/A';
-                
+
 
                 worksheet.addRow({
                     id: notice.id,
@@ -358,7 +369,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
                 const plansByNoticeId = {};
                 let processedCount = 0;
-                
+
                 // --- 1. 添加日志：打印表头 ---
                 const headers = worksheet.getRow(5).values;
                 console.log('[Action Upload] Excel Headers (Row 5):', JSON.stringify(headers));
@@ -367,7 +378,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                     if (rowNumber <= 5) return; // 跳过表头
 
                     const noticeId = row.getCell(1).value?.toString();
-                    
+
                     // --- 2. 添加日志：打印原始单元格数据 ---
                     const rawPlanValue = row.getCell(4).value;
                     const rawResponsibleValue = row.getCell(5).value;
@@ -378,7 +389,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                     const responsible = toPlainText(rawResponsibleValue)?.toString() || '';
                     const deadlineValue = rawDeadlineValue; // 日期对象或字符串
 
-                     // --- 3. 添加日志：打印解析后的每行数据 ---
+                    // --- 3. 添加日志：打印解析后的每行数据 ---
                     //  console.log(`[Action Upload] Row ${rowNumber}:`, {
                     //     noticeId: noticeId,
                     //     rawPlan: rawPlanValue,
@@ -394,7 +405,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                         if (!plansByNoticeId[noticeId]) {
                             plansByNoticeId[noticeId] = [];
                         }
-                        
+
                         plansByNoticeId[noticeId].push({
                             plan: planText.trim(),
                             responsible: responsible.trim(), // 允许为空
@@ -465,30 +476,30 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
             worksheet.mergeCells('A1:F1');
             worksheet.getCell('A1').value = '批量证据提交模板';
             worksheet.getCell('A1').font = { bold: true, size: 16 };
-            worksheet.getCell('A1').fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFFDF8E6'} };
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } };
 
             worksheet.mergeCells('A2:F2');
             worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
 
             worksheet.mergeCells('A3:F3');
             worksheet.getCell('A3').value = {
-                richText: [{font: {bold: true, color: {argb: 'FFFF0000'}}, text: '请勿修改 A, B, C, D, E 列！请仅在 F 列填写“完成情况说明”。'}]
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C, D, E 列！请仅在 F 列填写“完成情况说明”。' }]
             };
             worksheet.mergeCells('A4:F4');
             worksheet.getCell('A4').value = {
-                richText: [{font: {bold: true, color: {argb: 'FFFF0000'}}, text: '图片和附件仍需进入通知单详情页单独上传。'}]
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '图片和附件仍需进入通知单详情页单独上传。' }]
             };
 
             worksheet.getRow(6).values = [
-                'Notice ID (请勿修改)', 
-                'Problem Finding (供参考)', 
-                'Approved Action Plan (供参考)', 
-                'Responsible (供参考)', 
+                'Notice ID (请勿修改)',
+                'Problem Finding (供参考)',
+                'Approved Action Plan (供参考)',
+                'Responsible (供参考)',
                 'Deadline (供参考)',
                 'Evidence Description (请填写)'
             ];
             worksheet.getRow(6).font = { bold: true };
-            worksheet.getRow(6).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFE6F7FF'} };
+            worksheet.getRow(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
             worksheet.columns = [
                 { key: 'id', width: 38 },
                 { key: 'finding', width: 40 },
@@ -503,7 +514,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                 if (lastApprovedPlan && lastApprovedPlan.actionPlans) {
                     const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title) || 'N/A';
                     lastApprovedPlan.actionPlans.forEach(plan => {
-                         worksheet.addRow({
+                        worksheet.addRow({
                             id: notice.id,
                             finding: findingText,
                             plan: toPlainText(plan.plan),
@@ -536,10 +547,10 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(buffer);
                 const worksheet = workbook.getWorksheet(1);
-                
+
                 const plansByNoticeId = {};
                 let processedCount = 0;
-                
+
                 // --- 5. 添加日志：打印表头 ---
                 const headers = worksheet.getRow(6).values;
                 console.log('[Evidence Upload] Excel Headers (Row 6):', JSON.stringify(headers));
@@ -551,11 +562,11 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                     const planText = row.getCell(3).value?.toString() || '';
                     const responsible = row.getCell(4).value?.toString() || '';
                     const deadlineValue = row.getCell(5).value;
-                    
+
                     // --- 6. 添加日志：打印原始单元格数据 ---
                     const rawEvidenceValue = row.getCell(6).value;
                     const evidenceDescription = toPlainText(rawEvidenceValue)?.toString() || '';
-                    
+
                     console.log(`[Evidence Upload] Row ${rowNumber}:`, {
                         noticeId: noticeId,
                         rawEvidence: rawEvidenceValue,
@@ -578,13 +589,13 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                         processedCount++;
                     }
                 });
-                
+
                 console.log(`[Evidence Upload] Total processed rows: ${processedCount}`);
 
                 if (processedCount === 0) {
-                     messageApi.warning({ content: '未在Excel中找到有效的证据说明数据（请确保 "Evidence Description" 列已填写）。', key: 'excelRead', duration: 4 });
-                     setIsUploading(false);
-                     return;
+                    messageApi.warning({ content: '未在Excel中找到有效的证据说明数据（请确保 "Evidence Description" 列已填写）。', key: 'excelRead', duration: 4 });
+                    setIsUploading(false);
+                    return;
                 }
 
                 const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
@@ -593,19 +604,19 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                         console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
                         return null;
                     }
-                    
-                    const newHistory = { 
-                        type: 'supplier_evidence_submission', 
-                        submitter: currentUser.name || currentUser.username, 
-                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'), 
-                        description: '供应商已批量提交完成证据。', 
-                        actionPlans: plansByNoticeId[noticeId] 
+
+                    const newHistory = {
+                        type: 'supplier_evidence_submission',
+                        submitter: currentUser.name || currentUser.username,
+                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                        description: '供应商已批量提交完成证据。',
+                        actionPlans: plansByNoticeId[noticeId]
                     };
                     const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-                    
-                    return updateNotice(noticeId, { 
+
+                    return updateNotice(noticeId, {
                         status: '待SD关闭evidence',
-                        history: [...currentHistory, newHistory] 
+                        history: [...currentHistory, newHistory]
                     });
                 });
 
@@ -613,7 +624,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
                 messageApi.success({ content: `成功处理 ${processedCount} 条证据，已更新 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
                 setActiveCollapseKeys([]);
-                
+
             } catch (error) {
                 console.error("解析或提交Excel失败:", error);
                 messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
@@ -622,8 +633,8 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
             }
         };
         reader.onerror = (error) => {
-             messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
-             setIsUploading(false);
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            setIsUploading(false);
         };
         reader.readAsArrayBuffer(file);
         return false;
@@ -650,7 +661,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                             avatar={<ProfileOutlined style={{ fontSize: '24px', color: props.token.colorPrimary }} />}
                             title={
                                 <Space align="center">
-                                    <Tooltip title={isRealBatch ? `${supplierName} - ${category}` : `${supplierName} - ${createDate}`}>
+                                    <Tooltip title={isRealBatch ? `${supplierShortCode} - ${category}` : `${supplierShortCode} - ${createDate}`}>
                                         <Text strong style={{ fontSize: '16px' }}>
                                             {titleText}
                                         </Text>
@@ -703,15 +714,15 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                             </Space>
                         </div>
                     )}
-                    
+
                     {/* 批量提交行动计划 (Supplier) */}
                     {allowBatchActions && (
-                         <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                        <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                             <Space>
                                 <Button icon={<DownloadOutlined />} onClick={handleActionDownloadTemplate}>
                                     下载行动计划模板
                                 </Button>
-                                <Upload 
+                                <Upload
                                     beforeUpload={handleActionExcelUpload} // <-- 确保调用正确的函数
                                     showUploadList={false}
                                     accept=".xlsx, .xls"
@@ -722,17 +733,17 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                                     </Button>
                                 </Upload>
                             </Space>
-                         </div>
+                        </div>
                     )}
 
                     {/* 批量提交证据 (Supplier) */}
                     {allowBatchEvidenceUpload && (
-                         <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                             <Space>
+                        <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                            <Space>
                                 <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate}>
                                     下载证据模板
                                 </Button>
-                                <Upload 
+                                <Upload
                                     beforeUpload={handleEvidenceExcelUpload} // <-- 确保调用正确的函数
                                     showUploadList={false}
                                     accept=".xlsx, .xls"
@@ -743,7 +754,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                                     </Button>
                                 </Upload>
                             </Space>
-                         </div>
+                        </div>
                     )}
 
                     <List

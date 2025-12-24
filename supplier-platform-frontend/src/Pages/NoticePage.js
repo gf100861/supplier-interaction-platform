@@ -880,7 +880,8 @@ const NoticePage = () => {
             SD: [
                 { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan'] },
                 { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
-                { key: 'review', label: '待SD确认actions', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
+                { key: 'review', label: '待SD确认actions', statuses: ['待SD确认actions', '待SD确认actions计划'] },
+                { key: 'review_evidence', label: '待SD确认evidence', statuses: ['待SD关闭evidence'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
             ],

@@ -1,21 +1,23 @@
 import React, { useState, useMemo, useEffect } from 'react';
-// 1. 添加 Carousel 到 antd 导入
-import { Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message, Carousel } from 'antd';
+import { Row, Col, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message, Carousel, Alert } from 'antd';
 import {
     PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
     CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
-    InboxOutlined, 
+    InboxOutlined,
     FileAddOutlined,
-    DownloadOutlined
+    DownloadOutlined,
+    FilePdfOutlined, // 新增图标
+    HistoryOutlined,
+    EyeOutlined, CloudDownloadOutlined // 新增图标
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { ActionPlanReviewDisplay } from './ActionPlanReviewDisplay';
 import { useNotification } from '../../contexts/NotificationContext';
-// 2. 仅导入 EnhancedImageDisplay，移除外部的 ImageCarousel，使用本地定义的
 import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 import { AttachmentsDisplay } from '../common/AttachmentsDisplay';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { supabase } from '../../supabaseClient'; // 确保导入 supabase
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -40,13 +42,42 @@ const LocalImageCarousel = ({ images, title }) => {
     };
 
     return (
-        <div style={{ marginTop: '12px' }}>
+        <div style={{ marginTop: '12px' }} className="local-image-carousel-wrapper">
+            {/* 注入样式覆盖默认的白色箭头 */}
+            <style>
+                {`
+                    .local-image-carousel-wrapper .slick-prev,
+                    .local-image-carousel-wrapper .slick-next {
+                        z-index: 2; /* 确保箭头在图片上方 */
+                        width: 30px;
+                        height: 30px;
+                    }
+                    .local-image-carousel-wrapper .slick-prev::before,
+                    .local-image-carousel-wrapper .slick-next::before {
+                        color: black !important; /* 强制改为黑色 */
+                        font-size: 24px;         /* 稍微调大一点 */
+                        opacity: 0.6;            /* 默认透明度 */
+                    }
+                    .local-image-carousel-wrapper .slick-prev:hover::before,
+                    .local-image-carousel-wrapper .slick-next:hover::before {
+                        opacity: 1;              /* 悬停时不透明 */
+                    }
+                    /* 调整箭头位置，避免太靠边 */
+                    .local-image-carousel-wrapper .slick-prev {
+                        left: 10px;
+                    }
+                    .local-image-carousel-wrapper .slick-next {
+                        right: 10px;
+                    }
+                `}
+            </style>
+
             {title && <div style={{ marginBottom: '8px' }}><Text strong><PictureOutlined /> {title}:</Text></div>}
             <div style={{ padding: '0 20px' }}> {/* 增加 padding 以防止箭头遮挡 */}
-                <Carousel 
-                    arrows 
-                    infinite 
-                    autoplay 
+                <Carousel
+                    arrows
+                    infinite
+                    autoplay
                     style={{ backgroundColor: '#364d79', borderRadius: '8px' }}
                 >
                     {images.map((img, index) => {
@@ -87,6 +118,154 @@ const toPlainText = (val) => {
     return String(val);
 };
 
+// --- 新增：Historical 8D 专用显示组件 ---
+const Historical8DDisplay = ({ notice }) => {
+    const details = notice?.sdNotice?.details || {};
+    const { messageApi } = useNotification();
+
+    // 在组件内部添加状态
+    const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+
+    const getChineseOnly = (text = '') =>
+        text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
+
+    const getEnglishOnly = (text = '') =>
+        text.replace(/[^a-zA-Z0-9.,!?() \n]/g, '');
+
+
+    // 打开预览
+    const handlePreviewReport = () => {
+        setIsPreviewVisible(true);
+    };
+    // 下载报告
+
+    const handleDownloadReport = () => {
+        // 1. 检查是否有 Base64 内容
+        // 注意：截图中的 key 是 fileContent (驼峰)，不是 report_file_path
+        if (!details?.fileContent) {
+            messageApi.warning('未找到文件内容');
+            return;
+        }
+
+        try {
+            messageApi.loading({ content: '正在准备下载...', key: 'download' });
+
+            // 2. 创建一个临时的 <a> 标签
+            const link = document.createElement('a');
+
+            // 3. 直接将 Base64 字符串赋值给 href
+            // 截图显示 fileContent 已经包含了 "data:application/pdf;base64,..." 前缀，所以直接用
+            link.href = details.fileContent;
+
+            // 4. 设置下载文件名
+            // 优先使用原始文件名，如果没有则生成一个
+            link.download = details.originalFileName || `${notice?.noticeCode || 'Report'}.pdf`;
+
+            // 5. 触发点击并清理
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            messageApi.success({ content: '下载已触发', key: 'download' });
+        } catch (error) {
+            console.error('下载出错:', error);
+            messageApi.error({ content: '下载失败', key: 'download' });
+        }
+    };
+
+    return (
+        <Card type="inner" title={<Space><HistoryOutlined /> 历史 8D 归档详情</Space>} style={{ marginTop: 16, backgroundColor: '#f9f9f9' }}>
+            <Row gutter={[16, 16]}>
+                <Col span={12}>
+                    <Text type="secondary">零件号 (Part No):</Text>
+                    <div><Text strong>{details.partNumber || 'N/A'}</Text></div>
+                </Col>
+                <Col span={12}>
+                    <Text type="secondary">零件名称 (Part Name):</Text>
+                    <div><Text strong>{details.partName || 'N/A'}</Text></div>
+                </Col>
+                <Col span={12}>
+                    <Text type="secondary">数量 (Qty):</Text>
+                    <div>{details.quantity || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                    <Text type="secondary">原始报告:</Text>
+                    <div style={{ marginTop: 8 }}>
+                        {details.fileContent ? (
+                            <Space>
+                                {/* 预览按钮 */}
+                                <Button
+                                    type="default"
+                                    size="small"
+                                    icon={<EyeOutlined />}
+                                    onClick={handlePreviewReport}
+                                >
+                                    在线预览
+                                </Button>
+
+                                {/* 下载按钮 */}
+                                <Button
+                                    type="primary"
+                                    ghost
+                                    size="small"
+                                    icon={<CloudDownloadOutlined />}
+                                    onClick={handleDownloadReport}
+                                >
+                                    下载
+                                </Button>
+                            </Space>
+                        ) : (
+                            <Text disabled>无附件</Text>
+                        )}
+
+                        {/* 预览弹窗 */}
+
+                        <Modal
+                            title="报告预览"
+                            open={isPreviewVisible} // Antd v5 用 open, v4 用 visible
+                            onCancel={() => setIsPreviewVisible(false)}
+                            width="80%"
+                            footer={null}
+                            destroyOnClose // 关闭时销毁，释放内存
+                            bodyStyle={{ height: '80vh', padding: 0 }}
+                        >
+                            {details?.fileContent ? (
+                                <iframe
+                                    // 核心点：这里直接放入 Base64 字符串
+                                    src={details.fileContent}
+                                    style={{ width: '100%', height: '100%', border: 'none' }}
+                                    title="PDF Preview"
+                                />
+                            ) : (
+                                <div style={{ padding: 20, textAlign: 'center' }}>无法加载预览内容</div>
+                            )}
+                        </Modal>
+                    </div>
+                </Col>
+            </Row>
+
+            <Divider style={{ margin: '16px 0' }} />
+
+            <Title level={5} style={{ fontSize: 14 }}>问题描述 (D2)</Title>
+            <Paragraph style={{ whiteSpace: 'pre-wrap', background: '#fff', padding: 12, borderRadius: 4, border: '1px solid #f0f0f0' }}>
+                {getChineseOnly(details.finding || notice.description) || '无详细描述'}
+            </Paragraph>
+
+            <Title level={5} style={{ fontSize: 14 }}>根本原因 (D4)</Title>
+            <Paragraph style={{ whiteSpace: 'pre-wrap', background: '#fff', padding: 12, borderRadius: 4, border: '1px solid #f0f0f0' }}>
+                {details.rootCause || '未记录'}
+            </Paragraph>
+
+            <Title level={5} style={{ fontSize: 14 }}>永久对策 (D5/D6)</Title>
+            <Paragraph style={{ whiteSpace: 'pre-wrap', background: '#fff', padding: 12, borderRadius: 4, border: '1px solid #f0f0f0' }}>
+                {details.actionPlan || '未记录'}
+            </Paragraph>
+
+            <Alert message="此为历史导入数据，仅供查询参考，不可编辑。" type="info" showIcon style={{ marginTop: 16 }} />
+        </Card>
+    );
+};
+
 const categoryColumnConfig = {
     'SEM': [
         { title: 'Criteria n°', dataIndex: 'criteria' },
@@ -104,6 +283,9 @@ const categoryColumnConfig = {
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 
 const DynamicDetailsDisplay = ({ notice }) => {
+    // 如果是 Historical 8D，不显示通用的 dynamic details，由专用组件处理
+    if (notice?.category === 'Historical 8D') return null;
+
     if (!notice?.category || !notice?.sdNotice?.details) return null;
     const config = categoryColumnConfig[notice.category] || [];
     const dynamicFields = config.filter(
@@ -128,6 +310,7 @@ const DynamicDetailsDisplay = ({ notice }) => {
 
 // --- PlanSubmissionForm ---
 const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
+    // ... (PlanSubmissionForm 代码保持不变)
     const draftKey = `actionPlanDraft_${notice?.id}`;
     const { messageApi } = useNotification();
 
@@ -181,13 +364,13 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
         try {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Action Plan Template');
-            
+
             // A. 添加问题详情
             worksheet.mergeCells('A1:C1');
             worksheet.getCell('A1').value = 'Problem Finding / Deviation';
             worksheet.getCell('A1').font = { bold: true, size: 14 };
-            worksheet.getCell('A1').fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFFDF8E6'} }; 
-            
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } };
+
             worksheet.mergeCells('A2:C2');
             const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title || 'N/A');
             worksheet.getCell('A2').value = findingText;
@@ -195,15 +378,15 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
             worksheet.getRow(2).height = 40;
 
             worksheet.mergeCells('A3:C3');
-            worksheet.getCell('A3').value = { richText: [{font: {bold: true, color: {argb: 'FFFF0000'}}, text: '请勿修改本行及以上内容。'}]};
+            worksheet.getCell('A3').value = { richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改本行及以上内容。' }] };
             worksheet.mergeCells('A4:C4');
-            worksheet.getCell('A4').value = { richText: [{font: {bold: true, size: 12}, text: '请在下方第 6 行开始填写。每一行代表一个独立的行动项。'}]};
+            worksheet.getCell('A4').value = { richText: [{ font: { bold: true, size: 12 }, text: '请在下方第 6 行开始填写。每一行代表一个独立的行动项。' }] };
             worksheet.getRow(4).height = 20;
 
             // B. 添加表头
             worksheet.getRow(5).values = ['Action Plan (必填)', 'Responsible (必填)', 'Deadline (YYYY-MM-DD 必填)'];
             worksheet.getRow(5).font = { bold: true };
-            worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; 
+            worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
             worksheet.columns = [
                 { key: 'plan', width: 60 },
                 { key: 'responsible', width: 20 },
@@ -279,7 +462,7 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
             }
         };
         reader.onerror = (error) => {
-             messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
         };
         reader.readAsArrayBuffer(file);
         return false;
@@ -289,13 +472,13 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
     return (
         <div style={actionAreaStyle}>
             <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
-            
+
             <Space style={{ marginBottom: 16 }}>
                 <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
                     下载模板
                 </Button>
-                <Upload 
-                    beforeUpload={handleExcelUpload} 
+                <Upload
+                    beforeUpload={handleExcelUpload}
                     showUploadList={false}
                     accept=".xlsx, .xls"
                 >
@@ -304,15 +487,15 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
                     </Button>
                 </Upload>
             </Space>
-            <Paragraph type="secondary" style={{fontSize: '12px', marginTop: '-8px'}}>
+            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: '-8px' }}>
                 您可以下载模板，离线填写行动计划后，再导入回系统。
             </Paragraph>
             <Divider />
 
-            <Form 
-                form={form} 
-                layout="vertical" 
-                onFinish={handleFinish} 
+            <Form
+                form={form}
+                layout="vertical"
+                onFinish={handleFinish}
                 onValuesChange={handleFormChange}
                 autoComplete="off"
             >
@@ -347,6 +530,7 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
 
 // --- EvidencePerActionForm ---
 const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
+    // ... (EvidencePerActionForm 代码保持不变)
     const { messageApi } = useNotification();
     const draftKey = `evidenceDraft_${notice?.id}`;
 
@@ -400,17 +584,17 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
         try {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Evidence Template');
-            
+
             // A. 标题和说明
             worksheet.mergeCells('A1:D1');
             worksheet.getCell('A1').value = '批量证据提交模板';
             worksheet.getCell('A1').font = { bold: true, size: 16 };
-            worksheet.getCell('A1').fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFFDF8E6'} };
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } };
 
             worksheet.mergeCells('A2:D2');
-            worksheet.getCell('A2').value = { richText: [{font: {bold: true, color: {argb: 'FFFF0000'}}, text: '请勿修改 A, B, C 列！请仅在 D 列填写“完成情况说明”。'}]};
+            worksheet.getCell('A2').value = { richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C 列！请仅在 D 列填写“完成情况说明”。' }] };
             worksheet.mergeCells('A3:D3');
-            worksheet.getCell('A3').value = { richText: [{font: {bold: true, size: 12}, text: '图片和附件仍需进入系统单独上传。'}]};
+            worksheet.getCell('A3').value = { richText: [{ font: { bold: true, size: 12 }, text: '图片和附件仍需进入系统单独上传。' }] };
 
             // B. 表头
             worksheet.getRow(5).values = ['Action Plan (供参考)', 'Responsible (供参考)', 'Deadline (供参考)', 'Evidence Description (请填写)'];
@@ -454,7 +638,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
             messageApi.error({ content: '模板生成失败，请重试。', key: 'evidenceTemplate' });
         }
     };
-    
+
     // [处理证据导入]
     const handleEvidenceExcelUpload = (file) => {
         messageApi.loading({ content: '正在解析Excel文件...', key: 'excelRead' });
@@ -465,7 +649,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(buffer);
                 const worksheet = workbook.getWorksheet(1);
-                
+
                 const parsedData = [];
                 let hasData = false;
 
@@ -488,10 +672,10 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                         }
                     }
                 });
-                
+
                 if (!hasData) {
-                     messageApi.warning({ content: '未在Excel中找到任何证据说明。', key: 'excelRead' });
-                     return;
+                    messageApi.warning({ content: '未在Excel中找到任何证据说明。', key: 'excelRead' });
+                    return;
                 }
 
                 form.setFieldsValue({ evidence: parsedData });
@@ -504,7 +688,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
             }
         };
         reader.onerror = (error) => {
-             messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
         };
         reader.readAsArrayBuffer(file);
         return false;
@@ -512,22 +696,22 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
 
 
     return (
-        <Form 
-            form={form} 
-            layout="vertical" 
-            onFinish={handleFinish} 
+        <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleFinish}
             onValuesChange={handleFormChange}
         >
             <Title level={5}><CheckCircleOutlined /> 上传完成证据</Title>
             <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
-            
+
             {/* --- 8. 新增：添加导入/导出按钮 --- */}
             <Space style={{ marginBottom: 16 }}>
                 <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate}>
                     下载证据模板
                 </Button>
-                <Upload 
-                    beforeUpload={handleEvidenceExcelUpload} 
+                <Upload
+                    beforeUpload={handleEvidenceExcelUpload}
                     showUploadList={false}
                     accept=".xlsx, .xls"
                 >
@@ -536,7 +720,7 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                     </Button>
                 </Upload>
             </Space>
-            <Paragraph type="secondary" style={{fontSize: '12px', marginTop: '-8px'}}>
+            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: '-8px' }}>
                 您可以下载模板，离线填写**证据说明**后，再导入回系统。
             </Paragraph>
             <Divider />
@@ -650,7 +834,11 @@ export const NoticeDetailModal = ({
         border: `1px solid ${token.colorBorderSecondary}`,
     };
 
-    const safeTitle = toPlainText(notice.title || '');
+
+    const getChineseOnly = (text = '') =>
+        text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
+
+    const safeTitle = notice?.category === 'Historical 8D' ? getChineseOnly(toPlainText(notice.title || '')) : toPlainText(notice.title || '');
 
     const renderActionArea = () => {
         const isAssignedSupplier = currentUser?.role === 'Supplier' && currentUser.supplier_id === notice.assignedSupplierId;
@@ -658,15 +846,15 @@ export const NoticeDetailModal = ({
 
         switch (notice.status) {
             case '待提交Action Plan':
-                return isAssignedSupplier && <PlanSubmissionForm 
-                                                form={form} 
-                                                onFinish={onPlanSubmit} 
-                                                actionAreaStyle={actionAreaStyle} 
-                                                notice={notice} 
-                                             />;
-            
+                return isAssignedSupplier && <PlanSubmissionForm
+                    form={form}
+                    onFinish={onPlanSubmit}
+                    actionAreaStyle={actionAreaStyle}
+                    notice={notice}
+                />;
+
             case '待SD确认actions':
-            case '待SD审核计划': { 
+            case '待SD审核计划': {
                 if (!isSDOrManager) return null;
                 const lastPlanSubmission = [...(notice.history || [])].reverse().find(h => h.type === 'supplier_plan_submission');
                 return (
@@ -678,19 +866,19 @@ export const NoticeDetailModal = ({
                             <Text type="danger">错误：未找到供应商提交的行动计划。</Text>
                         )}
                         <Divider />
-                        <ApprovalArea 
-                            title="" 
-                            onApprove={onPlanApprove} 
-                            onReject={showPlanRejectionModal} 
-                            actionAreaStyle={{ background: 'none', border: 'none', padding: 0 }} 
+                        <ApprovalArea
+                            title=""
+                            onApprove={onPlanApprove}
+                            onReject={showPlanRejectionModal}
+                            actionAreaStyle={{ background: 'none', border: 'none', padding: 0 }}
                         />
                     </div>
                 );
             }
-            
+
             case '待供应商关闭':
                 return isAssignedSupplier && <EvidencePerActionForm form={form} onFinish={onEvidenceSubmit} notice={notice} handlePreview={handlePreview} />;
-            
+
             case '待SD关闭evidence': {
                 if (!isSDOrManager) return null;
                 const history = notice.history || [];
@@ -770,35 +958,39 @@ export const NoticeDetailModal = ({
     return (
         <Modal title={`通知单详情: ${safeTitle} - ${notice?.noticeCode || ''}`} open={open} onCancel={onCancel} footer={null} width={800}>
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
-            <Card size="small" type="inner">
-                <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description || notice?.sdNotice?.details?.finding)}</Paragraph>
-                <DynamicDetailsDisplay notice={notice} />
-                {/* 4. 使用 LocalImageCarousel 替换 EnhancedImageDisplay/ImageCarousel */}
-                <LocalImageCarousel images={notice?.sdNotice?.images} title="初始图片" />
-                <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
+            {/* 核心修改：如果是 Historical 8D，使用新的展示组件，否则使用默认的 */}
+            {notice?.category === 'Historical 8D' ? (
+                <Historical8DDisplay notice={notice} />
+            ) : (
+                <Card size="small" type="inner">
+                    <Paragraph><strong>问题描述:</strong> {toPlainText(notice?.sdNotice?.description || notice?.sdNotice?.details?.finding)}</Paragraph>
+                    <DynamicDetailsDisplay notice={notice} />
+                    <LocalImageCarousel images={notice?.sdNotice?.images} title="初始图片" />
+                    <AttachmentsDisplay attachments={notice?.sdNotice?.attachments} />
 
-                {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
-                    <div style={{ marginTop: '12px' }}>
-                        <Space wrap>
-                            <Text strong><TagsOutlined /> 历史经验标签(单个):</Text>
-                            {notice.sdNotice?.problemSource && <Tag color="geekblue">{notice?.sdNotice?.problemSource}</Tag>}
-                            {notice?.sdNotice?.cause && <Tag color="purple">{notice?.sdNotice?.cause}</Tag>}
-                        </Space>
-                    </div>
-                )}
-                
-                {(notice?.sdNotice?.details?.product) && (
-                    <div style={{ marginTop: '12px' }}>
-                        <Space wrap>
-                            <Text strong><TagsOutlined /> 历史经验标签(批量):</Text>
-                            {notice?.sdNotice?.details?.product && <Tag color="geekblue">{notice?.sdNotice?.details?.product}</Tag>}
-                        </Space>
-                    </div>
-                )}
-                <Divider style={{ margin: '8px 0' }} />
-                <Text type="secondary">由 {notice?.creator?.username || 'SD'} 于 {dayjs(notice?.sdNotice?.createTime).format('YYYY-MM-DD HH:mm')} 发起给 {notice?.supplier?.shortCode}</Text>
+                    {(notice?.sdNotice?.problemSource || notice?.sdNotice?.cause) && (
+                        <div style={{ marginTop: '12px' }}>
+                            <Space wrap>
+                                <Text strong><TagsOutlined /> 历史经验标签(单个):</Text>
+                                {notice.sdNotice?.problemSource && <Tag color="geekblue">{notice?.sdNotice?.problemSource}</Tag>}
+                                {notice?.sdNotice?.cause && <Tag color="purple">{notice?.sdNotice?.cause}</Tag>}
+                            </Space>
+                        </div>
+                    )}
 
-            </Card>
+                    {(notice?.sdNotice?.details?.product) && (
+                        <div style={{ marginTop: '12px' }}>
+                            <Space wrap>
+                                <Text strong><TagsOutlined /> 历史经验标签(批量):</Text>
+                                {notice?.sdNotice?.details?.product && <Tag color="geekblue">{notice?.sdNotice?.details?.product}</Tag>}
+                            </Space>
+                        </div>
+                    )}
+                    <Divider style={{ margin: '8px 0' }} />
+                    <Text type="secondary">由 {notice?.creator?.username || 'SD'} 于 {dayjs(notice?.sdNotice?.createTime).format('YYYY-MM-DD HH:mm')} 发起给 {notice?.supplier?.shortCode}</Text>
+                </Card>
+            )}
+
             <Divider />
 
             <Title level={5}>处理历史</Title>
@@ -811,17 +1003,27 @@ export const NoticeDetailModal = ({
                     const label = getHistoryItemLabel(h);
                     const historyArray = notice.history || [];
 
-                    let historyItemForDisplay = h; 
+                    let historyItemForDisplay = h;
                     let shouldRenderItem = false;
-                    
+
+                    // 特殊逻辑：对于 Historical 8D，显示“系统导入”记录
+                    if (notice.category === 'Historical 8D' && h.type === 'system_import') {
+                        return (
+                            <Timeline.Item key={index} color="blue">
+                                <p><b>{h.submitter}</b> 于 {h.time} 导入了历史数据</p>
+                                <Text type="secondary">{h.description}</Text>
+                            </Timeline.Item>
+                        );
+                    }
+
                     if (h.type === 'sd_plan_approval' || h.type === 'sd_closure_approve') {
                         shouldRenderItem = true;
 
                         if (h.type === 'sd_closure_approve') {
-                            const lastEvidenceSubmission = [...historyArray.slice(0, index)] 
+                            const lastEvidenceSubmission = [...historyArray.slice(0, index)]
                                 .reverse()
                                 .find(item => item.type === 'supplier_evidence_submission');
-                            
+
                             if (lastEvidenceSubmission) {
                                 const nextItem = historyArray[historyArray.indexOf(lastEvidenceSubmission) + 1];
                                 if (!nextItem || (nextItem.type !== 'sd_evidence_rejection' && nextItem.type !== 'sd_plan_rejection')) {
@@ -863,7 +1065,12 @@ export const NoticeDetailModal = ({
             )}
 
             <Divider />
-            {renderActionArea()}
+            {/* 核心修改：如果是 Historical 8D，不显示操作区域，因为它是已完成状态 */}
+            {notice.category !== 'Historical 8D' && renderActionArea()}
+
+            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel}>
+                <img alt="example" style={{ width: '100%' }} src={previewImage} />
+            </Modal>
         </Modal>
     );
 };

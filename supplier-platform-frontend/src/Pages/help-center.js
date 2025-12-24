@@ -8,7 +8,7 @@ import {
     CheckCircleOutlined, LoginOutlined, DownloadOutlined,
     ShopOutlined, QrcodeOutlined, MobileOutlined, DesktopOutlined,
     ArrowRightOutlined, FileImageOutlined, SyncOutlined, FilterOutlined, CalendarOutlined,
-    ApiOutlined, BugOutlined, CodeOutlined
+    ApiOutlined, BugOutlined, CodeOutlined, StopOutlined, SwapOutlined, FileExcelOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient'; // 假设您有这个文件导出
@@ -211,14 +211,20 @@ const QuickStartContent = () => (
 const NoticeGuideContent = () => (
     <div className="animate-fade-in">
         <Title level={2}>📝 通知单处理指南</Title>
-        <RoleTagBar roles={['Supplier', 'Manager', 'SD', 'Admin']} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
+            <RoleTagBar roles={['Admin', 'Manager', 'SD', 'Supplier']} />
+        </div>
+
         <Paragraph style={{ fontSize: 16 }}>
             通知单是平台的核心对象。本节将详细介绍不同角色如何创建、处理和关闭通知单。
         </Paragraph>
 
         <div id="create-notice" className="section-block">
-            <Title level={3}>1. 创建通知单 (SD/Manager)</Title>
-            <RoleTagBar roles={['Manager', 'SD']} />
+            <Title level={3}>1. 创建通知单</Title>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                <RoleTagBar roles={['Admin', 'Manager', 'SD']} />
+            </div>
+
             <Paragraph>SD 可以通过两种方式创建通知单：</Paragraph>
             <Row gutter={[16, 16]}>
                 <Col span={24} md={12}>
@@ -233,7 +239,7 @@ const NoticeGuideContent = () => (
                 </Col>
             </Row>
             <div className="tip-box">
-                <BulbOutlined /> <strong>提示：</strong> 创建时请准确选择“问题类型”（如 SEM, Process Audit），这决定了后续表单的字段结构。
+                <BulbOutlined /> <strong>提示：</strong> 创建时请准确选择“问题类型”（如 SEM[未推出], Process Audit），这决定了后续表单的字段结构。
             </div>
         </div>
 
@@ -241,7 +247,10 @@ const NoticeGuideContent = () => (
 
         <div id="handle-notice" className="section-block">
             <Title level={3}>2. 供应商处理流程</Title>
-            <RoleTagBar roles={['Supplier']} />
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                <RoleTagBar roles={['Supplier']} />
+            </div>
+
             <Timeline
                 mode="left"
                 items={[
@@ -291,6 +300,54 @@ const NoticeGuideContent = () => (
                     },
                 ]}
             />
+        </div>
+
+        <Divider />
+
+        <div id="admin-actions" className="section-block">
+            <Title level={3}>3. 高级管理功能</Title>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                <RoleTagBar roles={['Admin', 'Manager']} />
+            </div>
+            <Paragraph>
+                当通知单出现异常（如填写错误、供应商变更）时，拥有高级权限的用户可以进行干预。这些操作入口位于“通知单管理”页面的列表操作栏。
+            </Paragraph>
+            <Row gutter={[16, 16]}>
+                <Col span={24} md={12}>
+                    <Card
+                        size="small"
+                        title={<Space><StopOutlined style={{ color: '#ff4d4f' }} /> 废除通知单 (Void)</Space>}
+                        bordered={false}
+                        className="guide-sub-card"
+                    >
+                        <Paragraph type="secondary">
+                            当通知单因误操作创建或不再需要处理时，可将其标记为“已作废”。
+                        </Paragraph>
+                        <ul>
+                            <li>作废后，该单据将变为<strong>只读状态</strong>，不可再进行任何编辑或提交。</li>
+                            <li>系统会自动通知相关的供应商和创建人。</li>
+                            <li>作废操作不可撤销，请谨慎操作。</li>
+                        </ul>
+                    </Card>
+                </Col>
+                <Col span={24} md={12}>
+                    <Card
+                        size="small"
+                        title={<Space><SwapOutlined style={{ color: '#1890ff' }} /> 改派供应商 (Reassign)</Space>}
+                        bordered={false}
+                        className="guide-sub-card"
+                    >
+                        <Paragraph type="secondary">
+                            如果通知单被错误地分配给了其他供应商，或者业务发生变更，可以使用此功能。
+                        </Paragraph>
+                        <ul>
+                            <li>选择新的供应商后，系统会将单据的所有权转移。</li>
+                            <li>原供应商将不再看到此单据，新供应商会收到通知。</li>
+                            <li>系统会记录改派的历史轨迹，确保流程可追溯。</li>
+                        </ul>
+                    </Card>
+                </Col>
+            </Row>
         </div>
     </div>
 );
@@ -751,6 +808,94 @@ const AiSearchGuideContent = () => {
     );
 };
 
+// --- 新增：历史导入指南组件 ---
+const HistoricalImportGuideContent = () => (
+    <div className="animate-fade-in">
+        <div className="hero-section">
+            <Title level={2}>📚 历史 8D 报告归档指南</Title>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                <RoleTagBar roles={['Manager', 'SD', 'Admin']} />
+            </div>
+            <Paragraph style={{ fontSize: 16, color: '#666', maxWidth: 800 }}>
+                将散落在Sharepoint中的历史 PDF 报告或 Excel 跟踪表导入系统。利用 <strong>AI 智能识别</strong> 技术，快速构建企业质量知识库，为后续的 AI 检索提供数据基础。
+            </Paragraph>
+        </div>
+
+        <div id="pdf-import" className="section-block">
+            <Title level={3}>1. PDF 智能解析 (AI/OCR)</Title>
+            <Paragraph>
+                适用于将已签字的 8D 报告（PDF格式）数字化。系统会自动提取关键信息（如供应商、问题描述、根本原因、对策等）。
+            </Paragraph>
+
+            <Row gutter={[24, 24]}>
+                <Col xs={24} md={14}>
+                    <Card bordered={false} className="steps-card">
+                        <Steps direction="vertical" items={[
+                            {
+                                title: '批量上传',
+                                description: '支持一次性上传多个 PDF 文件。建议单次不超过 20 个文件以保证解析速度。',
+                                icon: <CloudUploadOutlined />
+                            },
+                            {
+                                title: 'AI 自动提取',
+                                description: (
+                                    <span>
+                                        请您选择 <strong>大模型</strong> 或 <strong>本地 OCR解析</strong> 引擎。系统将自动识别：
+                                        <Tag color="blue">零件号</Tag>
+                                        <Tag color="cyan">问题描述</Tag>
+                                        <Tag color="purple">根本原因 (D4)</Tag>
+                                        <Tag color="geekblue">解决措施 (D5/D6)</Tag>
+                                    </span>
+                                ),
+                                icon: <RobotOutlined />
+                            },
+                            {
+                                title: '人工校对与归档',
+                                description: '解析完成后，点击“查看/编辑”核对关键字段。确认无误后点击归档，文件将存入数据库并支持全文检索。',
+                                icon: <CheckCircleOutlined />
+                            }
+                        ]} />
+                    </Card>
+                </Col>
+                <Col xs={24} md={10}>
+                    <Card title="💡 提高识别率的小技巧" size="small" style={{ background: '#f6ffed', borderColor: '#b7eb8f' }}>
+                        <ul style={{ paddingLeft: 20, margin: 0 }}>
+                            <li style={{ marginBottom: 8 }}><strong>清晰度：</strong> 尽量上传原版导出的 PDF，若是扫描件，请确保字迹清晰、无歪斜。</li>
+                            <li style={{ marginBottom: 8 }}><strong>语言：</strong> AI 对中英文混合排版的识别效果最好。</li>
+                            <li><strong>隐私：</strong> 系统会自动过滤掉大部分页眉页脚的无关信息。</li>
+                        </ul>
+                    </Card>
+                </Col>
+            </Row>
+        </div>
+
+        <Divider />
+
+        <div id="excel-import" className="section-block">
+            <Title level={3}>2. Excel 存量数据迁移</Title>
+            <Paragraph>
+                适用于将旧的 Excel 跟踪清单（Log Sheet）批量导入系统。
+            </Paragraph>
+            <Card className="guide-sub-card">
+                <Space align="start">
+                    <FileExcelOutlined style={{ fontSize: 24, color: '#52c41a', marginTop: 4 }} />
+                    <div>
+                        <Text strong>操作步骤：</Text>
+                        <ol>
+                            <li>在“历史导入”页面切换到 <strong>Excel 批量迁移</strong> 标签页。</li>
+                            <li>下载标准模板，将历史数据复制到模板中（注意保留表头）。</li>
+                            <li>上传 Excel 文件，系统将自动创建“已完成”状态的通知单记录。</li>
+                        </ol>
+                        <div className="tip-box" style={{ marginTop: 12 }}>
+                            <BulbOutlined /> <strong>注意：</strong> Excel 导入的数据通常缺乏详细的过程附件，主要用于保留追溯记录和统计分析。
+                        </div>
+                    </div>
+                </Space>
+            </Card>
+        </div>
+    </div>
+);
+
 // 1.4 常见问题
 const FaqContent = () => {
     const faqs = [
@@ -800,6 +945,8 @@ const searchOptions = [
     { value: 'mcp-guide', label: '开发者 MCP 接口' }, // Added
     { value: 'file-transfer', label: '文件互传使用指南' },
     { value: 'faq', label: '忘记密码怎么办' },
+    { value: 'history-import', label: '如何导入历史8D报告' }, // 新增
+    { value: 'history-import-pdf', label: 'PDF 智能解析OCR' }, // 新增
 ];
 
 // --- 2. 主布局组件 ---
@@ -826,6 +973,7 @@ const HelpCenterPage = () => {
                 { key: 'audit-plan', label: '年度规划管理' },
                 { key: 'file-transfer', label: '文件互传' },
                 { key: 'ai-guide', label: 'AI 与搜索' },
+                { key: 'history-import', label: '历史导入' }, // 新增
             ]
         },
         {
@@ -847,6 +995,7 @@ const HelpCenterPage = () => {
             case 'file-transfer': return <FileTransferGuideContent />;
             case 'ai-guide': return <AiSearchGuideContent currentUser={currentUser} />;
             case 'mcp-guide': return <McpGuideContent />; // Added
+            case 'history-import': return <HistoricalImportGuideContent />;
             case 'faq': return <FaqContent />;
             default: return null;
         }
@@ -857,6 +1006,7 @@ const HelpCenterPage = () => {
             return [
                 { key: 'create-notice', href: '#create-notice', title: '创建通知单' },
                 { key: 'handle-notice', href: '#handle-notice', title: '供应商处理' },
+                { key: 'admin-actions', href: '#admin-actions', title: '管理功能 (废除/改派)' }, // 新增锚点
             ];
         }
         if (selectedKey === 'audit-plan') {
@@ -871,6 +1021,12 @@ const HelpCenterPage = () => {
         }
         if (selectedKey === 'file-transfer') {
             return [{ key: 'transfer-steps', href: '#transfer-steps', title: '操作流程' }];
+        }
+        if (selectedKey === 'history-import') { // <--- 新增
+            return [
+                { key: 'pdf-import', href: '#pdf-import', title: 'PDF 智能解析' },
+                { key: 'excel-import', href: '#excel-import', title: 'Excel 迁移' },
+            ];
         }
         if (selectedKey === 'mcp-guide') { // Added
             return [
@@ -890,6 +1046,9 @@ const HelpCenterPage = () => {
     const handleSearchSelect = (value) => {
         if (value.includes('notice') || value.includes('创建') || value.includes('提交')) {
             setSelectedKey('notice-guide');
+        } else if (value.includes('history') || value.includes('导入') || value.includes('归档') || value.includes('pdf')) {
+            // ^--- 修改这里，匹配 history, 导入, 归档, pdf
+            setSelectedKey('history-import');
         } else if (value.includes('audit') || value.includes('plan') || value.includes('规划')) {
             setSelectedKey('audit-plan');
         } else if (value.includes('ai')) {

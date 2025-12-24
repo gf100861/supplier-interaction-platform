@@ -774,12 +774,14 @@ const fetchAllPendingPlans = async () => {
                  </Col>
                  <Col xs={24} lg={12}>
                      <div ref={refHighlights} style={{ height: '100%' }}>
+                        {/* 以下是点赞最多的case显示（未来根据算法计算） */}
                          <Card title={t('dashboard.highlights')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
                              {topImprovement ? (
                                  <div>
                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                                          <Space wrap size="small">
                                              <Tag color="gold">{t('dashboard.tag.from')}: {topImprovement.supplier?.short_code || '?'}</Tag>
+                                             <Tag color="green"> {topImprovement.category || '?'}</Tag>
                                              {topImprovement?.sdNotice?.problem_source && <Tag color="geekblue">{topImprovement.sdNotice.problem_source}</Tag>}
                                              {topImprovement?.sdNotice?.cause && <Tag color="purple">{topImprovement.sdNotice.cause}</Tag>}
                                          </Space>

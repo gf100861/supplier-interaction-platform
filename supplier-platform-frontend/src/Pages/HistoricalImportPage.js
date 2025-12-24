@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Tabs, Upload, Button, Form, Input, Select, DatePicker, message, Row, Col, Typography, Divider, Alert, Space, Spin, Collapse, Switch, Table, Progress, Tag } from 'antd'; // 引入 Table, Progress, Tag
+import { Checkbox, Card, Tabs, Upload, Button, Form, Input, Select, DatePicker, message, Row, Col, Typography, Divider, Alert, Space, Spin, Collapse, Switch, Table, Progress, Tag } from 'antd'; // 引入 Table, Progress, Tag
 import { InboxOutlined, FileExcelOutlined, FilePdfOutlined, UploadOutlined, CloudUploadOutlined, RobotOutlined, ThunderboltOutlined, CaretRightOutlined, ApiOutlined, GoogleOutlined, CheckCircleOutlined, SyncOutlined, CloseCircleOutlined, EyeOutlined } from '@ant-design/icons'; // 引入更多图标
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
@@ -8,7 +8,7 @@ import { useSuppliers } from '../contexts/SupplierContext';
 import * as ExcelJS from 'https://esm.sh/exceljs@4.4.0';
 import Tesseract from 'https://esm.sh/tesseract.js@5.0.3';
 import * as pdfjsLibProxy from 'https://esm.sh/pdfjs-dist@3.11.174';
-
+import { supabase } from '../supabaseClient';
 const pdfjsLib = pdfjsLibProxy.default?.GlobalWorkerOptions ? pdfjsLibProxy.default : pdfjsLibProxy;
 
 if (pdfjsLib.GlobalWorkerOptions) {
@@ -28,21 +28,6 @@ const mockAddNotices = async (notices) => {
     return true;
 };
 
-const mockSupabase = {
-    storage: {
-        from: (bucket) => ({
-            upload: async (path, file) => {
-                console.log(`模拟上传文件 ${file.name} 到 ${bucket}/${path}`);
-                await new Promise(resolve => setTimeout(resolve, 500));
-                return { data: { path }, error: null };
-            },
-            getPublicUrl: (path) => ({
-                data: { publicUrl: `https://mock-storage.com/${path}` }
-            })
-        })
-    }
-};
-
 // *** 修改点 1: 默认 API Key ***
 const DEFAULT_API_KEY = '';
 
@@ -52,16 +37,62 @@ const HistoricalImportPage = () => {
     const [parsing, setParsing] = useState(false);
     const [parseProgress, setParseProgress] = useState('');
     const [useGemini, setUseGemini] = useState(true);
-    
+
     // 新增：批量解析相关状态
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, percent: 0 });
     const [parsedResults, setParsedResults] = useState([]); // 存储批量解析的结果
     const [activeResultIndex, setActiveResultIndex] = useState(-1); // 当前正在编辑/查看的结果索引
 
+    const [rememberApiKey, setRememberApiKey] = useState(false);
+
     const { messageApi } = useNotification();
     const { suppliers } = useSuppliers();
 
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+
+    const DEFAULT_API_KEY = '';
+    const LS_API_KEY_KEY = 'gemini_api_key_local_storage'; // *** 定义 LocalStorage 的键名 ***
+
+    // *** 新增 Effect: 组件加载时读取本地存储 ***
+    useEffect(() => {
+        const savedKey = localStorage.getItem(LS_API_KEY_KEY);
+        if (savedKey) {
+            setApiKey(savedKey);
+            setRememberApiKey(true);
+        }
+    }, []);
+
+    // *** 新增处理函数: API Key 变更时同步更新本地存储 ***
+    const handleApiKeyChange = (e) => {
+        const newKey = e.target.value;
+        setApiKey(newKey);
+        if (rememberApiKey) {
+            localStorage.setItem(LS_API_KEY_KEY, newKey);
+        }
+    };
+
+    // *** 新增处理函数: Checkbox 切换逻辑 ***
+    const handleRememberChange = (e) => {
+        const checked = e.target.checked;
+        setRememberApiKey(checked);
+        if (checked) {
+            localStorage.setItem(LS_API_KEY_KEY, apiKey);
+            messageApi.success('API Key 已保存到本地');
+        } else {
+            localStorage.removeItem(LS_API_KEY_KEY);
+            messageApi.info('不再记住 API Key');
+        }
+    };
+
+    // 辅助函数：将 File 对象转换为 Base64 字符串
+    const fileToBase64 = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file); // 结果将是 "data:application/pdf;base64,..."
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (error) => reject(error);
+        });
+    };
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser) return [];
@@ -77,7 +108,7 @@ const HistoricalImportPage = () => {
     const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
 
     // *** 修改点 3: 模型选择 ***
-    const [geminiModel, setGeminiModel] = useState('gemini-2.5-pro');
+    const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash');
 
     const addNotices = mockAddNotices;
     const [form] = Form.useForm();
@@ -89,40 +120,68 @@ const HistoricalImportPage = () => {
         }
 
         const prompt = `
-        You are a Super Quality Engineer expert. Analyze this 8D Report / NCR document (which may contain multiple pages).
-        Extract the information into a pure JSON object. 
-        
-        Strict Rules:
-        1. Output ONLY JSON. No Markdown block quotes.
-        2. If a field is not found, return null or empty string.
-        3. Do not omit any information.
-        4. **CRITICAL**: Read ALL pages provided. The Root Cause (D4) and Interim/Corrective Actions (D5/D6) might be on the 2nd or 3rd page.
-        5. **Root Cause Analysis**: Combine content from all pages. Look for "4.", "D4", "Root Cause", "Why". Flatten any 5-Why structure into a readable string.
-        6. **Interim/Corrective Action**: Combine content from all pages. Look for "5.", "D5", "6.", "D6", "Action", "Measures".
-        7. **Embedded Images Analysis (EXPERIMENTAL)**:
-           - If there are photos or screenshots embedded in the "Problem Description" or "Root Cause" sections, please analyze them.
-           - Briefly describe what the defect looks like in the image (e.g., "Image shows a crack on the weld seam" or "Photo indicates rust on the surface").
-           - Append this visual description to the corresponding text field (summary or rootCause) in brackets, like: "[Visual Analysis: ...]".
-        
-        Fields to extract:
-        - reportNo: Report number / NCR No.
-        - supplierCode: Supplier code.
-        - subject: Subject / Description / Title of the issue. Use the main title or problem statement found in the header or D2 section.
-        - partNumber: Part number / Part No. Look for "Part number", "P/N".
-        - partName: Part name / Description.
-        - quantity: Defect quantity.
-        - date: Issue date (Format: YYYY-MM-DD).
-        - summary: Problem description (D2). Include visual analysis of any embedded photos here.
-        - rootCause: Root cause analysis (D4). EXTRACT FULL TEXT. Include visual analysis of any evidence photos here.
-        - interimAction: Interim & Potential Corrective Action (D5/D6). EXTRACT FULL TEXT.
-        `;
+  You are a Super Quality Engineer expert. Analyze this 8D Report / NCR document.
+  Extract the information into a pure JSON object.
+
+  *** STRICT DATA CLEANING RULES ***
+  1. **NO TRANSLATION**: You must output the content in its **ORIGINAL LANGUAGE**. 
+     - If the text is in Chinese, keep it Chinese. 
+     - If it is mixed Chinese/English, keep it mixed. 
+     - Do NOT translate Chinese to English under any circumstances.
+  2. **NO TEMPLATE/BOILERPLATE TEXT**: Do NOT extract standard footer notes, legal disclaimers, or form instructions.
+     - **Explicitly Exclude** phrases like:
+       - "Please let me know your investigation and corrective action plan..."
+       - "The complete NCR with your action plan should reach us..."
+       - "We will decide you agreed our report..."
+       - "Cost claim"
+       - "Administrative Cost"
+       - "Standard citation"
+       - "Approval & Closing"
+  3. **Data Formatting**:
+     - Return **null** or empty string if a field is not found.
+     - **partNumber**: Must be a numeric string.
+     - **date**: Format YYYY-MM-DD.
+
+  *** EXTRACTION LOGIC ***
+  
+  **1. Identity Information:**
+  - **partNumber**: 
+      - Locate "Part number" or "Part No". Pick the numeric string (typically 8 digits for Volvo) found **next to** the label. 
+      - Verify it is TOTALLY DIFFERENT from the Report No.
+  - **reportNo**: The main NCR/MRB number (often starts with 530...).
+  - **supplierCode**: The vendor code (usually 5 digits).
+  - **partName**: Merge text if split across lines (e.g., "ELECTRICAL EQUIPMENT...").
+  - **quantity**: Locate "Quantity". Extract the numeric value next to it(e.g., "1 EA" -> "1").
+
+  **2. Technical Content (D2, D4, D5/D6):**
+  - **subject**: The main issue title (D2). Keep original language.
+  - **summary**: The problem description. Keep original language.
+  - **rootCause**: (D4) Combine all "Root Cause" or "Why" analysis text.
+      - **Logic**: Stop extracting when you reach "5. Interim" or "Cost claim".
+      - **Keep Original Language**: Do not summarize into English. Copy the raw text/list.
+  - **interimAction**: (D5/D6) Combine "Interim Action", "Corrective Action", or "Solution".
+      - **Logic**: Stop extracting when you reach "Verification", "Approval", or the "Please let me know..." footer.
+      - **Keep Original Language**.
+
+  Fields to extract:
+  - reportNo: Report number / NCR No. (Look for "Report No" or the number starting with 530... at the top).
+  - supplierCode: Supplier code.
+  - subject: Subject / Description / Title of the issue.
+  - partNumber: Part number (Numbers only, 8 digits preferred).
+  - partName: Part name / Description (Merge split lines).
+  - quantity: Quantity.
+  - date: Issue date (Format: YYYY-MM-DD).
+  - summary: Problem description (D2). 
+  - rootCause: Root cause analysis (D4). EXTRACT FULL TEXT. 
+  - interimAction: Interim & Potential Corrective Action (D5/D6). 
+`;
 
         // *** 核心修改：构建包含多张图片的 Payload ***
         const parts = [{ text: prompt }];
-        
+
         // 确保输入是数组
         const images = Array.isArray(base64Images) ? base64Images : [base64Images];
-        
+
         images.forEach(imgData => {
             parts.push({
                 inline_data: {
@@ -331,7 +390,7 @@ const HistoricalImportPage = () => {
             messageApi.warning("请先选择至少一个 PDF 文件！");
             return;
         }
-        
+
         // 检查所有文件类型
         const invalidFiles = fileList.filter(f => f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf'));
         if (invalidFiles.length > 0) {
@@ -349,7 +408,7 @@ const HistoricalImportPage = () => {
         for (let i = 0; i < fileList.length; i++) {
             const fileItem = fileList[i];
             const file = fileItem.originFileObj;
-            
+
             // 更新进度
             setBatchProgress({ current: i + 1, total: fileList.length, percent: Math.round(((i) / fileList.length) * 100) });
             setParseProgress(`正在处理 (${i + 1}/${fileList.length}): ${file.name}...`);
@@ -361,11 +420,11 @@ const HistoricalImportPage = () => {
 
                 if (useGemini) {
                     if (!apiKey) throw new Error("缺少 Google API Key");
-                    
+
                     const base64Images = await convertPdfToImages(file);
                     setParseProgress(`正在 AI 分析 (${i + 1}/${fileList.length})...`);
                     const result = await callGeminiVisionAPI(base64Images);
-                    
+
                     data = {
                         ...result,
                         date: result.date ? dayjs(result.date) : dayjs(),
@@ -381,8 +440,8 @@ const HistoricalImportPage = () => {
                 let matchedSupplierId = undefined;
                 if (data.supplierCode && suppliers) {
                     const targetCode = data.supplierCode.toString().trim().toUpperCase();
-                    const found = suppliers.find(s => 
-                        (s.short_code && s.short_code.toUpperCase() === targetCode) || 
+                    const found = suppliers.find(s =>
+                        (s.short_code && s.short_code.toUpperCase() === targetCode) ||
                         (s.parma_id && s.parma_id.toString() === targetCode)
                     );
                     if (found) matchedSupplierId = found.id;
@@ -416,7 +475,7 @@ const HistoricalImportPage = () => {
         setParsing(false);
         setParseProgress('');
         messageApi.success(`批量解析完成！成功: ${results.filter(r => r.status === 'success').length}, 失败: ${results.filter(r => r.status === 'error').length}`);
-        
+
         // 如果有成功的结果，自动加载第一个到表单预览
         const firstSuccess = results.findIndex(r => r.status === 'success');
         if (firstSuccess !== -1) {
@@ -445,67 +504,68 @@ const HistoricalImportPage = () => {
     };
 
     // 归档单个（当前表单内容 + 关联的原始文件）
+    // 归档单个（当前表单内容 + 关联的原始文件数据）
     const handleSingleFileArchive = async (values) => {
-        // 如果是批量列表过来的，需要校验
-        if (activeResultIndex !== -1 && !parsedResults[activeResultIndex]) {
-             // 这种情况理论上不应发生，但也做个防御
-        }
-
         setLoading(true);
         try {
-            // 1. 获取文件对象 (如果是批量模式，从 parsedResults 取；如果是单文件模式，从 values.file 取)
+            // 1. 获取文件对象
             let file;
-            let fileName;
-            
             if (activeResultIndex !== -1 && parsedResults[activeResultIndex]) {
-                 file = parsedResults[activeResultIndex].fileObj;
+                file = parsedResults[activeResultIndex].fileObj;
             } else if (values.file && values.file[0]) {
-                 file = values.file[0].originFileObj;
-            } else {
-                 throw new Error("未找到文件对象");
+                file = values.file[0].originFileObj;
             }
 
-            // 2. 上传原始 PDF 到 Supabase Storage (归档留底)
-            fileName = `history/${Date.now()}_${file.name}`;
-            await mockSupabase.storage.from('public-assets').upload(fileName, file);
+            if (!file) {
+                throw new Error("未找到文件对象");
+            }
 
-            // 3. 构建 AI 检索用的上下文摘要 (Description)
-            // 这部分文本将被用于向量化搜索，所以要尽可能包含关键信息
+            // *** 核心修改：转为 Base64 字符串，不上传 Storage ***
+            // 注意：这步对于大文件会比较耗时
+            const base64File = await fileToBase64(file);
+
+            // 3. 构建 AI 检索用的上下文摘要
             const aiContext = `
-[Part Number]: ${values.partNumber || 'N/A'}
-[Part Name]: ${values.partName || 'N/A'}
-[Quantity]: ${values.quantity || 'N/A'}
-[Problem]: ${values.summary}
-[Root Cause]: ${values.rootCause}
-[Interim/Permanent Action]: ${values.interimAction}
+ [Part Number]: ${values.partNumber || 'N/A'}
+ [Part Name]: ${values.partName || 'N/A'}
+ [Quantity]: ${values.quantity || 'N/A'}
+ [Problem]: ${values.summary}
+ [Root Cause]: ${values.rootCause}
+ [Interim/Permanent Action]: ${values.interimAction}
             `.trim();
 
-            // 4. 构建插入 notices 表的数据对象
-            // 我们复用现有的 notices 表，但打上 "Historical 8D" 的标签
+            // 4. 构建插入数据库的数据
             const newNotice = {
                 title: values.title,
-                description: aiContext, // 用于列表展示和简单搜索
                 notice_code: values.reportNo || `HIST-${dayjs().format('YYYYMMDD')}-${Math.floor(Math.random() * 1000)}`,
                 assigned_supplier_id: values.supplierId,
                 assigned_supplier_name: suppliers.find(s => s.id === values.supplierId)?.name || 'Unknown Supplier',
-                status: '已完成', // 历史数据直接标记为已完成
-                category: 'Historical 8D', // 特殊分类
-                created_at: values.date ? values.date.toISOString() : new Date().toISOString(), // 保持历史时间真实性
-                
-                // 关键：将所有详细的结构化数据存入 sd_notice (JSONB)
-                // 这样前端展示详情时，可以从这里取出 D4/D5 等具体字段
+                status: '已完成',
+                category: 'Historical 8D',
+                creator_id: currentUser.id,
+                created_at: values.date ? values.date.toISOString() : new Date().toISOString(),
+
                 sd_notice: {
+                    creatorId: currentUser.id,
+                    creator: currentUser.username,
+                    description: aiContext,
+                    createTime: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
                     details: {
                         part_number: values.partNumber,
-                        part_name: values.partName, // 确保写入
+                        part_name: values.partName,
                         quantity: values.quantity,
-                        finding: values.summary, // D2
-                        root_cause: values.rootCause, // D4
-                        action_plan: values.interimAction, // D5/D6
-                        report_file_path: fileName // 关联原始 PDF
+                        finding: values.summary,
+                        root_cause: values.rootCause,
+                        action_plan: values.interimAction,
+
+                        // *** 核心修改：这里不再存路径，而是存 Base64 数据 ***
+                        // 标记为 inline_base64 以便前端展示时识别
+                        file_storage_type: 'inline_base64',
+                        file_content: base64File,
+                        original_file_name: file.name
                     },
-                    images: [], // 历史导入通常没有单独分离出的图片附件，除非我们做更复杂的切图
-                    attachments: [] 
+                    images: [],
+                    attachments: []
                 },
                 history: [
                     {
@@ -516,13 +576,14 @@ const HistoricalImportPage = () => {
                     }
                 ]
             };
-            
-            await addNotices([newNotice]);
-            messageApi.success("归档成功！");
-            
-            // 如果是批量模式，更新列表状态
+
+            const { error: insertError } = await supabase.from('notices').insert([newNotice]);
+            if (insertError) throw insertError;
+
+            messageApi.success("归档成功！文件已存入数据库。");
+
             if (activeResultIndex !== -1) {
-                setParsedResults(prev => prev.map((item, idx) => 
+                setParsedResults(prev => prev.map((item, idx) =>
                     idx === activeResultIndex ? { ...item, isArchived: true } : item
                 ));
             } else {
@@ -536,7 +597,7 @@ const HistoricalImportPage = () => {
             setLoading(false);
         }
     };
-
+    // 批量归档所有成功且未归档的项目
     // 批量归档所有成功且未归档的项目
     const handleBatchArchiveAll = async () => {
         const itemsToArchive = parsedResults.filter(item => item.status === 'success' && !item.isArchived);
@@ -547,57 +608,73 @@ const HistoricalImportPage = () => {
 
         setLoading(true);
         let successCount = 0;
-        
+        let failCount = 0;
+
         for (const item of itemsToArchive) {
             try {
                 const values = item.data;
                 const file = item.fileObj;
-                const fileName = `history/${Date.now()}_${file.name}`;
-                
-                await mockSupabase.storage.from('public-assets').upload(fileName, file);
+
+                // *** 核心修改：转为 Base64 ***
+                const base64File = await fileToBase64(file);
 
                 const aiContext = `
-[Part Number]: ${values.partNumber || 'N/A'}
-[Part Name]: ${values.partName || 'N/A'}
-[Problem]: ${values.summary}
-[Root Cause]: ${values.rootCause}
-[Interim/Permanent Action]: ${values.interimAction}
+   [Part Number]: ${values.partNumber || 'N/A'}
+   [Part Name]: ${values.partName || 'N/A'}
+   [Problem]: ${values.summary}
+   [Root Cause]: ${values.rootCause}
+   [Interim/Permanent Action]: ${values.interimAction}
                 `.trim();
 
                 const newNotice = {
                     title: values.title,
-                    description: aiContext,
                     notice_code: values.reportNo || `HIST-${dayjs().format('YYYYMMDD')}-${Math.floor(Math.random() * 1000)}`,
                     assigned_supplier_id: values.supplierId,
                     assigned_supplier_name: suppliers.find(s => s.id === values.supplierId)?.name || 'Unknown',
                     status: '已完成',
                     category: 'Historical 8D',
+                    creator_id: currentUser.id,
                     created_at: values.date ? dayjs(values.date).toISOString() : new Date().toISOString(),
                     sd_notice: {
+                        creatorId: currentUser.id,
+                        creator: currentUser.username,
+                        description: aiContext,
+                        createTime: values.date ? dayjs(values.date).format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
                         details: {
                             part_number: values.partNumber,
-                            part_name: values.partName, // 确保写入
+                            part_name: values.partName,
                             finding: values.summary,
                             root_cause: values.rootCause,
                             action_plan: values.interimAction,
-                            report_file_path: fileName
-                        }
+
+                            // *** 存入 Base64 ***
+                            file_storage_type: 'inline_base64',
+                            file_content: base64File,
+                            original_file_name: file.name
+                        },
+                        images: [],
+                        attachments: []
                     },
-                    history: [{ type: 'system_import', submitter: currentUser.username, time: dayjs().format('YYYY-MM-DD HH:mm:ss') }]
+                    history: [{ type: 'system_import', submitter: currentUser.username, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: '通过历史归档模块批量导入' }]
                 };
-                await addNotices([newNotice]);
+
+                const { error: insertError } = await supabase.from('notices').insert([newNotice]);
+                if (insertError) throw insertError;
+
                 successCount++;
-                
-                // 更新该项状态
                 setParsedResults(prev => prev.map(p => p.key === item.key ? { ...p, isArchived: true } : p));
 
             } catch (err) {
+                failCount++;
                 console.error(`Batch archive failed for ${item.fileName}`, err);
+                messageApi.error(`文件 ${item.fileName} 归档失败: ${err.message}`);
             }
         }
+
         setLoading(false);
-        messageApi.success(`批量处理完成，成功归档 ${successCount} 个文件`);
+        messageApi.success(`批量处理完成。成功: ${successCount}, 失败: ${failCount}`);
     };
+
 
     const columns = [
         {
@@ -624,9 +701,9 @@ const HistoricalImportPage = () => {
             title: '操作',
             key: 'action',
             render: (_, record, index) => (
-                <Button 
-                    type="link" 
-                    size="small" 
+                <Button
+                    type="link"
+                    size="small"
                     onClick={() => loadResultToForm(record, index)}
                     disabled={record.status === 'error'}
                 >
@@ -647,7 +724,7 @@ const HistoricalImportPage = () => {
                 <Tabs.TabPane tab={<span><FilePdfOutlined /> PDF 文档归档 (OCR/AI)</span>} key="file">
                     <Row gutter={24}>
                         <Col span={14}>
-                             <Card title="PDF 批量智能解析" style={{marginBottom: 24}}>
+                            <Card title="PDF 批量智能解析" style={{ marginBottom: 24 }}>
                                 <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
                                     <Form.Item label="文件上传" style={{ marginBottom: 12 }}>
                                         <Form.Item name="file" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e && e.fileList} noStyle>
@@ -656,9 +733,9 @@ const HistoricalImportPage = () => {
                                             </Upload>
                                         </Form.Item>
                                     </Form.Item>
-                                    
+
                                     <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 6, marginBottom: 16 }}>
-                                         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                                             <span><ApiOutlined /> 解析引擎:</span>
                                             <Switch
                                                 checkedChildren={<><GoogleOutlined /> Google Gemini</>}
@@ -667,37 +744,48 @@ const HistoricalImportPage = () => {
                                                 onChange={setUseGemini}
                                             />
                                         </Space>
-                                         {useGemini && (
+                                        {useGemini && (
                                             <div style={{ marginTop: 8 }}>
                                                 <Input.Password
                                                     placeholder="Google API Key"
                                                     value={apiKey}
-                                                    onChange={e => setApiKey(e.target.value)}
-                                                    style={{marginBottom: 8}}
+                                                    onChange={handleApiKeyChange}
+                                                    style={{ marginBottom: 8 }}
                                                 />
-                                                 <Select
+                                                {/* *** 修改点: 添加 Checkbox *** */}
+                                                <div style={{ marginBottom: 8 }}>
+                                                    <Checkbox
+                                                        checked={rememberApiKey}
+                                                        onChange={handleRememberChange}
+                                                    >
+                                                        在本地记住 API Key (下次无需输入)
+                                                    </Checkbox>
+                                                </div>
+
+                                                <Select
                                                     value={geminiModel}
                                                     onChange={setGeminiModel}
                                                     placeholder="选择模型"
                                                     style={{ width: '100%' }}
                                                 >
-                                                    <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flash</Option>
-                                                    <Option value="gemini-2.5-pro">Gemini 2.5 Pro</Option>
+                                                    <Option value="gemini-2.5-flash">Gemini 2.5 Flash(Recommended)</Option>
+                                                    <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flsh Lite</Option>
+                                                    <Option value="gemini-3-flash">gemini-latest</Option>
                                                 </Select>
                                             </div>
-                                         )}
+                                        )}
                                     </div>
 
-                                    <Button 
-                                        type="primary" 
-                                        icon={<ThunderboltOutlined />} 
-                                        onClick={handleSmartParseBatch} 
-                                        loading={parsing} 
+                                    <Button
+                                        type="primary"
+                                        icon={<ThunderboltOutlined />}
+                                        onClick={handleSmartParseBatch}
+                                        loading={parsing}
                                         block
                                     >
                                         开始批量解析
                                     </Button>
-                                    
+
                                     {parsing && (
                                         <div style={{ marginTop: 16 }}>
                                             <Progress percent={batchProgress.percent} status="active" />
@@ -705,12 +793,12 @@ const HistoricalImportPage = () => {
                                         </div>
                                     )}
                                 </Form>
-                             </Card>
-                             
-                             {/* 结果编辑区 */}
-                             {activeResultIndex !== -1 && (
+                            </Card>
+
+                            {/* 结果编辑区 */}
+                            {activeResultIndex !== -1 && (
                                 <Card title="核对与归档 (当前选中文件)" style={{ borderColor: '#1890ff' }}>
-                                    <Alert message={`正在编辑: ${parsedResults[activeResultIndex]?.fileName}`} type="info" showIcon style={{marginBottom: 16}} />
+                                    <Alert message={`正在编辑: ${parsedResults[activeResultIndex]?.fileName}`} type="info" showIcon style={{ marginBottom: 16 }} />
                                     <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
                                         <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
                                         <Row gutter={16}>
@@ -720,10 +808,16 @@ const HistoricalImportPage = () => {
                                                     <Select placeholder="选择供应商" options={managedSuppliers.map(s => ({ value: s.id, label: s.name }))} />
                                                 </Form.Item>
                                             </Col>
+                                            <Col span={12}>
+                                                <Form.Item name="date" label="发生日期" rules={[{ required: true }]}>
+                                                    <DatePicker style={{ width: '100%' }} />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={12}><Form.Item name="quantity" label="数量 (Quantity)"><Input /></Form.Item></Col>
                                         </Row>
                                         {/* 新增的 Part 字段 */}
                                         <Row gutter={16}>
-                                            <Col span={12}><Form.Item name="partNumber" label="零件号 (Part No)"><Input /></Form.Item></Col>
+                                            <Col span={12}><Form.Item name="partNumber" label="零件号 (Part Number)"><Input /></Form.Item></Col>
                                             <Col span={12}><Form.Item name="partName" label="零件名称 (Part Name)"><Input /></Form.Item></Col>
                                         </Row>
                                         <Form.Item name="summary" label="问题摘要"><TextArea rows={3} /></Form.Item>
@@ -734,17 +828,17 @@ const HistoricalImportPage = () => {
                                         </Button>
                                     </Form>
                                 </Card>
-                             )}
+                            )}
                         </Col>
 
                         <Col span={10}>
                             {/* 解析结果列表 */}
                             <Card title="解析结果队列" extra={<Button size="small" onClick={handleBatchArchiveAll} disabled={parsedResults.filter(r => r.status === 'success' && !r.isArchived).length === 0}>一键归档剩余</Button>}>
-                                <Table 
-                                    dataSource={parsedResults} 
-                                    columns={columns} 
-                                    size="small" 
-                                    pagination={false} 
+                                <Table
+                                    dataSource={parsedResults}
+                                    columns={columns}
+                                    size="small"
+                                    pagination={false}
                                     scroll={{ y: 600 }}
                                     rowClassName={(record, index) => index === activeResultIndex ? 'ant-table-row-selected' : ''}
                                 />
