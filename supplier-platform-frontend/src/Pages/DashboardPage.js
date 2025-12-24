@@ -1,20 +1,19 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'; // 1. 引入 useRef
-import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm, Tour } from 'antd'; // 2. 引入 Tour
-import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, FileTextOutlined, QuestionCircleOutlined } from '@ant-design/icons'; // 3. 引入 QuestionCircleOutlined
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+// 1. 引入 Skeleton
+import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm, Tour, Skeleton } from 'antd'; 
+import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, FileTextOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
 import { supabase } from '../supabaseClient';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotification } from '../contexts/NotificationContext';
-// 1. 引入 useLanguage
 import { useLanguage } from '../contexts/LanguageContext';
+
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 
-const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
-
-// --- 1. 提取辅助函数到组件外部 ---
+// ... (省略 getPlanIcon 函数，保持不变) ...
 const getPlanIcon = (type) => {
     switch (type) {
         case 'audit': return <AuditOutlined style={{ color: '#1890ff' }} />;
@@ -24,21 +23,19 @@ const getPlanIcon = (type) => {
     }
 };
 
-// --- 2. 提取 PlanItem 为独立组件 (修复 Bug 的关键) ---
-// 这个组件现在拥有自己的状态，不会因为父组件渲染而被销毁
-// --- 核心修复 2: PlanItem 支持跨年移动 ---
+// ... (省略 PlanItem 组件，保持不变) ...
 const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
-    const [targetDateStr, setTargetDateStr] = useState(null); // 格式 "YYYY-MM"
+    // ... (PlanItem 的代码保持完全一致) ...
+    const [targetDateStr, setTargetDateStr] = useState(null); 
 
     const handleConfirmReschedule = () => {
         if (targetDateStr) {
             const [year, month] = targetDateStr.split('-').map(Number);
-            onReschedule(plan, month, year); // 传递新的年份
+            onReschedule(plan, month, year); 
             setTargetDateStr(null);
         }
     };
 
-    // 生成未来 12 个月的选项
     const monthOptions = useMemo(() => {
         const options = [];
         let current = dayjs().startOf('month');
@@ -48,7 +45,6 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
             const month = val.month() + 1;
             const label = `${year}年${month}月`;
             const value = `${year}-${month}`;
-            // 禁用当前计划所在的月份
             const disabled = plan.year === year && plan.planned_month === month;
             options.push({ label, value, disabled });
         }
@@ -117,11 +113,9 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
     return itemContent;
 };
 
-
-
 const DashboardPage = () => {
+    // ... (Hooks, effects, and logic stay exactly the same until the rendering part) ...
     const navigate = useNavigate();
-    // 2. 获取 t 函数和当前语言
     const { t, language } = useLanguage();
     const { notices, loading: noticesLoading } = useNotices();
     const [allUsers, setAllUsers] = useState([]);
@@ -139,7 +133,6 @@ const DashboardPage = () => {
     const [selectedPlanCategory, setSelectedPlanCategory] = useState('all');
     const [selectedPlanSupplier, setSelectedPlanSupplier] = useState('all');
 
-    // --- 4. Tour 相关的 Refs 和 State ---
     const refCoreMetrics = useRef(null);
     const refMonthlyPlan = useRef(null);
     const refWarnings = useRef(null);
@@ -157,7 +150,6 @@ const DashboardPage = () => {
         }
         return [];
     }, [currentUser, suppliers]);
-
 
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
@@ -203,8 +195,6 @@ const DashboardPage = () => {
         });
     };
 
-    // --- 3. 修改 handleReschedule ---
-    // 现在它接收 item 和 newMonth 两个参数
      const handleReschedule = async (item, newMonth, newYear) => {
           if (!newMonth || !newYear) {
               messageApi.error("请选择一个新的月份！");
@@ -216,7 +206,6 @@ const DashboardPage = () => {
           const oldYear = item.year;
           const key = `reschedule-${item.id}`;
   
-          // 乐观更新 UI
           setAllPendingPlans(prevPlans =>
               prevPlans.map(p =>
                   p.id === item.id ? { ...p, planned_month: newMonth, year: newYear } : p
@@ -227,7 +216,7 @@ const DashboardPage = () => {
           try {
               const { error } = await supabase
                   .from('audit_plans')
-                  .update({ planned_month: newMonth, year: newYear }) // 更新年份
+                  .update({ planned_month: newMonth, year: newYear })
                   .eq('id', item.id);
   
               if (error) throw error;
@@ -242,7 +231,6 @@ const DashboardPage = () => {
           }
       };
 
-    // Fetch all users
     useEffect(() => {
         const fetchUsers = async () => {
             setUsersLoading(true);
@@ -259,7 +247,6 @@ const DashboardPage = () => {
         fetchUsers();
     }, []);
 
-    // Fetch plan categories
     useEffect(() => {
         const fetchCategories = async () => {
             setCategoriesLoading(true);
@@ -282,22 +269,20 @@ const DashboardPage = () => {
         fetchCategories();
     }, []);
 
-    // Fetch all pending plans for the current year
     useEffect(() => {
         if (!currentUser || !['SD', 'Manager', 'Admin'].includes(currentUser.role)) {
             setAllPlansLoading(false);
             return;
         }
 
-const fetchAllPendingPlans = async () => {
+        const fetchAllPendingPlans = async () => {
             setAllPlansLoading(true);
             try {
-                // 修改查询逻辑：获取今年及以后的所有未完成计划，不再限制仅今年
                 const currentYear = dayjs().year();
                 let query = supabase
                     .from('audit_plans')
                     .select('*')
-                    .gte('year', currentYear) // 获取今年及未来的
+                    .gte('year', currentYear)
                     .neq('status', 'completed');
 
                 const { data, error } = await query;
@@ -323,7 +308,7 @@ const fetchAllPendingPlans = async () => {
         };
 
         if (currentUser.role === 'SD' && suppliersLoading) {
-            // Wait for suppliers
+            // Wait
         } else {
             fetchAllPendingPlans();
         }
@@ -338,7 +323,6 @@ const fetchAllPendingPlans = async () => {
         }, {});
     }, [allUsers]);
 
-    // --- planStatistics ---
    const planStatistics = useMemo(() => {
           const now = dayjs();
           const currentMonthStart = now.startOf('month');
@@ -357,7 +341,6 @@ const fetchAllPendingPlans = async () => {
                   supplier_display_name: supplier?.short_code || plan.supplier_name
               };
   
-              // 构建计划的日期对象进行比较
               const planDate = dayjs(`${plan.year}-${plan.planned_month}-01`);
   
               if (planDate.isBefore(currentMonthStart)) {
@@ -490,10 +473,8 @@ const fetchAllPendingPlans = async () => {
     const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
 
        const nextMonthNum = dayjs().add(1, 'month').format('M');
-        // 如果您在字典中使用了 {month} 占位符，这里传递对象
-        const nextMonthTitle = t('dashboard.list.nextMonthPending');
+       const nextMonthTitle = t('dashboard.list.nextMonthPending');
 
-    // --- 5. 定义 Tour 步骤 ---
   const tourSteps = [
         {
             title: t('tour.step1.title'),
@@ -516,10 +497,104 @@ const fetchAllPendingPlans = async () => {
             target: () => refHighlights.current,
         },
     ];
+    
     const pageIsLoading = noticesLoading || usersLoading || suppliersLoading || allPlansLoading;
 
+    // --- 核心修改：使用 Skeleton 替换 Loading Spin ---
     if (pageIsLoading && !dashboardData) {
-        return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
+        return (
+            <div>
+                {/* Header Skeleton */}
+                <Card style={{ marginBottom: 24 }} bordered={false}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <Skeleton active paragraph={{ rows: 1 }} title={{ width: 150 }} />
+                        </div>
+                        <Skeleton.Button active shape="default" size="default" />
+                    </div>
+                </Card>
+
+                {/* Metrics Skeleton */}
+                <Row gutter={[24, 24]} align="stretch">
+                    <Col xs={24} md={isSDManagerOrAdmin ? 12 : 24} lg={12}>
+                        <Card bordered={false} style={{ height: '100%' }}>
+                            <Skeleton active paragraph={{ rows: 0 }} title={{ width: 100 }} />
+                            <Row gutter={[16, 24]} style={{ marginTop: 20 }}>
+                                {[1, 2, 3, 4].map(i => (
+                                    <Col xs={12} sm={12} key={i}>
+                                        <Skeleton.Node active style={{ width: '100%', height: 80 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                <Skeleton.Avatar active shape="circle" size="small" />
+                                                <div style={{ marginLeft: 10 }}>
+                                                    <Skeleton.Button active size="small" style={{ width: 60, marginBottom: 5 }} block={false} />
+                                                    <Skeleton.Input active size="small" style={{ width: 40 }} />
+                                                </div>
+                                            </div>
+                                        </Skeleton.Node>
+                                    </Col>
+                                ))}
+                            </Row>
+                        </Card>
+                    </Col>
+
+                    {isSDManagerOrAdmin && (
+                        <Col xs={24} md={12} lg={12}>
+                            <Card bordered={false} style={{ height: '100%' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                                    <Skeleton.Input active style={{ width: 100 }} />
+                                    <Space>
+                                        <Skeleton.Button active size="small" />
+                                        <Skeleton.Button active size="small" />
+                                    </Space>
+                                </div>
+                                <Row gutter={16}>
+                                    <Col span={12}>
+                                        <Skeleton active paragraph={{ rows: 4 }} title={{ width: '60%' }} />
+                                    </Col>
+                                    <Col span={12}>
+                                        <Skeleton active paragraph={{ rows: 4 }} title={{ width: '60%' }} />
+                                    </Col>
+                                </Row>
+                            </Card>
+                        </Col>
+                    )}
+                </Row>
+
+                {/* Bottom Row Skeletons */}
+                <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
+                    <Col xs={24} lg={12}>
+                        <Card bordered={false} style={{ height: '100%' }}>
+                            <Skeleton active paragraph={{ rows: 0 }} title={{ width: 120 }} />
+                            <List
+                                dataSource={[1, 2, 3]}
+                                renderItem={() => (
+                                    <List.Item>
+                                        <List.Item.Meta
+                                            avatar={<Skeleton.Avatar active shape="circle" />}
+                                            title={<Skeleton.Input active style={{ width: 100 }} size="small" />}
+                                            description={<Skeleton.Input active style={{ width: 150 }} size="small" />}
+                                        />
+                                    </List.Item>
+                                )}
+                            />
+                        </Card>
+                    </Col>
+                    <Col xs={24} lg={12}>
+                        <Card bordered={false} style={{ height: '100%' }}>
+                            <Skeleton active paragraph={{ rows: 3 }} title={{ width: 120 }} />
+                            <Divider />
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <Skeleton.Avatar active shape="circle" size="small" />
+                                <Skeleton.Input active style={{ width: 80, marginLeft: 10 }} size="small" />
+                                <div style={{ marginLeft: 20, display: 'flex' }}>
+                                    {[1, 2, 3].map(i => <Skeleton.Avatar key={i} active size="small" shape="circle" style={{ marginLeft: -8, border: '2px solid white' }} />)}
+                                </div>
+                            </div>
+                        </Card>
+                    </Col>
+                </Row>
+            </div>
+        );
     }
 
     if (!dashboardData) {
@@ -613,7 +688,6 @@ const fetchAllPendingPlans = async () => {
         filteredNextMonthPlansForList
     } = planStatistics;
 
-     // 辅助：获取下个月的月份名称（英文模式显示英文月份名，中文显示数字）
         const nextMonthLabel = language === 'en' 
             ? dayjs().add(1, 'month').format('MMMM') 
             : dayjs().add(1, 'month').format('M');
@@ -774,7 +848,7 @@ const fetchAllPendingPlans = async () => {
                  </Col>
                  <Col xs={24} lg={12}>
                      <div ref={refHighlights} style={{ height: '100%' }}>
-                        {/* 以下是点赞最多的case显示（未来根据算法计算） */}
+                         {/* 以下是点赞最多的case显示（未来根据算法计算） */}
                          <Card title={t('dashboard.highlights')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
                              {topImprovement ? (
                                  <div>
