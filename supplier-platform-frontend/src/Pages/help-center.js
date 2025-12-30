@@ -770,7 +770,11 @@ const AiSearchGuideContent = () => {
         <div className="animate-fade-in">
             <div className="ai-header-bg">
                 <Title level={2} style={{ color: '#1f2937' }}>🤖 AI 智慧搜索</Title>
-                <RoleTagBar roles={['Manager', 'SD', 'Admin']} />
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                    <RoleTagBar roles={['Admin', 'Manager']} />
+                    <Tag icon={<ApiOutlined />} color="#2db7f5" style={{ marginBottom: 16 }}>Beta</Tag>
+                </div>
+
                 <Paragraph style={{ fontSize: 16, color: '#4b5563' }}>
                     基于 RAG 技术的智能助手，帮您瞬间找回历史经验。
                 </Paragraph>

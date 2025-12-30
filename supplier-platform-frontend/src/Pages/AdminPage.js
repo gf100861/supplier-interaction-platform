@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import {
     EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, MessageOutlined, BookOutlined, PaperClipOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, StopOutlined, ExclamationCircleOutlined, SaveOutlined, FilterOutlined,
-    UserAddOutlined
+    UserAddOutlined, SoundOutlined, PlusOutlined // 新增图标
 } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
@@ -34,6 +34,11 @@ const feedbackStatusConfig = {
 };
 
 const AdminPage = () => {
+
+    // --- 新增：系统公告状态 ---
+    const [systemNotices, setSystemNotices] = useState([]);
+    const [isNoticeModalVisible, setIsNoticeModalVisible] = useState(false);
+    const [noticeForm] = Form.useForm();
     // --- State Management ---
     const [users, setUsers] = useState([]);
     const [allSuppliers, setAllSuppliers] = useState([]);
@@ -100,26 +105,29 @@ const AdminPage = () => {
 
 
     // --- Data Fetching ---
-    const fetchData = async () => {
+  const fetchData = async () => {
         setLoading(true);
         setFeedbackLoading(true);
         try {
-            const usersPromise = supabase.from('users').select(`id, username, email, phone, role, managed_suppliers:sd_supplier_assignments(supplier_id)`).in('role', ['SD', 'Manager', 'Supplier', 'Admin']); // 获取所有角色的用户
+            const usersPromise = supabase.from('users').select(`id, username, email, phone, role, managed_suppliers:sd_supplier_assignments(supplier_id)`);
             const suppliersPromise = supabase.from('suppliers').select('id, name, short_code');
             const feedbackPromise = supabase.from('feedback').select(`*, user:users ( username )`).order('created_at', { ascending: false });
+            // --- 新增：获取系统公告 ---
+            const noticesPromise = supabase.from('system_notices').select('*').order('created_at', { ascending: false });
 
             const [
                 { data: usersData, error: usersError },
                 { data: suppliersData, error: suppliersError },
-                { data: feedbackData, error: feedbackError }
-            ] = await Promise.all([usersPromise, suppliersPromise, feedbackPromise]);
+                { data: feedbackData, error: feedbackError },
+                { data: systemNoticesData, error: systemNoticesError }
+            ] = await Promise.all([usersPromise, suppliersPromise, feedbackPromise, noticesPromise]);
 
             if (usersError) throw usersError;
             if (suppliersError) throw suppliersError;
             if (feedbackError) throw feedbackError;
+            if (systemNoticesError) throw systemNoticesError;
 
             setUsers(usersData || []);
-            // 统一格式：key=id, title=name (为了Transfer组件), label=name (为了Select)
             setAllSuppliers((suppliersData || []).map(s => ({
                 ...s,
                 key: s.id,
@@ -141,6 +149,9 @@ const AdminPage = () => {
             });
             setFeedbackResponses(initialResponses);
 
+            // 设置公告数据
+            setSystemNotices(systemNoticesData || []);
+
         } catch (error) {
             messageApi.error(`数据加载失败: ${error.message}`);
         } finally {
@@ -148,7 +159,6 @@ const AdminPage = () => {
             setFeedbackLoading(false);
         }
     };
-
     // Removed old fetchLogs function
 
     useEffect(() => {
@@ -439,6 +449,41 @@ const AdminPage = () => {
         }
     };
 
+    // --- 新增：系统公告相关 Handler ---
+    const handlePublishNotice = async (values) => {
+        setLoading(true);
+        try {
+            const { error } = await supabase
+                .from('system_notices')
+                .insert([{
+                    type: values.type,
+                    content: values.content,
+                    is_active: true
+                }]);
+            
+            if (error) throw error;
+
+            messageApi.success('系统公告发布成功！');
+            setIsNoticeModalVisible(false);
+            fetchData(); // 刷新列表
+        } catch (error) {
+            messageApi.error(`发布失败: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteNotice = async (id) => {
+        try {
+            const { error } = await supabase.from('system_notices').delete().eq('id', id);
+            if (error) throw error;
+            messageApi.success('公告已删除');
+            setSystemNotices(prev => prev.filter(n => n.id !== id));
+        } catch (error) {
+            messageApi.error(`删除失败: ${error.message}`);
+        }
+    };
+
     // --- Table Columns ---
     const userColumns = [
         { title: '姓名', dataIndex: 'username', key: 'username' },
@@ -500,6 +545,46 @@ const AdminPage = () => {
                 </Space>
             ),
         },
+    ];
+
+    const systemNoticeColumns = [
+        {
+            title: '类型',
+            dataIndex: 'type',
+            key: 'type',
+            width: 100,
+            render: (type) => {
+                const config = {
+                    error: { color: 'red', text: '故障/紧急' },
+                    warning: { color: 'orange', text: '警告/维护' },
+                    info: { color: 'blue', text: '一般消息' }
+                };
+                const c = config[type] || config.info;
+                return <Tag color={c.color}>{c.text}</Tag>;
+            }
+        },
+        {
+            title: '公告内容',
+            dataIndex: 'content',
+            key: 'content',
+        },
+        {
+            title: '发布时间',
+            dataIndex: 'created_at',
+            key: 'created_at',
+            width: 200,
+            render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm:ss')
+        },
+        {
+            title: '操作',
+            key: 'action',
+            width: 100,
+            render: (_, record) => (
+                <Popconfirm title="确定删除此公告?" onConfirm={() => handleDeleteNotice(record.id)}>
+                    <Button danger icon={<DeleteOutlined />} size="small">删除</Button>
+                </Popconfirm>
+            )
+        }
     ];
 
     // Removed logColumns
@@ -779,6 +864,27 @@ const AdminPage = () => {
                     </Paragraph>
                 </Typography>
             )
+        },
+
+        {
+            key: '6',
+            label: <Space><SoundOutlined />系统公告管理</Space>,
+            children: (
+                <div>
+                    <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                        <Button type="primary" icon={<PlusOutlined />} onClick={() => { noticeForm.resetFields(); setIsNoticeModalVisible(true); }}>
+                            发布新公告
+                        </Button>
+                    </div>
+                    <Table 
+                        columns={systemNoticeColumns} 
+                        dataSource={systemNotices} 
+                        rowKey="id"
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="暂无历史公告" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+                    />
+                </div>
+            )
         }
     ];
 
@@ -989,6 +1095,55 @@ const AdminPage = () => {
                     <Form.Item>
                         <Button type="primary" htmlType="submit">确认{correctionModal.type === 'reassign' ? '重分配' : '作废'}</Button>
                     </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title="发布新系统公告"
+                open={isNoticeModalVisible}
+                onCancel={() => setIsNoticeModalVisible(false)}
+                footer={null}
+            >
+                <Form
+                    form={noticeForm}
+                    layout="vertical"
+                    onFinish={handlePublishNotice}
+                    initialValues={{ type: 'info' }}
+                >
+                    <Form.Item 
+                        name="type" 
+                        label="公告类型" 
+                        rules={[{ required: true }]}
+                        help="类型决定了前台通知栏的颜色 (Info=蓝, Warning=橙, Error=红)"
+                    >
+                        <Radio.Group buttonStyle="solid">
+                            <Radio.Button value="info">Info (一般)</Radio.Button>
+                            <Radio.Button value="warning">Warning (维护)</Radio.Button>
+                            <Radio.Button value="error">Error (紧急/故障)</Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+
+                    <Form.Item 
+                        name="content" 
+                        label="公告内容" 
+                        rules={[{ required: true, message: '请输入公告内容' }]}
+                    >
+                        <Input.TextArea 
+                            rows={4} 
+                            placeholder="例如: SAP 接口将于今晚 22:00 进行维护，预计耗时 2 小时。" 
+                            showCount 
+                            maxLength={200}
+                        />
+                    </Form.Item>
+
+                    <div style={{ textAlign: 'right', marginTop: 16 }}>
+                        <Space>
+                            <Button onClick={() => setIsNoticeModalVisible(false)}>取消</Button>
+                            <Button type="primary" htmlType="submit" loading={loading}>
+                                立即发布
+                            </Button>
+                        </Space>
+                    </div>
                 </Form>
             </Modal>
         </div>

@@ -456,6 +456,8 @@ const DashboardPage = () => {
             .map(n => ({ ...n, supplier: suppliers.find(s => s.id === n.assignedSupplierId) }))
             .sort((a, b) => (b.likes?.length || 0) - (a.likes?.length || 0))[0];
 
+            
+
         return {
             closedThisMonth,
             allOpenIssues,
@@ -865,7 +867,7 @@ const DashboardPage = () => {
                                      </div>
                                      <Title level={5} style={{ marginTop: 0 }}>{topImprovement.title}</Title>
                                      <Paragraph type="secondary" ellipsis={{ rows: 3, expandable: false }}>
-                                         {topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || t('dashboard.desc.noDetails')}
+                                         {topImprovement.sdNotice?.title ||topImprovement.sdNotice?.description || topImprovement.sdNotice?.details?.finding || t('dashboard.desc.noDetails')}
                                      </Paragraph>
                                      <Divider style={{ margin: '12px 0' }} />
                                      <Space align="center">

@@ -1,21 +1,19 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Layout, Menu, Input, Button, List, Card, Typography, Spin, Avatar, Space, Tooltip, Rate, Modal, Popconfirm } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, LikeOutlined, DislikeOutlined, StarOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Layout, Menu, Input, Button, List, Card, Typography, Spin, Avatar, Space, Tooltip, Rate, Modal, Popconfirm, Tag } from 'antd';
+import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, LikeOutlined, DislikeOutlined, StarOutlined, PlusOutlined, DeleteOutlined, WarningOutlined, ThunderboltOutlined, MenuUnfoldOutlined, MenuFoldOutlined, LikeFilled, DislikeFilled } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
-import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal'; 
+import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
 import { useNotification } from '../contexts/NotificationContext';
 import dayjs from 'dayjs';
 import { supabase } from '../supabaseClient';
-import './IntelligentSearchPage.css'; 
+import './IntelligentSearchPage.css';
 
 const { Title, Paragraph, Text } = Typography;
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
 
-// --- 日志系统工具函数 (复用自 LoginPage/OfflineSharePage) ---
-
-// 1. Session ID 管理 (用于串联用户单次访问的操作路径)
+// --- 日志系统工具函数 (保持不变) ---
 const getSessionId = () => {
     let sid = sessionStorage.getItem('app_session_id');
     if (!sid) {
@@ -25,7 +23,6 @@ const getSessionId = () => {
     return sid;
 };
 
-// 2. IP 获取与缓存
 let cachedIpAddress = null;
 const getClientIp = async () => {
     if (cachedIpAddress) return cachedIpAddress;
@@ -39,43 +36,21 @@ const getClientIp = async () => {
     }
 };
 
-// 3. 通用日志上报函数
 const logSystemEvent = async (params) => {
-    const { 
-        category = 'SYSTEM', 
-        eventType, 
-        severity = 'INFO', 
-        message, 
-        email = null, 
-        userId = null, 
-        meta = {} 
-    } = params;
-
+    const { category = 'SYSTEM', eventType, severity = 'INFO', message, email = null, userId = null, meta = {} } = params;
     try {
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
-
         const environmentInfo = {
             ip_address: clientIp,
             session_id: sessionId,
             userAgent: navigator.userAgent,
             url: window.location.href,
-            page: 'IntelligentSearchPage' // 标记来源页面
+            page: 'IntelligentSearchPage'
         };
-
-        // Fire-and-forget
         supabase.from('system_logs').insert([{
-            category,
-            event_type: eventType,
-            severity,
-            message,
-            user_email: email, 
-            user_id: userId,
-            metadata: {
-                ...environmentInfo,
-                ...meta,
-                timestamp_client: new Date().toISOString()
-            }
+            category, event_type: eventType, severity, message, user_email: email, user_id: userId,
+            metadata: { ...environmentInfo, ...meta, timestamp_client: new Date().toISOString() }
         }]).then(({ error }) => {
             if (error) console.warn("Log upload failed:", error);
         });
@@ -84,16 +59,18 @@ const logSystemEvent = async (params) => {
     }
 };
 
+const LS_API_KEY_KEY = 'gemini_api_key_local_storage';
+
 const IntelligentSearchPage = () => {
     const [inputValue, setInputValue] = useState('');
-    const [messages, setMessages] = useState([]); // 当前对话的消息
-    const [sessions, setSessions] = useState([]); // 侧边栏的会话列表
-    const [activeSessionId, setActiveSessionId] = useState(null); // 当前激活的会话
+    const [messages, setMessages] = useState([]);
+    const [sessions, setSessions] = useState([]);
+    const [activeSessionId, setActiveSessionId] = useState(null);
+    const [collapsed, setCollapsed] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
-    const [isLoading, setIsLoading] = useState(false); // AI回复的加载状态
-    const [isHistoryLoading, setIsHistoryLoading] = useState(true); // 页面初始加载状态
-
-    const { notices } = useNotices(); 
+    const { notices } = useNotices();
     const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
     const { messageApi } = useNotification();
     const currentUser = useMemo(() => {
@@ -103,70 +80,132 @@ const IntelligentSearchPage = () => {
     }, []);
     const messagesEndRef = useRef(null);
 
-    // --- 评星弹窗 State ---
     const [showRatingModal, setShowRatingModal] = useState(false);
     const [currentRating, setCurrentRating] = useState(0);
     const [ratingComment, setRatingComment] = useState('');
 
     const navigate = useNavigate();
 
-    // --- 全局错误监听与页面访问日志 ---
+    // --- API Key ---
+    const [apiKey, setApiKey] = useState('');
+    useEffect(() => {
+        const savedKey = localStorage.getItem(LS_API_KEY_KEY);
+        if (savedKey) setApiKey(savedKey);
+    }, []);
+
+    // --- 1. Embedding 生成函数 ---
+    const getGeminiEmbedding = async (text) => {
+        if (!text || !text.trim() || !apiKey) return null;
+        const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 8000);
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: "models/text-embedding-004",
+                        content: { parts: [{ text: cleanText }] }
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error("Embedding API request failed");
+            const result = await response.json();
+            return result.embedding.values;
+        } catch (error) {
+            console.error("生成向量失败:", error);
+            return null;
+        }
+    };
+
+    // --- 2. RAG 生成函数 ---
+    const generateRAGResponse = async (query, contextDocuments) => {
+        if (!apiKey) return { text: "未配置 API Key，无法生成回答。", usedIndices: [] };
+
+        const contextText = contextDocuments.map((doc, index) => {
+            const contentStr = typeof doc.content === 'object' ? JSON.stringify(doc.content) : String(doc.content);
+            const titleStr = doc.title || '无标题';
+            const codeStr = doc.notice_code || doc.noticeCode || 'N/A';
+            return `[文档索引: ${index}] 编号:${codeStr} | 标题:${titleStr}\n内容摘要: ${contentStr}`;
+        }).join("\n\n---\n\n");
+
+        const prompt = `
+你是一个专业的企业质量管理助手。请根据以下[参考文档]来回答用户的[问题]。
+
+核心规则：
+1. 严禁编造信息，必须完全基于[参考文档]回答。
+2. 如果参考文档无法回答问题，请直接说明。
+3. **关键步骤**：在回答结束时，必须在最后一行严格按照以下格式列出你实际引用了哪些文档的索引（从0开始的数字）：
+   $$REFS$$: [0, 2] 
+   (如果没有引用任何文档，输出 $$REFS$$: [])
+
+[参考文档]:
+${contextText}
+
+[问题]:
+${query}
+`;
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error("Generation API request failed");
+            const result = await response.json();
+            const rawText = result.candidates[0].content.parts[0].text;
+
+            let aiText = rawText;
+            let usedIndices = [];
+
+            const refMatch = rawText.match(/\$\$REFS\$\$: \s*\[(.*?)\]/);
+
+            if (refMatch) {
+                try {
+                    usedIndices = refMatch[1].split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                    aiText = rawText.replace(refMatch[0], '').trim();
+                } catch (e) {
+                    console.error("解析引用索引失败", e);
+                    usedIndices = contextDocuments.map((_, i) => i);
+                }
+            } else {
+                usedIndices = contextDocuments.map((_, i) => i);
+            }
+
+            return { text: aiText, usedIndices };
+
+        } catch (error) {
+            console.error("RAG 生成失败:", error);
+            return { text: "抱歉，生成答案时出现错误。", usedIndices: [] };
+        }
+    };
+
+    // --- 全局错误监听 ---
     useEffect(() => {
         if (currentUser?.role === 'Supplier') {
-            navigate('/'); 
+            navigate('/');
             return;
         }
-
-        // 1. 记录页面访问
         if (currentUser) {
             logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'PAGE_VIEW',
-                severity: 'INFO',
-                message: 'User visited Intelligent Search Page',
-                userId: currentUser.id,
-                email: currentUser.email
+                category: 'INTERACTION', eventType: 'PAGE_VIEW', severity: 'INFO',
+                message: 'User visited Intelligent Search Page', userId: currentUser.id
             });
         }
-
-        // 2. 运行时错误监听
-        const handleRuntimeError = (event) => {
-            logSystemEvent({
-                category: 'RUNTIME',
-                eventType: 'JS_ERROR',
-                severity: 'ERROR',
-                message: event.message,
-                userId: currentUser?.id,
-                meta: { filename: event.filename, lineno: event.lineno, stack: event.error?.stack }
-            });
-        };
-        const handleUnhandledRejection = (event) => {
-            logSystemEvent({
-                category: 'RUNTIME',
-                eventType: 'UNHANDLED_PROMISE',
-                severity: 'ERROR',
-                message: event.reason?.message || 'Unknown Promise Error',
-                userId: currentUser?.id,
-                meta: { reason: JSON.stringify(event.reason) }
-            });
-        };
-
-        window.addEventListener('error', handleRuntimeError);
-        window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-        return () => {
-            window.removeEventListener('error', handleRuntimeError);
-            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-        };
     }, [currentUser, navigate]);
 
-
-    // 1. --- 加载会话列表 (Sider) ---
+    // --- 加载会话列表 ---
     const fetchSessions = async () => {
-        if (!currentUser?.id) {
-            setIsHistoryLoading(false);
-            return;
-        }
+        if (!currentUser?.id) { setIsHistoryLoading(false); return; }
         setIsHistoryLoading(true);
         try {
             const { data, error } = await supabase
@@ -176,72 +215,162 @@ const IntelligentSearchPage = () => {
                 .order('created_at', { ascending: false });
             if (error) throw error;
             setSessions(data || []);
-
-            // 自动激活最新的会话，如果没有则保持 null
-            if (data && data.length > 0) {
-                setActiveSessionId(data[0].id);
-            } else {
-                handleNewChat(false); // 第一次加载，自动创建一个新会话（但不激活）
-            }
+            if (data && data.length > 0) setActiveSessionId(data[0].id);
+            else handleNewChat(false);
         } catch (error) {
-            messageApi.error(`加载会话列表失败: ${error.message}`);
-            // 日志：加载会话失败
-            logSystemEvent({
-                category: 'DATA',
-                eventType: 'FETCH_SESSIONS_FAILED',
-                severity: 'ERROR',
-                message: error.message,
-                userId: currentUser?.id
-            });
+            console.error(error);
         } finally {
             setIsHistoryLoading(false);
         }
     };
 
-    // 2. --- 加载选中会话的消息 (Content) ---
-    const renderMessageContent = (msg) => {
-        if (msg.isThinking) return <Spin size="small" />;
+    // --- 新增：处理单条消息的点赞/点踩反馈 ---
+    const handleFeedback = async (messageId, type) => {
+        // 1. 乐观更新 UI
+        setMessages(prev => prev.map(msg => 
+            msg.id === messageId 
+                // 如果已经是这个状态，则取消(null)，否则设为 type
+                ? { ...msg, feedback: msg.feedback === type ? null : type } 
+                : msg
+        ));
 
-        let content = msg.content;
+        // 2. 更新数据库
+        // 注意：这里需要根据当前 UI 状态判断是写入 'like'/'dislike' 还是 null
+        const currentMsg = messages.find(m => m.id === messageId);
+        const newFeedback = currentMsg.feedback === type ? null : type; // Toggle logic
+
         try {
-            const parsed = JSON.parse(content);
-            if (parsed && parsed.type === 'search_result') {
-                const resultNotices = parsed.noticeIds
-                    .map(id => notices.find(n => n.id === id)) // 使用完整的 notices 列表
-                    .filter(Boolean);
+            const { error } = await supabase
+                .from('chat_messages')
+                .update({ feedback: newFeedback })
+                .eq('id', messageId);
 
-                return (
-                    <div>
-                        <Paragraph>{parsed.text}</Paragraph>
-                        <List
-                            size="small"
-                            dataSource={resultNotices}
-                            renderItem={item => (
-                                <List.Item key={item.id} style={{ padding: '8px 0' }}>
-                                    <List.Item.Meta
-                                        avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
-                                        title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
-                                        // --- ✨ 核心修正: 使用 .supplier.short_code 和 .creator.username ---
-                                        description={`编号: ${item.noticeCode} | 供应商: ${item.supplier?.short_code || 'N/A'} | 发起人: ${item.creator?.username || 'N/A'}`}
-                                    />
-                                </List.Item>
-                            )}
-                        />
-                    </div>
-                );
-            }
-        } catch (e) {
-            // 不是JSON，只是纯文本
+            if (error) throw error;
+            
+            // 3. 记录日志
+            logSystemEvent({
+                category: 'INTERACTION', eventType: 'MESSAGE_FEEDBACK', message: `User ${newFeedback || 'removed feedback'} for message`,
+                userId: currentUser.id, meta: { message_id: messageId, feedback_type: newFeedback }
+            });
+
+        } catch (error) {
+            console.error("Feedback update failed:", error);
+            messageApi.error("反馈提交失败");
+            // 回滚 UI
+            setMessages(prev => prev.map(msg => 
+                msg.id === messageId ? { ...msg, feedback: currentMsg.feedback } : msg
+            ));
         }
-        return content; // 返回纯文本内容
     };
 
+    // --- 渲染消息内容 ---
+    const renderMessageContent = (msg) => {
+        if (msg.isThinking) return <Spin size="small" tip="正在检索并思考..." />;
 
-    // --- 2. 核心修正：fetchMessages 现在使用“消息渲染器” ---
+        let content = msg.content;
+        let parsedContent = null;
+        let isRag = false;
+
+        try {
+            const parsed = JSON.parse(content);
+            parsedContent = parsed;
+            if (parsed && (parsed.type === 'rag_result' || parsed.type === 'search_result')) {
+                isRag = true;
+            }
+        } catch (e) {
+            // Not JSON
+        }
+
+        return (
+            <div className="message-container-inner">
+                {isRag ? (
+                    <div className="rag-message-container">
+                        {parsedContent.type === 'rag_result' ? (
+                            <div className="rag-answer-section">
+                                <Paragraph style={{ marginBottom: 12 }}>
+                                    <RobotOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+                                    <span style={{ whiteSpace: 'pre-wrap' }}>{parsedContent.answer}</span>
+                                </Paragraph>
+                            </div>
+                        ) : (
+                            <Paragraph>{parsedContent.text}</Paragraph>
+                        )}
+
+                        {(() => {
+                             const sourceIds = parsedContent.sources || parsedContent.noticeIds || [];
+                             const sourceDocs = sourceIds.map(id => notices.find(n => n.id === id)).filter(Boolean);
+                             
+                             if (sourceDocs.length > 0) {
+                                return (
+                                    <div className="rag-sources-section">
+                                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '8px' }}>
+                                            <ThunderboltOutlined /> 参考来源 ({sourceDocs.length})
+                                        </Text>
+                                        <List
+                                            grid={{ gutter: 16, column: 1 }}
+                                            dataSource={sourceDocs}
+                                            renderItem={item => (
+                                                <List.Item style={{ marginBottom: '8px' }}>
+                                                    <Card
+                                                        size="small"
+                                                        hoverable
+                                                        onClick={() => showDetailsModal(item)}
+                                                        className="source-card"
+                                                        bodyStyle={{ padding: '8px 12px' }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                                                                <FileTextOutlined style={{ color: '#52c41a' }} />
+                                                                <Text ellipsis strong>{item.title || '无标题'}</Text>
+                                                            </div>
+                                                            <Tag color="blue">{item.noticeCode || item.notice_code}</Tag>
+                                                        </div>
+                                                        <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+                                                            供应商: {item.supplier?.short_code || 'N/A'}
+                                                        </div>
+                                                    </Card>
+                                                </List.Item>
+                                            )}
+                                        />
+                                    </div>
+                                );
+                             }
+                             return null;
+                        })()}
+                    </div>
+                ) : (
+                    <div>{content}</div>
+                )}
+
+                {/* --- 渲染反馈按钮 (仅对 AI 消息且非 Loading 状态显示) --- */}
+                {msg.sender === 'system' && !msg.isThinking && (
+                    <div className="message-feedback-actions" style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                        <Tooltip title="回答有帮助">
+                            <Button 
+                                type="text" 
+                                size="small" 
+                                icon={msg.feedback === 'like' ? <LikeFilled style={{ color: '#1890ff' }} /> : <LikeOutlined />} 
+                                onClick={() => handleFeedback(msg.id, 'like')}
+                            />
+                        </Tooltip>
+                        <Tooltip title="不能帮助我">
+                            <Button 
+                                type="text" 
+                                size="small" 
+                                icon={msg.feedback === 'dislike' ? <DislikeFilled style={{ color: '#ff4d4f' }} /> : <DislikeOutlined />} 
+                                onClick={() => handleFeedback(msg.id, 'dislike')}
+                            />
+                        </Tooltip>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // --- 加载消息记录 ---
     const fetchMessages = async (sessionId) => {
         if (!sessionId) {
-            setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请问您想查找哪方面的通知单？', feedback: null }]);
-            setIsHistoryLoading(false);
+            setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请输入您的问题，我将基于数据库为您检索答案。', feedback: null }]);
             return;
         }
         setIsHistoryLoading(true);
@@ -252,502 +381,285 @@ const IntelligentSearchPage = () => {
                 .eq('session_id', sessionId)
                 .order('created_at', { ascending: true });
             if (error) throw error;
-
-            setMessages(data.map(msg => ({
-                ...msg,
-                content: renderMessageContent(msg) // 渲染时解析内容
-            })));
+            // 注意：这里不需要再重新 renderMessageContent，因为 render 是在 return JSX 时调用的
+            // 我们只需要存原始数据，React 会处理渲染
+            setMessages(data); 
         } catch (error) {
-            messageApi.error(`加载聊天记录失败: ${error.message}`);
-            // 日志：加载消息失败
-            logSystemEvent({
-                category: 'DATA',
-                eventType: 'FETCH_MESSAGES_FAILED',
-                severity: 'ERROR',
-                message: error.message,
-                userId: currentUser?.id,
-                meta: { session_id: sessionId }
-            });
+            messageApi.error("加载消息失败");
         } finally {
             setIsHistoryLoading(false);
         }
     };
 
-    // --- 初始加载 ---
+    useEffect(() => { fetchSessions(); }, [currentUser?.id]);
     useEffect(() => {
-        fetchSessions();
-    }, [currentUser?.id]);
+        if (activeSessionId && !isLoading) fetchMessages(activeSessionId);
+        else if (!activeSessionId) setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请输入您的问题，我将基于数据库为您检索答案。', feedback: null }]);
+    }, [activeSessionId]);
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-    // --- ✨ 核心修正: 修复竞态条件 ---
-    // 仅在 activeSessionId 改变时 (用户点击Sider) 且不在加载中时，才获取消息
-    useEffect(() => {
-        if (activeSessionId && !isLoading) {
-            fetchMessages(activeSessionId);
-        } else if (!activeSessionId) {
-            // 这是 "新建对话" 状态
-            setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请问您想查找哪方面的通知单？', feedback: null }]);
-        }
-    }, [activeSessionId]); 
-
-    // --- ✨ 核心修正: 新增 Effect，当 notices 列表更新时，重新渲染消息内容 ---
-    // 这解决了消息（含ID）先加载，而 `notices` 数据后加载导致无法显示详情的问题
-    useEffect(() => {
-        if (notices.length > 0) { // 仅当 notices 确实有数据时才重渲
-            setMessages(prevMessages =>
-                prevMessages.map(msg => ({
-                    ...msg,
-                    content: renderMessageContent(msg) // 重新运行渲染函数以获取最新数据
-                }))
-            );
-        }
-    }, [notices]); 
-
-    // 滚动到底部
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
-
-    // --- 3. 核心：开始一个新聊天 ---
     const handleNewChat = (activate = true) => {
-        if (activate) {
-            setActiveSessionId(null);
-            // 日志：用户点击新建会话
-            logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'NEW_CHAT_INITIATED',
-                userId: currentUser?.id
-            });
-        }
-        setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请问您想查找哪方面的通知单？', feedback: null }]);
+        if (activate) setActiveSessionId(null);
+        setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是智能助手，请输入您的问题，我将基于数据库为您检索答案。', feedback: null }]);
     };
-
 
     const handleDeleteSession = async (e, sessionId) => {
-        e.stopPropagation(); // 阻止点击事件冒泡，防止Sider意外切换
-
+        e.stopPropagation();
         try {
-            const { error } = await supabase
-                .from('chat_sessions')
-                .delete()
-                .eq('id', sessionId)
-                .eq('user_id', currentUser.id); // 确保用户只能删除自己的
-
-            if (error) throw error;
-
-            messageApi.success('对话已删除！');
-
-            // 日志：删除会话成功
-            logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'SESSION_DELETED',
-                userId: currentUser?.id,
-                meta: { session_id: sessionId }
-            });
-
-            // 立即从Sider的UI上移除
+            await supabase.from('chat_sessions').delete().eq('id', sessionId);
             const newSessions = sessions.filter(s => s.id !== sessionId);
             setSessions(newSessions);
-
-            // 如果被删除的是当前激活的会话，则自动切换到新会话或欢迎页
             if (activeSessionId === sessionId) {
-                if (newSessions.length > 0) {
-                    setActiveSessionId(newSessions[0].id);
-                } else {
-                    handleNewChat(true); // 如果没有会话了，就新建一个
-                }
+                newSessions.length > 0 ? setActiveSessionId(newSessions[0].id) : handleNewChat(true);
             }
-
+            messageApi.success('已删除');
         } catch (error) {
-            messageApi.error(`删除失败: ${error.message}`);
-            // 日志：删除会话失败
-            logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'SESSION_DELETE_FAILED',
-                severity: 'ERROR',
-                message: error.message,
-                userId: currentUser?.id,
-                meta: { session_id: sessionId }
-            });
+            messageApi.error('删除失败');
         }
     };
 
-    // --- 4. 核心：发送消息（智能处理新会话） ---
+    useEffect(() => {
+        const texts = ["总结电柜问题", '总结线束问题', 'Yongqing 12月的问题'];
+        let index = 0;
+        const intervalId = setInterval(() => {
+            setInputValue(texts[index]);
+            index = (index + 1) % texts.length;
+        }, 5000);
+        return () => clearInterval(intervalId);
+    }, []);
+
+    // --- 核心：发送消息处理 ---
     const handleSendMessage = async () => {
         const userQuery = inputValue.trim();
         if (!userQuery || !currentUser?.id) {
-            messageApi.warning(!userQuery ? '请输入您的问题或关键词！' : '无法发送消息，用户未登录。');
+            messageApi.warning('请输入问题');
             return;
         };
 
         setIsLoading(true);
-        const startTime = Date.now(); // 记录开始时间
+        const startTime = Date.now();
 
-        // 日志：搜索尝试
-        logSystemEvent({
-            category: 'AI',
-            eventType: 'SEARCH_ATTEMPT',
-            message: 'User initiated a search',
-            userId: currentUser.id,
-            meta: { query_length: userQuery.length } // 隐私考虑，通常不直接记录原始query，只记录长度或脱敏信息
-        });
-
+        // 1. Session 管理
         let currentSessionId = activeSessionId;
-        let isNewSession = false;
+        if (!currentSessionId) {
+            const firstTitle = userQuery.length > 8 ? `${userQuery.substring(0, 8)}...` : userQuery;
+            const { data: newSession, error } = await supabase.from('chat_sessions').insert({ user_id: currentUser.id, title: firstTitle }).select().single();
+            if (error) { messageApi.error('创建会话失败'); setIsLoading(false); return; }
+            currentSessionId = newSession.id;
+            setActiveSessionId(currentSessionId);
+            setSessions(prev => [newSession, ...prev]);
+            setMessages([]);
+        }
+
+        // 2. 乐观 UI 更新
+        const tempUserMsgId = `temp-${Date.now()}`;
+        const tempSystemMsgId = `temp-sys-${Date.now()}`;
+        const optimisticUserMsg = { id: tempUserMsgId, sender: 'user', content: userQuery, timestamp: new Date().toISOString() };
+        // 注意：isThinking 时不应该显示点赞按钮
+        const thinkingMsg = { id: tempSystemMsgId, sender: 'system', content: <Spin size="small" tip="AI 正在阅读文档并生成回答..." />, isThinking: true };
+
+        setMessages(prev => [...prev, optimisticUserMsg, thinkingMsg]);
+        setInputValue('');
+
+        // 3. 保存用户消息
+        await supabase.from('chat_messages').insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery });
 
         try {
-            // --- 如果是新会话，先创建会话 ---
-            if (!currentSessionId) {
-                isNewSession = true;
-                // --- ✨ 核心修正: 使用您要求的标题格式 ---
-                const firstTitle = userQuery.length > 4 ? `${userQuery.substring(0, 4)}...` : userQuery;
+            // ... (STEP A 检索代码保持不变) ...
+            let ragDocs = [];
+            let searchMethod = 'keyword';
 
-                const { data: newSession, error: sessionError } = await supabase
-                    .from('chat_sessions')
-                    .insert({ user_id: currentUser.id, title: firstTitle })
-                    .select()
-                    .single();
-                if (sessionError) throw sessionError;
+            if (apiKey) {
+                const queryVector = await getGeminiEmbedding(userQuery);
+                if (queryVector) {
+                    searchMethod = 'vector';
+                    const { data, error } = await supabase.rpc('match_notices', {
+                        query_embedding: queryVector,
+                        match_threshold: 0.45,
+                        match_count: Math.max(1, Math.floor(notices.length * 0.25)),
+                        query_text: userQuery
+                    });
 
-                currentSessionId = newSession.id;
-                setActiveSessionId(currentSessionId); // 激活新会话
-                setSessions(prev => [newSession, ...prev]); // 更新Sider列表
-                setMessages([]); // 清空欢迎语
-            }
-
-            // 乐观更新UI
-            const optimisticUserMessage = { id: `temp-${Date.now()}`, sender: 'user', content: userQuery, timestamp: new Date().toISOString() };
-            const thinkingMessageId = `temp-${Date.now()}-thinking`;
-            const thinkingMessageUI = { id: thinkingMessageId, sender: 'system', content: <Spin size="small" />, isThinking: true };
-
-            // --- ✨ 核心修正: 确保新会话也能正确显示第一条消息 ---
-            setMessages(prev => isNewSession ? [optimisticUserMessage, thinkingMessageUI] : [...prev, optimisticUserMessage, thinkingMessageUI]);
-            setInputValue('');
-
-            // 1. 保存用户消息到数据库
-            const { error: userSaveError } = await supabase
-                .from('chat_messages')
-                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery, timestamp: optimisticUserMessage.timestamp });
-            if (userSaveError) throw userSaveError;
-
-            // 2. --- TODO: 调用您的 AI Edge Function (这里模拟) ---
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            const lowerCaseQuery = userQuery.toLowerCase();
-            const mockResults = notices.filter(n => {
-                // 将整个通知单对象（包括所有历史记录和详情）转换为一个可搜索的字符串
-                const searchableText = JSON.stringify(n).toLowerCase();
-                return searchableText.includes(lowerCaseQuery);
-            }).slice(0, 5); 
-
-            // 计算耗时
-            const durationMs = Date.now() - startTime;
-
-            // 日志：搜索完成（记录性能和结果数量）
-            logSystemEvent({
-                category: 'AI',
-                eventType: 'SEARCH_COMPLETED',
-                severity: 'INFO',
-                message: `Search returned ${mockResults.length} results`,
-                userId: currentUser.id,
-                meta: { 
-                    result_count: mockResults.length,
-                    duration_ms: durationMs,
-                    session_id: currentSessionId
+                    if (!error && data) ragDocs = data;
                 }
-            });
-
-            let systemResponseContent; // <-- 存入DB的 (将是JSON字符串)
-            let systemResponseRenderableContent; // <-- 立即显示的 (将是JSX)
-
-            if (mockResults.length > 0) {
-                systemResponseRenderableContent = (
-                    <div>
-                        <Paragraph>根据您的描述，我找到了以下相关的通知单：</Paragraph>
-                        <List
-                            size="small"
-                            dataSource={mockResults}
-                            renderItem={item => (
-                                <List.Item key={item.id} style={{ padding: '8px 0' }}>
-                                    <List.Item.Meta
-                                        avatar={<FileTextOutlined style={{ fontSize: '18px', color: '#1890ff', marginTop: '4px' }} />}
-                                        title={<a onClick={() => showDetailsModal(item)}>{item.title || item.noticeCode}</a>}
-                                        description={`编号: ${item.noticeCode} | 供应商: ${item?.supplier?.shortCode}`}
-                                    />
-                                </List.Item>
-                            )}
-                        />
-                    </div>
-                );
-                const contentForDB = {
-                    type: "search_result",
-                    text: "根据您的描述，我找到了以下相关的通知单：",
-                    noticeIds: mockResults.map(n => n.id) // 只存储ID
-                };
-                systemResponseContent = JSON.stringify(contentForDB); // 转换为字符串存入DB
-            } else {
-                systemResponseRenderableContent = "抱歉，未能找到相关通知单。";
-                systemResponseContent = systemResponseRenderableContent; // 纯文本直接存
             }
 
+            if (ragDocs.length === 0) {
+                searchMethod = 'keyword';
+                const lowerCaseQuery = userQuery.toLowerCase();
+                const keywords = lowerCaseQuery.split(/[\s,，+]+/);
+                ragDocs = notices.filter(n => {
+                    const text = JSON.stringify(n).toLowerCase();
+                    return keywords.every(k => text.includes(k));
+                }).slice(0, 3).map(n => ({ id: n.id, title: n.title, notice_code: n.noticeCode, content: n, similarity: 1 }));
+            }
 
-            // 3. 保存系统消息到数据库
-            const { data: savedSystemData, error: systemSaveError } = await supabase
-                .from('chat_messages')
-                .insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'system', content: systemResponseContent })
-                .select()
-                .single();
-            if (systemSaveError) throw systemSaveError;
+            // ... (STEP B 生成代码保持不变) ...
+            let aiAnswerText = "";
+            let finalSourceDocs = [];
 
-            // 4. 更新UI，用真实数据替换“思考中”
+            if (ragDocs.length > 0) {
+                const { text, usedIndices } = await generateRAGResponse(userQuery, ragDocs);
+                aiAnswerText = text;
+                if (usedIndices && usedIndices.length > 0) {
+                    finalSourceDocs = usedIndices.map(idx => ragDocs[idx]).filter(Boolean);
+                }
+            } else {
+                aiAnswerText = "抱歉，在知识库中未找到相关内容，无法回答您的问题。";
+            }
+
+            // ... (STEP C 存储代码) ...
+            const resultPayload = {
+                type: "rag_result",
+                answer: aiAnswerText,
+                sources: finalSourceDocs.map(d => d.id),
+                meta: { method: searchMethod, duration: Date.now() - startTime }
+            };
+            const resultString = JSON.stringify(resultPayload);
+
+            const { data: savedSystemMsg } = await supabase.from('chat_messages').insert({
+                user_id: currentUser.id,
+                session_id: currentSessionId,
+                sender: 'system',
+                content: resultString
+            }).select().single();
+
+            // 更新 UI (替换 thinking message)
             setMessages(prev => prev.map(msg =>
-                msg.id === thinkingMessageId
-                    ? { ...savedSystemData, content: systemResponseRenderableContent }
+                msg.id === tempSystemMsgId
+                    ? { ...savedSystemMsg } // 这里会包含数据库返回的 ID 和 feedback 字段 (默认为 null)
                     : msg
             ));
 
         } catch (error) {
-            const durationMs = Date.now() - startTime;
-            messageApi.error(`发送失败: ${error.message}`);
-            setMessages(prev => prev.filter(msg => !msg.isThinking)); // 移除“思考中”
-
-            // 日志：搜索失败
-            logSystemEvent({
-                category: 'AI',
-                eventType: 'SEARCH_FAILED',
-                severity: 'ERROR',
-                message: error.message,
-                userId: currentUser.id,
-                meta: { duration_ms: durationMs }
-            });
+            console.error(error);
+            messageApi.error(`处理失败: ${error.message}`);
+            setMessages(prev => prev.filter(msg => msg.id !== tempSystemMsgId));
         } finally {
             setIsLoading(false);
         }
     };
 
-    // --- 5. 核心：提交评分（现在关联到会话） ---
     const handleRatingSubmit = async () => {
-        if (currentRating === 0 || !activeSessionId) {
-            messageApi.warning('请选择星级后再提交。');
-            return;
-        }
-        try {
-            const { error } = await supabase.from('chat_ratings').insert({
-                user_id: currentUser.id,
-                session_id: activeSessionId,
-                rating: currentRating,
-                comment: ratingComment // 如果有评论表字段，可以一起插入
-            });
-            if (error) throw error;
-            messageApi.success(`感谢您的评分 (${currentRating} 星)!`);
-            
-            // 日志：用户评分
-            logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'SESSION_RATED',
-                message: 'User rated session',
-                userId: currentUser.id,
-                meta: { 
-                    session_id: activeSessionId,
-                    rating: currentRating,
-                    has_comment: !!ratingComment
-                }
-            });
-
-            setShowRatingModal(false);
-            setCurrentRating(0);
-            setRatingComment('');
-        } catch (error) {
-            messageApi.error(`提交评分失败: ${error.message}`);
-            logSystemEvent({
-                category: 'INTERACTION',
-                eventType: 'RATE_FAILED',
-                severity: 'ERROR',
-                message: error.message,
-                userId: currentUser.id
-            });
-        }
-    };
-
-    const handleFeedback = async (messageId, feedbackType) => {
-        const originalFeedback = messages.find(msg => msg.id === messageId)?.feedback;
-        const newFeedback = originalFeedback === feedbackType ? null : feedbackType;
-
-        setMessages(prevMessages => prevMessages.map(msg =>
-            msg.id === messageId ? { ...msg, feedback: newFeedback } : msg
-        ));
-
-        try {
-            const { error } = await supabase
-                .from('chat_messages')
-                .update({ feedback: newFeedback })
-                .eq('id', messageId)
-                .eq('user_id', currentUser?.id);
-
-            if (error) {
-                setMessages(prevMessages => prevMessages.map(msg =>
-                    msg.id === messageId ? { ...msg, feedback: originalFeedback } : msg
-                ));
-                throw error;
-            }
-            
-            // 日志：用户点赞/点踩
-            if (newFeedback) {
-                logSystemEvent({
-                    category: 'INTERACTION',
-                    eventType: 'MESSAGE_FEEDBACK',
-                    message: `User ${newFeedback}d a message`,
-                    userId: currentUser.id,
-                    meta: { 
-                        session_id: activeSessionId,
-                        message_id: messageId,
-                        feedback_type: newFeedback
-                    }
-                });
-            }
-
-        } catch (error) {
-            console.error("Failed to update feedback:", error);
-            messageApi.error(`更新反馈失败: ${error.message}`);
-        }
-    };
-
-    // --- ✨ 核心修正: 确保 handleEndSession 函数已定义 ---
-    const handleEndSession = () => {
-        setShowRatingModal(true);
-    };
-
-    const handleRatingCancel = () => {
+        if (!activeSessionId) return;
+        await supabase.from('chat_ratings').insert({ user_id: currentUser.id, session_id: activeSessionId, rating: currentRating, comment: ratingComment });
+        messageApi.success('感谢反馈');
         setShowRatingModal(false);
-        setCurrentRating(0);
     };
 
-    const showDetailsModal = (notice) => {
-        // 日志：查看详情
-        logSystemEvent({
-            category: 'INTERACTION',
-            eventType: 'VIEW_NOTICE_DETAIL',
-            userId: currentUser?.id,
-            meta: { notice_id: notice.id, notice_code: notice.noticeCode }
-        });
-        setDetailsModal({ visible: true, notice });
-    };
-
+    const handleEndSession = () => setShowRatingModal(true);
+    const handleRatingCancel = () => { setShowRatingModal(false); setCurrentRating(0); };
+    const showDetailsModal = (notice) => setDetailsModal({ visible: true, notice });
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
-
     const handlePlaceholder = () => messageApi.info('此操作在此页面不可用。');
 
     return (
         <Layout className="intelligent-search-layout">
-            {/* --- 6. 核心：渲染Sider (会话列表) --- */}
-            <Sider width={250} className="chat-sider">
-                <div className="chat-sider-header">
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => handleNewChat(true)} block>
-                        新建对话
-                    </Button>
+            <Sider
+                width={260}
+                theme="light"
+                className="chat-sider"
+                collapsible
+                collapsed={collapsed}
+                onCollapse={(value) => setCollapsed(value)}
+                breakpoint="lg"
+                collapsedWidth="80"
+                trigger={null}
+            >
+                <div className="chat-sider-header" style={{ padding: collapsed ? '16px 8px' : '16px', textAlign: 'center' }}>
+                    {collapsed ? (
+                        <Tooltip title="新建对话" placement="right">
+                            <Button type="primary" shape="circle" icon={<PlusOutlined />} onClick={() => handleNewChat(true)} size="large" />
+                        </Tooltip>
+                    ) : (
+                        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleNewChat(true)} block className="new-chat-btn">
+                            新建对话
+                        </Button>
+                    )}
                 </div>
-                <Menu
-                    mode="inline"
-                    selectedKeys={[activeSessionId]}
-                    onClick={(e) => setActiveSessionId(e.key)}
-                    className="chat-sider-menu"
+
+                <div className="chat-list-container">
+                    <Menu
+                        mode="inline"
+                        selectedKeys={[activeSessionId]}
+                        onClick={(e) => setActiveSessionId(e.key)}
+                        inlineCollapsed={collapsed}
+                        items={sessions.map(s => ({
+                            key: s.id,
+                            icon: <RobotOutlined />,
+                            label: (
+                                <div className="session-item">
+                                    <span className="session-title">{s.title}</span>
+                                    {!collapsed && (
+                                        <Popconfirm title="删除对话?" onConfirm={(e) => handleDeleteSession(e, s.id)} onCancel={e => e.stopPropagation()}>
+                                            <DeleteOutlined className="delete-icon" onClick={e => e.stopPropagation()} />
+                                        </Popconfirm>
+                                    )}
+                                </div>
+                            )
+                        }))}
+                    />
+                </div>
+
+                <div
+                    onClick={() => setCollapsed(!collapsed)}
+                    style={{ height: '48px', lineHeight: '48px', textAlign: 'center', cursor: 'pointer', borderTop: '1px solid #f0f0f0', color: 'rgba(0, 0, 0, 0.45)', fontSize: '16px' }}
                 >
-                    {sessions.map(session => (
-                        // --- 3. 核心修正：为 Menu.Item 添加删除按钮和确认框 ---
-                        <Menu.Item key={session.id}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text ellipsis style={{ width: '150px' }}>{session.title}</Text>
-                                <Popconfirm
-                                    title="确定要删除此对话吗？"
-                                    description="此操作不可撤销。"
-                                    onConfirm={(e) => handleDeleteSession(e, session.id)}
-                                    onCancel={(e) => e.stopPropagation()}
-                                    okText="删除"
-                                    cancelText="取消"
-                                >
-                                    <Button
-                                        type="text"
-                                        icon={<DeleteOutlined />}
-                                        danger
-                                        size="small"
-                                        onClick={(e) => e.stopPropagation()} // 阻止菜单项被点击
-                                    />
-                                </Popconfirm>
-                            </div>
-                        </Menu.Item>
-                    ))}
-                </Menu>
+                    {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                </div>
             </Sider>
 
-            {/* --- 7. 核心：渲染Content (聊天窗口) --- */}
             <Layout className="chat-content-layout">
-                <Content style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div className="chat-content-header">
+                <Content className="chat-main-area">
+                    <div className="chat-header">
                         <Space>
                             <Avatar icon={<RobotOutlined />} style={{ backgroundColor: '#1890ff' }} />
-                            <Title level={4} style={{ margin: 0 }}>智能检索助手</Title>
-                            <Paragraph type="secondary" style={{ display: 'contents' }}>检索通知单的所有内容</Paragraph>
+                            <div>
+                                <Title level={5} style={{ margin: 0 }}>RAG 智能检索助手</Title>
+                                <Text type="secondary" style={{ fontSize: 12 }}>基于 {notices.length} 条通知单知识库</Text>
+                            </div>
                         </Space>
-                        <Button icon={<StarOutlined />} onClick={handleEndSession} disabled={!activeSessionId || messages.length <= 1}>
-                            评价本次会话
-                        </Button>
+                        <Button icon={<StarOutlined />} onClick={handleEndSession} disabled={!activeSessionId}>评价</Button>
                     </div>
 
-                    <div className="chat-messages-container">
-                        {isHistoryLoading ? (
-                            <div className="chat-spin-container"><Spin /></div>
-                        ) : (
-                            messages.map((msg) => (
-                                <div key={msg.id} className={`chat-message ${msg.sender === 'user' ? 'user' : 'system'}`}>
-                                    <Card
-                                        size="small"
-                                        className="chat-message-card"
-                                        style={{
-                                            backgroundColor: msg.sender === 'user' ? '#e6f7ff' : '#ffffff',
-                                            borderColor: msg.sender === 'user' ? '#91d5ff' : '#f0f0f0',
-                                        }}
-                                    >
-                                        <div style={{ color: msg.isError ? 'red' : 'inherit' }}>{msg.content}</div>
-                                        {msg.sender === 'system' && !msg.isThinking && !msg.isError && (
-                                            <Space size="small" className="feedback-buttons">
-                                                <Tooltip title="点赞"><Button type="text" size="small" shape="circle" icon={<LikeOutlined />} style={{ color: msg.feedback === 'like' ? '#1890ff' : 'inherit' }} onClick={() => handleFeedback(msg.id, 'like')} /></Tooltip>
-                                                <Tooltip title="点踩"><Button type="text" size="small" shape="circle" icon={<DislikeOutlined />} style={{ color: msg.feedback === 'dislike' ? '#ff4d4f' : 'inherit' }} onClick={() => handleFeedback(msg.id, 'dislike')} /></Tooltip>
-                                            </Space>
-                                        )}
-                                        {msg.timestamp && !msg.isThinking && (
-                                            <Text type="secondary" className="chat-message-timestamp">
-                                                {dayjs(msg.timestamp).format('YYYY.MM.DD HH:mm')}
-                                            </Text>
-                                        )}
-                                    </Card>
+                    <div className="chat-messages-viewport">
+                        {messages.map((msg) => (
+                            <div key={msg.id} className={`chat-row ${msg.sender === 'user' ? 'row-user' : 'row-system'}`}>
+                                <div className="chat-bubble">
+                                    {/* 调用渲染函数 */}
+                                    {renderMessageContent(msg)}
+                                    
+                                    {!msg.isThinking && msg.timestamp && (
+                                        <div className="msg-time">{dayjs(msg.timestamp).format('HH:mm')}</div>
+                                    )}
                                 </div>
-                            ))
-                        )}
+                            </div>
+                        ))}
                         <div ref={messagesEndRef} />
                     </div>
 
-                    <div className="chat-input-area">
-                        <Space.Compact style={{ width: '100%' }}>
-                            <Input
-                                size="large"
-                                placeholder="输入您的问题或关键词..."
+                    <div className="chat-input-wrapper">
+                        {!apiKey && <div className="api-warning"><WarningOutlined /> 未配置 Gemini API Key，将使用基础关键词搜索。</div>}
+                        <div className="input-box">
+                            <TextArea
+                                placeholder="请输入关于通知单的问题..."
+                                autoSize={{ minRows: 1, maxRows: 4 }}
                                 value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                onPressEnter={!isLoading ? handleSendMessage : undefined}
-                                disabled={isLoading || isHistoryLoading}
+                                onChange={e => setInputValue(e.target.value)}
+                                onPressEnter={(e) => {
+                                    if (!e.shiftKey && !isLoading) {
+                                        e.preventDefault();
+                                        handleSendMessage();
+                                    }
+                                }}
+                                disabled={isLoading}
                             />
-                            <Button
-                                type="primary"
-                                size="large"
-                                icon={<SendOutlined />}
-                                onClick={handleSendMessage}
-                                loading={isLoading}
-                                disabled={isHistoryLoading}
-                            />
-                        </Space.Compact>
+                            <Button type="primary" icon={<SendOutlined />} onClick={handleSendMessage} loading={isLoading} />
+                        </div>
                     </div>
                 </Content>
             </Layout>
 
-            {/* --- 8. 弹窗 (保持不变) --- */}
             <NoticeDetailModal
                 notice={detailsModal.notice}
                 open={detailsModal.visible}

@@ -38,3 +38,46 @@
 
 /* 侧边栏收起时，如果不想要背景色，可以取消下面这行的注释 */
 /* .ant-layout-sider-collapsed .logo-container { background: transparent; } */
+
+/* Logo 区域样式 */
+.logo-container {
+    height: 32px;
+    margin: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-img {
+    height: 32px;
+    width: 32px;
+}
+
+/* --- 滚动通知栏动画样式 --- */
+.scrolling-notice-content {
+    display: inline-block;
+    white-space: nowrap;
+    padding-left: 100%; /* 初始状态在可视区域右侧 */
+    animation: scroll-left 45s linear infinite; /* 25秒循环一次，可调整速度 */
+}
+
+/* 鼠标悬停时暂停动画，方便用户阅读 */
+.scrolling-notice-content:hover {
+    animation-play-state: paused;
+}
+
+@keyframes scroll-left {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+/* 去除 Alert 组件默认的圆角和下边距，使其更像通栏 */
+.notice-bar-full-width {
+    border-radius: 0 !important;
+    border: none !important;
+    margin-bottom: 0 !important;
+}

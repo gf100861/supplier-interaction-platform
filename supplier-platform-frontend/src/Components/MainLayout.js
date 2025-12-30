@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Layout, Menu, Space, Avatar, Button, Typography, message } from 'antd';
+import { Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag } from 'antd';
 import {
     HomeOutlined,
     UserOutlined,
@@ -9,21 +9,27 @@ import {
     BookOutlined,
     PrinterOutlined,
     ShareAltOutlined,
-    OpenAIOutlined,
     GlobalOutlined,
     CrownOutlined,
-    RobotOutlined
+    RobotOutlined,
+    // 图标
+    InfoCircleOutlined,
+    ExclamationOutlined,
+    CloseCircleOutlined,
+    WarningOutlined,
+    SoundOutlined
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AlertBell } from './notice/AlertBell';
 import { FileReceiver } from '../Pages/FileReceiver';
 import { useLanguage } from '../contexts/LanguageContext';
+import { supabase } from '../supabaseClient'; // --- 引入 Supabase 客户端 ---
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
 
-// 智能的权限过滤函数
+// --- 智能权限过滤函数 (保持不变) ---
 const filterMenu = (menuItems, role) => {
     return menuItems
         .map(item => {
@@ -31,12 +37,116 @@ const filterMenu = (menuItems, role) => {
             if (item.children) {
                 const visibleChildren = filterMenu(item.children, role);
                 if (visibleChildren.length === 0) return null;
-                // 如果子菜单只有一个，且没有显式设置不扁平化，逻辑上可以扁平化，但 Antd Menu 需要层级，这里保留层级
                 return { ...item, children: visibleChildren };
             }
             return item;
         })
         .filter(item => item !== null);
+};
+
+// --- 修改后的组件：滚动通知栏 (支持后端数据 + 实时更新) ---
+const RollingNoticeBar = () => {
+    // 控制显示的状态
+    const [visible, setVisible] = useState(true);
+    // 存储从后端获取的通知数据
+    const [notices, setNotices] = useState([]);
+
+    // 定义存储在 localStorage 中的 key
+    const STORAGE_KEY = 'system_notice_closed_date';
+
+    // 1. 初始化检查本地缓存 (是否今日已关闭)
+    useEffect(() => {
+        const closedDate = localStorage.getItem(STORAGE_KEY);
+        const today = new Date().toDateString();
+        if (closedDate === today) {
+            setVisible(false);
+        }
+    }, []);
+
+    // 2. 从 Supabase 获取数据并建立实时监听
+    useEffect(() => {
+        const fetchNotices = async () => {
+            const { data, error } = await supabase
+                .from('system_notices')
+                .select('*')
+                .eq('is_active', true) // 只获取激活状态的公告
+                .order('created_at', { ascending: false });
+
+            if (!error && data) {
+                setNotices(data);
+            }
+        };
+
+        // 初次加载
+        fetchNotices();
+
+        // 订阅实时变化 (新增/删除公告时自动刷新)
+        const channel = supabase
+            .channel('public:system_notices')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'system_notices' }, () => {
+                fetchNotices();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, []);
+
+    // 如果没有通知，或者用户已经关闭，直接不渲染
+    if (!visible || !notices || notices.length === 0) return null;
+
+    // --- 动态颜色逻辑 ---
+    // 优先级: Error (红) > Warning (橙) > Info (蓝)
+    const hasError = notices.some(n => n.type === 'error');
+    const hasWarning = notices.some(n => n.type === 'warning');
+
+    let alertType = 'info';
+    let icon = <SoundOutlined />;
+
+    if (hasError) {
+        alertType = 'error';
+        icon = <ExclamationOutlined />;
+    } else if (hasWarning) {
+        alertType = 'warning';
+        icon = <WarningOutlined />;
+    }
+
+    // 处理关闭事件
+    const handleClose = () => {
+        const today = new Date().toDateString();
+        localStorage.setItem(STORAGE_KEY, today);
+        setVisible(false);
+    };
+
+    const renderContent = () => (
+        <div className="scrolling-notice-content">
+            {notices.map((notice) => (
+                <span key={notice.id} style={{ marginRight: '60px', display: 'inline-flex', alignItems: 'center' }}>
+                    <Tag color={notice.type === 'error' ? 'red' : notice.type === 'warning' ? 'orange' : 'blue'}>
+                        {notice.type === 'error' ? 'OUTAGE' : notice.type === 'warning' ? 'WARN' : 'NEWS'}
+                    </Tag>
+                    <span style={{ fontWeight: 500 }}>{notice.content}</span>
+                </span>
+            ))}
+        </div>
+    );
+
+    return (
+        <Alert
+            banner
+            type={alertType}
+            icon={icon}
+            message={
+                <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {renderContent()}
+                </div>
+            }
+            className="notice-bar-full-width"
+            closable
+            onClose={handleClose}
+        />
+    );
 };
 
 const MainLayout = () => {
@@ -48,8 +158,7 @@ const MainLayout = () => {
 
     const { language, toggleLanguage, t } = useLanguage();
 
-    // --- 核心修正：将菜单定义移入组件内部，以便使用 t() ---
-    // 使用 useMemo 并在依赖中加入 'language'，确保切换语言时重新生成菜单
+    // 菜单定义
     const allMenuItems = useMemo(() => [
         { key: '/', icon: <HomeOutlined />, label: t('menu.dashboard'), roles: ['SD', 'Manager', 'Supplier', 'Admin'] },
         { key: '/audit-plan', icon: <AuditOutlined />, label: t('menu.auditPlan'), roles: ['SD', 'Manager'] },
@@ -86,7 +195,7 @@ const MainLayout = () => {
             label: t('menu.admin'),
             roles: ['Admin']
         }
-    ], [language, t]); // 依赖项包含 language
+    ], [language, t]);
 
     const getOpenKeys = (path) => {
         for (const item of allMenuItems) {
@@ -99,12 +208,10 @@ const MainLayout = () => {
 
     useEffect(() => {
         const currentPath = '/' + location.pathname.split('/')[1];
-        // 特殊处理根路径
-        const effectiveKey = location.pathname === '/' ? '/' : currentPath;
+        // const effectiveKey = location.pathname === '/' ? '/' : currentPath; 
 
-        setSelectedKeys([location.pathname]); // 精确匹配
+        setSelectedKeys([location.pathname]);
         if (!collapsed) {
-            // 如果已经在 submenu 中，保持展开
             const newOpenKeys = getOpenKeys(location.pathname);
             if (newOpenKeys.length > 0) setOpenKeys(prev => [...new Set([...prev, ...newOpenKeys])]);
         }
@@ -132,23 +239,19 @@ const MainLayout = () => {
     return (
         <Layout style={{ minHeight: '100vh' }}>
             <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
-
-                {/* 使用新的 class 容器 */}
-                {/* 使用 class 控制样式，移除内联 style */}
                 <div className="logo-container">
                     <img
                         src="/system-logo.png"
                         alt="Logo"
                         className="logo-img"
                     />
-                    {/* 如果需要显示文字，且在收起时隐藏 */}
                     {!collapsed && (
                         <span style={{
                             color: 'white',
                             marginLeft: 8,
                             fontWeight: 600,
                             fontSize: '14px',
-                            whiteSpace: 'nowrap', // 防止文字换行
+                            whiteSpace: 'nowrap',
                             overflow: 'hidden'
                         }}>
                             SD Platform
@@ -177,7 +280,6 @@ const MainLayout = () => {
                 >
                     <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>{t('app.title')}</h2>
                     <Space size="large">
-
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>
 
@@ -192,6 +294,10 @@ const MainLayout = () => {
                         <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>{t('header.logout')}</Button>
                     </Space>
                 </Header>
+
+                {/* --- 动态滚动的通知栏 --- */}
+                <RollingNoticeBar />
+
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: '#fff', borderRadius: '8px' }}>
                         <Outlet />

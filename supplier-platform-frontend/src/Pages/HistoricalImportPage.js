@@ -113,6 +113,38 @@ const HistoricalImportPage = () => {
     const addNotices = mockAddNotices;
     const [form] = Form.useForm();
 
+
+    // --- 新增：调用 Gemini 生成向量 ---
+    const getGeminiEmbedding = async (text) => {
+        if (!text || !text.trim()) return null;
+
+        // 清理一下文本，去掉过多的换行，减少Token消耗
+        const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 10000); // 限制长度
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: "models/text-embedding-004",
+                        content: { parts: [{ text: cleanText }] }
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error("Embedding API request failed");
+
+            const result = await response.json();
+            // Gemini 返回的结构是 embedding.values
+            return result.embedding.values;
+        } catch (error) {
+            console.error("生成向量失败:", error);
+            return null; // 失败了不要卡住流程，存 null 即可
+        }
+    };
+
     // --- Google Gemini API 调用核心逻辑 (支持多页 + 图片深度解析) ---
     const callGeminiVisionAPI = async (base64Images) => {
         if (!apiKey) {
@@ -255,60 +287,6 @@ const HistoricalImportPage = () => {
         return images;
     };
 
-    // --- 核心功能 1: Excel 批量导入 ---
-    const handleExcelBatchImport = async (file) => {
-        setLoading(true);
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const buffer = e.target.result;
-                const workbook = new ExcelJS.Workbook();
-                await workbook.xlsx.load(buffer);
-                const worksheet = workbook.getWorksheet(1);
-                const noticesToInsert = [];
-                let successCount = 0;
-                worksheet.eachRow((row, rowNumber) => {
-                    if (rowNumber <= 1) return;
-                    const supplierCode = row.getCell(1).value?.toString();
-                    const dateVal = row.getCell(2).value;
-                    const problemDesc = row.getCell(3).value?.toString();
-                    const rootCause = row.getCell(4).value?.toString();
-                    const action = row.getCell(5).value?.toString();
-                    const reportNo = row.getCell(6).value?.toString();
-
-                    if (supplierCode && problemDesc) {
-                        const supplier = suppliers.find(s => s.short_code === supplierCode);
-                        const aiTrainingText = `[Problem]: ${problemDesc}\n[Root Cause]: ${rootCause}\n[Action]: ${action}`;
-                        noticesToInsert.push({
-                            title: problemDesc.substring(0, 50) + (problemDesc.length > 50 ? '...' : ''),
-                            description: aiTrainingText,
-                            notice_code: reportNo || `HIST-${Date.now()}-${rowNumber}`,
-                            assigned_supplier_id: supplier?.id || null,
-                            assigned_supplier_name: supplier?.name || 'Unknown History Supplier',
-                            status: '已完成',
-                            category: 'Historical 8D',
-                            created_at: dateVal ? dayjs(dateVal).toISOString() : new Date().toISOString(),
-                            details: { finding: problemDesc, root_cause: rootCause, action_plan: action }
-                        });
-                        successCount++;
-                    }
-                });
-                if (noticesToInsert.length > 0) {
-                    await addNotices(noticesToInsert);
-                    messageApi.success(`成功模拟导入 ${successCount} 条数据！`);
-                } else {
-                    messageApi.warning("未解析到有效数据。");
-                }
-            } catch (error) {
-                console.error(error);
-                messageApi.error("Excel 解析失败: " + error.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-        reader.readAsArrayBuffer(file);
-        return false;
-    };
 
     // --- 本地正则提取 (Fallback - 仅做文本提取) ---
     const extractTextLocal = async (file) => {
@@ -405,6 +383,8 @@ const HistoricalImportPage = () => {
 
         const results = [];
 
+        const loadingMsgKey = ['魔法开始...', '正在施展魔法...', '魔法进行中...', '魔法即将完成...'];
+
         for (let i = 0; i < fileList.length; i++) {
             const fileItem = fileList[i];
             const file = fileItem.originFileObj;
@@ -422,6 +402,8 @@ const HistoricalImportPage = () => {
                     if (!apiKey) throw new Error("缺少 Google API Key");
 
                     const base64Images = await convertPdfToImages(file);
+
+                    // setParseProgress(loadingMsgKey[i % loadingMsgKey.length]);
                     setParseProgress(`正在 AI 分析 (${i + 1}/${fileList.length})...`);
                     const result = await callGeminiVisionAPI(base64Images);
 
@@ -503,7 +485,6 @@ const HistoricalImportPage = () => {
         }
     };
 
-    // 归档单个（当前表单内容 + 关联的原始文件）
     // 归档单个（当前表单内容 + 关联的原始文件数据）
     const handleSingleFileArchive = async (values) => {
         setLoading(true);
@@ -534,6 +515,24 @@ const HistoricalImportPage = () => {
  [Interim/Permanent Action]: ${values.interimAction}
             `.trim();
 
+            // 1. 准备要向量化的文本 (语义指纹)
+            // 组合：零件名 + 标题 + 问题描述 + 根本原因
+            const supplierName = suppliers.find(s => s.id === values.supplierId)?.name || '';
+
+            const textToEmbed = `
+    [Category]: Historical 8D // <-- 新增：明确这是历史数据
+    [Supplier]: ${supplierName} // <-- 新增：加上供应商名
+    [Part]: ${values.partName || ''}
+    [Title]: ${values.title}
+    [Issue]: ${values.summary}
+    [Cause]: ${values.rootCause}
+`.trim();
+
+            // 2. 调用 API 生成向量 (新增步骤)
+            messageApi.loading({ content: '正在生成 AI 语义向量...', key: 'embed' });
+            const embeddingVector = await getGeminiEmbedding(textToEmbed);
+            messageApi.success({ content: '向量生成完毕', key: 'embed' });
+
             // 4. 构建插入数据库的数据
             const newNotice = {
                 title: values.title,
@@ -544,6 +543,7 @@ const HistoricalImportPage = () => {
                 category: 'Historical 8D',
                 creator_id: currentUser.id,
                 created_at: values.date ? values.date.toISOString() : new Date().toISOString(),
+                embedding: embeddingVector,
 
                 sd_notice: {
                     creatorId: currentUser.id,
@@ -845,15 +845,6 @@ const HistoricalImportPage = () => {
                             </Card>
                         </Col>
                     </Row>
-                </Tabs.TabPane>
-
-                <Tabs.TabPane tab={<span><FileExcelOutlined /> Excel 批量迁移</span>} key="excel">
-                    <Card title="旧版 8D 跟踪表导入">
-                        <Dragger beforeUpload={handleExcelBatchImport} showUploadList={false} accept=".xlsx, .xls">
-                            <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: '#1890ff' }} /></p>
-                            <p className="ant-upload-text">点击或拖拽历史 Excel 跟踪表到此区域</p>
-                        </Dragger>
-                    </Card>
                 </Tabs.TabPane>
             </Tabs>
         </div>

@@ -107,11 +107,32 @@ const SingleNoticeItem = ({
         text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
 
     // 获取纯文本标题用于高亮
-    const rawTitle = item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.title)) : toPlainText(item.title);
+    const plainTitle = toPlainText(item.title);
+    const chineseTitle = getChineseOnly(plainTitle)?.trim();
+
+    const rawTitle =
+        item.category === 'Historical 8D' && chineseTitle.length > 0
+            ? chineseTitle
+            : plainTitle;
+
+    // const rawTitle = item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.title)) : toPlainText(item.title);
 
     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
         ? noticeCategoryDetails[item.category]
         : { id: 'N/A', color: 'orange' };
+
+    const plainDetails = toPlainText(
+        item.details?.rootCause ||
+        item.sdNotice?.details?.finding ||
+        item.sdNotice?.description
+    );
+
+    const chineseDetails = getChineseOnly(plainDetails)?.trim();
+
+    const highlightText =
+        item.category === 'Historical 8D' && chineseDetails
+            ? chineseDetails
+            : plainDetails;
 
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
@@ -155,7 +176,11 @@ const SingleNoticeItem = ({
                 // 也可以选择高亮描述
                 description={
                     <div style={{ maxHeight: '42px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        <HighlightText text={item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.details?.rootCause || item.sdNotice?.details?.finding)) : toPlainText(item.sdNotice?.description || item.sdNotice?.details?.finding)} keyword={searchTerm} />
+                        <HighlightText
+                            text={highlightText}
+                            keyword={searchTerm}
+                        />
+
                     </div>
                 }
             />

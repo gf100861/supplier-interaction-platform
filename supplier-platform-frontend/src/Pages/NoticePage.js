@@ -512,13 +512,14 @@ const NoticePage = () => {
         }
     };
 
-    // 4. 供应商提交完成证据
+
+   // 4. 供应商提交完成证据
     const handleEvidenceSubmit = async (values) => {
         const notice = selectedNotice;
         if (!notice) return;
 
-        // 1. --- 开始加载，显示“处理中”，并持续到整个函数结束 ---
-        messageApi.loading({ content: '正在提交证据...', key: 'evidenceSubmit' });
+        // 1. --- 【修改点】设置 duration: 0，确保 loading 不会自动消失，直到手动结束 ---
+        messageApi.loading({ content: '正在读取文件...', key: 'evidenceSubmit', duration: 0 });
 
         try {
             // 2. --- 查找需要附上证据的原始行动计划 ---
@@ -542,15 +543,17 @@ const NoticePage = () => {
                     const processedImages = await processFiles(evidenceItem?.images);
                     const processedAttachments = await processFiles(evidenceItem?.attachments);
 
-                    // 将证据信息合并回每个行动计划中
                     return {
                         ...plan,
                         evidenceDescription: evidenceItem?.description || '',
                         evidenceImages: processedImages,
-                        evidenceAttachments: processedAttachments, // <-- 确保附件也被包含
+                        evidenceAttachments: processedAttachments,
                     };
                 })
             );
+
+            // --- 【修改点】文件处理完后，更新提示文字，让用户感觉进度在走 ---
+            messageApi.loading({ content: '正在上传数据至服务器...', key: 'evidenceSubmit', duration: 0 });
 
             // 4. --- 创建新的历史记录 ---
             const newHistory = {
@@ -562,16 +565,19 @@ const NoticePage = () => {
             };
             const currentHistory = Array.isArray(notice.history) ? notice.history : [];
 
+            // --- 【修改点】(可选) 人为增加一点延迟，防止小文件上传太快导致提示一闪而过 (这里设置了 800毫秒) ---
+            await new Promise(resolve => setTimeout(resolve, 800));
+
             // 5. --- 更新数据库中的通知单 ---
             await updateNotice(notice.id, {
                 status: '待SD关闭evidence',
                 history: [...currentHistory, newHistory]
             });
 
-            // 6. --- 发送实时提醒 ---
-
+            // 6. --- 发送实时提醒 (此处原有代码为空，保持原样) ---
 
             // 7. --- 所有操作成功后，才显示成功消息并关闭弹窗 ---
+            // key 保持一致，会将 loading 替换为 success
             messageApi.success({ content: '完成证据提交成功！', key: 'evidenceSubmit', duration: 2 });
             handleDetailModalCancel();
 

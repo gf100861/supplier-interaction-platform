@@ -1,21 +1,23 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
-import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal } from 'antd';
-import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
+// 1. 引入 Checkbox, Collapse 等组件
+import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal, Checkbox, Collapse, Row, Col } from 'antd';
+import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
 import { useNotification } from '../contexts/NotificationContext';
 import { Buffer } from 'buffer';
 import { useNotices } from '../contexts/NoticeContext';
-import { useCategories } from '../contexts/CategoryContext'; // 1. 导入新的 Hook
+import { useCategories } from '../contexts/CategoryContext';
 window.Buffer = Buffer;
 
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
-const { Dragger } = Upload; // 2. 引入 Dragger 组件
+const { Dragger } = Upload;
+const { Panel } = Collapse;
 
-// --- 可编辑单元格组件 ---
+// ... (EditableContext, EditableRow, getBase64, EditableCell 保持不变) ...
 const EditableContext = React.createContext(null);
 
 const EditableRow = ({ index, ...props }) => {
@@ -29,8 +31,6 @@ const EditableRow = ({ index, ...props }) => {
     );
 };
 
-
-
 const getBase64 = (file) =>
     new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -38,7 +38,6 @@ const getBase64 = (file) =>
         reader.onload = () => resolve(reader.result);
         reader.onerror = (error) => reject(error);
     });
-
 
 const EditableCell = ({ title, editable, children, dataIndex, record, handleSave, inputType = 'input', ...restProps }) => {
     const [editing, setEditing] = useState(false);
@@ -67,8 +66,6 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
     };
 
     let childNode = children;
-
-    //非必须要填的列
     const optionalFields = ['comments', 'product'];
     if (editable) {
         childNode = editing ? (
@@ -76,7 +73,6 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
                 style={{ margin: 0 }}
                 name={dataIndex}
                 rules={[{
-                    // 2. 逻辑反转：如果字段 *不* 在可选列表里，它就是必填的
                     required: !optionalFields.includes(dataIndex),
                     message: `${title} is required.`
                 }]}
@@ -96,8 +92,7 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
     return <td {...restProps}>{childNode}</td>;
 };
 
-
-// --- 列配置中心 ---
+// ... (categoryColumnConfig 保持不变) ...
 const categoryColumnConfig = {
     'SEM': [
         { title: 'Criteria n°', dataIndex: 'criteria', editable: true, width: '10%' },
@@ -113,14 +108,13 @@ const categoryColumnConfig = {
         { title: 'PRODUCT', dataIndex: 'product', editable: true, width: '20%' },
         { title: 'PROCESS/QUESTIONS', dataIndex: 'title', editable: true, width: '20%' },
         { title: 'FINDINGS/DEVIATIONS', dataIndex: 'description', editable: true, width: '25%', onCell: () => ({ inputType: 'textarea' }) },
-
-
     ],
     '文档资质': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
     '安全规范': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
     '其他': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
 };
 
+const LS_API_KEY_KEY = 'gemini_api_key_local_storage';
 
 const BatchNoticeCreationPage = () => {
     const [globalForm] = Form.useForm();
@@ -134,9 +128,67 @@ const BatchNoticeCreationPage = () => {
     const [isPreviewVisible, setIsPreviewVisible] = useState(false);
     const { messageApi } = useNotification();
     const { addNotices } = useNotices();
-    // const { categories, loading: categoriesLoading } = useCategories();
-    //  const { suppliers } = useSuppliers();
     const { categories, loading: categoriesLoading } = useCategories();
+
+    // --- 新增：API Key 状态 ---
+    const [apiKey, setApiKey] = useState('');
+    const [rememberApiKey, setRememberApiKey] = useState(false);
+
+    // --- 新增：加载 API Key ---
+    useEffect(() => {
+        const savedKey = localStorage.getItem(LS_API_KEY_KEY);
+        if (savedKey) {
+            setApiKey(savedKey);
+            setRememberApiKey(true);
+        }
+    }, []);
+
+    const handleApiKeyChange = (e) => {
+        const newKey = e.target.value;
+        setApiKey(newKey);
+        if (rememberApiKey) {
+            localStorage.setItem(LS_API_KEY_KEY, newKey);
+        }
+    };
+
+    const handleRememberChange = (e) => {
+        const checked = e.target.checked;
+        setRememberApiKey(checked);
+        if (checked) {
+            localStorage.setItem(LS_API_KEY_KEY, apiKey);
+        } else {
+            localStorage.removeItem(LS_API_KEY_KEY);
+        }
+    };
+
+    // --- 新增：Embedding 生成函数 ---
+    const getGeminiEmbedding = async (text) => {
+        if (!text || !text.trim() || !apiKey) return null;
+        // 简单截断防止超长
+        const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 8000);
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: "models/text-embedding-004",
+                        content: { parts: [{ text: cleanText }] }
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error("Embedding API request failed");
+            const result = await response.json();
+            return result.embedding.values;
+        } catch (error) {
+            console.error("生成向量失败:", error);
+            // 批量时不打断流程，只记录错误
+            return null;
+        }
+    };
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser) return [];
@@ -147,7 +199,6 @@ const BatchNoticeCreationPage = () => {
         }
         return [];
     }, [currentUser, suppliers]);
-
 
     const sortedCategories = useMemo(() => {
         if (!categories || categories.length === 0) return [];
@@ -162,7 +213,7 @@ const BatchNoticeCreationPage = () => {
         });
     }, [categories]);
 
-
+    // ... (handleCellChange, handlePreview, handleDelete, handleSave, handleUploadChange 保持不变) ...
     const handleCellChange = (key, dataIndex, value) => {
         const newData = [...dataSource];
         const index = newData.findIndex((item) => key === item.key);
@@ -174,14 +225,9 @@ const BatchNoticeCreationPage = () => {
     };
 
     const handlePreview = async (file) => {
-        // 如果文件没有 url (不是已上传文件)，也没有 preview (我们还没生成过预览)
-        // 并且它是一个新上传的文件 (有 originFileObj)
         if (!file.url && !file.preview && file.originFileObj) {
-            // 就为它生成一个高清的 Base64 预览图
             file.preview = await getBase64(file.originFileObj);
         }
-
-        // 使用我们生成的高清 preview，或者已有的 url
         setPreviewImage(file.url || file.preview);
         setPreviewTitle(file.name || '图片预览');
         setIsPreviewVisible(true);
@@ -223,13 +269,11 @@ const BatchNoticeCreationPage = () => {
             return col;
         });
 
-        // 定义所有类型都共用的列
         const commonColumns = [
-            // --- 3. 核心修改：重写“图片”列的渲染逻辑 ---
             {
                 title: '图片',
                 dataIndex: 'images',
-                width: 200, // 适当调整宽度
+                width: 200,
                 render: (_, record) => (
                     <Dragger
                         multiple
@@ -239,12 +283,9 @@ const BatchNoticeCreationPage = () => {
                         onChange={(info) => handleUploadChange(record.key, 'images', info)}
                         accept="image/*"
                         onPreview={handlePreview}
-                    // 移除固定的 height，让其自适应
                     >
-                        <div style={{ padding: '8px 0' }}> {/* 使用 div 包裹并增加内边距 */}
-                            <p className="ant-upload-drag-icon">
-                                <InboxOutlined />
-                            </p>
+                        <div style={{ padding: '8px 0' }}>
+                            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                             <p className="ant-upload-text" style={{ fontSize: '12px' }}>点击或拖拽</p>
                         </div>
                     </Dragger>
@@ -257,7 +298,6 @@ const BatchNoticeCreationPage = () => {
                 render: (_, record) => (
                     <div>
                         <Upload
-                            // --- multiple 属性也在这里启用 ---
                             multiple
                             fileList={record.attachments || []}
                             beforeUpload={() => false}
@@ -269,17 +309,13 @@ const BatchNoticeCreationPage = () => {
                             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>格式提示</Text>
                         </Tooltip>
                     </div>
-
                 )
             },
             { title: '操作', dataIndex: 'operation', width: 80, render: (_, record) => (<Popconfirm title="确定删除吗?" onConfirm={() => handleDelete(record.key)}><Button type="link" danger icon={<DeleteOutlined />} /></Popconfirm>) },
         ];
 
-
-        // 组合动态列和通用列
         const allColumns = [...baseColumns, ...commonColumns];
 
-        // 返回最终用于 antd Table 的列定义
         return allColumns.map(col => {
             if (!col.editable) return col;
             return {
@@ -287,9 +323,9 @@ const BatchNoticeCreationPage = () => {
                 onCell: (record) => ({ record, editable: col.editable, dataIndex: col.dataIndex, title: col.title, handleSave, inputType: col.onCell?.()?.inputType }),
             };
         });
-    }, [globalSettings, handleSave]); // handleSave 需要作为依赖项
+    }, [globalSettings, handleSave]);
 
-
+    // ... (handleAdd, onConfirmSettings, onModifySettings 保持不变) ...
     const handleAdd = () => {
         if (!globalSettings) { messageApi.error('请点击"确认设置"的按钮！'); return; }
         const newRowData = { key: count, images: [], attachments: [] };
@@ -297,7 +333,6 @@ const BatchNoticeCreationPage = () => {
         dynamicColumns.forEach(col => {
             newRowData[col.dataIndex] = col.dataIndex === 'score' ? 1 : (col.dataIndex === 'defectLevel' ? '次要' : '');
         });
-
         setDataSource([...dataSource, newRowData]);
         setCount(count + 1);
     };
@@ -305,27 +340,20 @@ const BatchNoticeCreationPage = () => {
     const onConfirmSettings = async () => {
         try {
             const values = await globalForm.validateFields();
-
             if (globalSettings?.category !== values.category && dataSource.length > 0) {
                 messageApi.warning('问题类型已更改，表格数据已被清空。');
                 setDataSource([]);
             }
-
-            // 直接在 managedSuppliers (当前用户可见的供应商列表) 中查找
             const selectedSupplier = managedSuppliers.find(s => s.id === values.supplierId);
-
             setGlobalSettings({
                 ...values,
-                // 现在 selectedSupplier 一定能被找到
                 supplierName: selectedSupplier.name,
             });
             messageApi.success('全局设置已锁定，现在可以添加条目了。');
         } catch (errorInfo) {
-            // 这里的 catch 现在只会在表单未填写完整时触发
             messageApi.error('请填写所有必填的全局设置项！');
         }
     };
-
 
     const onModifySettings = () => {
         if (dataSource.length > 0) {
@@ -342,30 +370,19 @@ const BatchNoticeCreationPage = () => {
         }
 
         const validDataSource = dataSource.filter(item => {
-            // 获取当前分类的动态列定义
             const dynamicFields = categoryColumnConfig[globalSettings.category] || [];
-            // 找出所有被定义为 "editable: true" 的字段的 dataIndex
-            // 修正：我们应该检查所有非备注的必填字段，而不仅仅是 "editable" 字段
             const keyFields = dynamicFields
-                .filter(col => col.dataIndex !== 'comments' && col.dataIndex !== 'score') // 排除备注和非文本分数
-                .map(col => col.dataIndex); // e.g., ['criteria', 'parameter', 'description'] or ['title', 'description']
+                .filter(col => col.dataIndex !== 'comments' && col.dataIndex !== 'score')
+                .map(col => col.dataIndex);
 
-            // 如果配置为空（例如 "其他"），我们至少要检查 title 和 description
             if (keyFields.length === 0) {
                 keyFields.push('title', 'description');
             }
-            // 检查：这些关键字段中，是否 *至少有一个* 被填写了
             const isValid = keyFields.some(key => {
                 const value = item[key];
-                // 核心修正：这个新方法可以完美处理字符串、数字(integer)和null/undefined
-                // 1. 将 value 转换为字符串
-                // 2. 去除首尾空格
-                // 3. 检查长度是否不为0
                 const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
-
                 return hasValue;
             });
-
             return isValid;
         });
 
@@ -374,106 +391,131 @@ const BatchNoticeCreationPage = () => {
             return;
         }
 
-        messageApi.loading({ content: '正在处理并提交数据...', key: 'submitting' });
+        // --- 核心修正：加载提示 ---
+        messageApi.loading({ content: '正在处理数据并生成 AI 向量...', key: 'submitting', duration: 0 });
 
-        // --- 核心修正 2：在提交前，异步处理所有行的数据，特别是图片 ---
-        const processRowData = async (item) => {
-            // 这个函数负责将单行数据中的新图片文件转换为高清Base64
+        const batchId = `BATCH-${dayjs().format('YYYYMMDDHHmmss')}-${Math.random().toString(36).substring(2, 8)}`;
+
+        // --- 核心逻辑升级：并行处理图片转码 + 并行生成向量 ---
+        const processRowDataAndEmbed = async (item, index) => {
+            // 1. 处理文件 (Base64)
             const processFiles = async (fileList = []) => {
                 return Promise.all(fileList.map(async file => {
-                    if (file.originFileObj && !file.url) { // 如果是新上传的文件
+                    if (file.originFileObj && !file.url) {
                         const base64Url = await getBase64(file.originFileObj);
-                        // 返回一个只包含高清 url 的干净对象
                         return { uid: file.uid, name: file.name, status: 'done', url: base64Url };
                     }
-                    return file; // 如果已经是处理过的文件，直接返回
+                    return file;
                 }));
             };
 
             const processedImages = await processFiles(item.images);
             const processedAttachments = await processFiles(item.attachments);
 
-            return {
-                ...item,
-                images: processedImages,
-                attachments: processedAttachments,
-            };
-        };
+            // 通用逻辑：把 details 里所有有价值的文本拼起来
+            // 比如 SEM 的 parameter/description，Process 的 title/description
+            const { key: _k, images: _i, attachments: _a, ...details } = item;
 
-        // 等待所有行的数据都处理完毕
-        const processedDataSource = await Promise.all(validDataSource.map(processRowData));
+            // --- 核心修改开始：使用列标题作为语义标签 ---
 
-        const batchId = `BATCH-${dayjs().format('YYYYMMDDHHmmss')}-${Math.random().toString(36).substring(2, 8)}`;
+            // 1. 获取当前分类的列配置
+            const currentColumns = categoryColumnConfig[globalSettings.category] || [];
 
+            // 2. 生成带明确语义标签的文本
+            // 逻辑：尝试在配置中找到 dataIndex 对应的 title，如果找不到就用原 key
+            const textParts = Object.entries(details)
+                .filter(([k, v]) => k !== 'score' && k !== 'key' && v)
+                .map(([k, v]) => {
+                    const colConfig = currentColumns.find(col => col.dataIndex === k);
+                    // 如果能找到配置，就用配置里的 Title (例如 "Gap description")
+                    // 如果找不到，就映射一些通用词 (例如 "comments" -> "备注")
+                    // 否则直接用 key
+                    let label = k;
+                    if (colConfig) {
+                        label = colConfig.title;
+                    } else if (k === 'comments') {
+                        label = '备注';
+                    }
 
-        // 构建符合 Supabase Schema 的数据数组
-        const batchNoticesToInsert = processedDataSource.map((item, index) => {
-            const { key, images, attachments, ...details } = item;
+                    return `[${label}]: ${v}`;
+                });
 
-            // 生成给用户看的业务ID
+            console.log('Text parts for embedding:', textParts);
+
+            const textToEmbed = `
+                [Category]: ${globalSettings.category}
+                [Supplier]: ${globalSettings.supplierName}
+                ${textParts.join('\n')}
+            `.trim();
+
+            // 3. 生成向量 (如果 Key 存在)
+            let embeddingVector = null;
+            if (apiKey) {
+                embeddingVector = await getGeminiEmbedding(textToEmbed);
+            }
+
+            // 4. 构建最终对象
             const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${index}`;
 
-            console.log(details)
-
             return {
-                // Supabase 会自动生成 uuid 主键，我们不需要提供 id, 根据不同的审核类型来修改
                 notice_code: noticeCode,
                 batch_id: batchId,
                 category: globalSettings.category,
                 title: details.title || details.parameter || 'New Notice',
-                assigned_supplier_id: globalSettings.supplierId, // 假设 suppliers context 里的 id 是 uuid
+                assigned_supplier_id: globalSettings.supplierId,
                 assigned_supplier_name: globalSettings.supplierName,
-                status: '待提交Action Plan', // 使用简化的新流程状态
-                creator_id: currentUser.id, // 假设 currentUser.id 是 uuid
-                sd_notice: { // 将所有初始信息存入 jsonb 字段
+                status: '待提交Action Plan',
+                creator_id: currentUser.id,
+                // *** 存入向量 ***
+                embedding: embeddingVector,
+                sd_notice: {
                     creatorId: currentUser.id,
                     description: details.description || '',
                     creator: currentUser.name,
                     createTime: globalSettings.createTime.format('YYYY-MM-DD'),
-                    images: images,
-                    attachments: attachments,
-                    details: details, // 存储所有动态字段
+                    images: processedImages,
+                    attachments: processedAttachments,
+                    details: details,
                 },
                 history: [],
             };
-        });
+        };
 
         try {
-            // 调用中央 context 的 addNotices 函数，它会与 Supabase 交互
-            await addNotices(batchNoticesToInsert);
-            messageApi.success(`成功提交 ${batchNoticesToInsert.length} 条通知单！`);
+            // 使用 Promise.all 并发处理每一行 (图片转码 + AI Embedding)
+            const batchNoticesToInsert = await Promise.all(validDataSource.map((item, index) => processRowDataAndEmbed(item, index)));
 
-            // 成功后再清空前端
+            // 提交到 Supabase
+            await addNotices(batchNoticesToInsert);
+            messageApi.success({ content: `成功提交 ${batchNoticesToInsert.length} 条通知单！`, key: 'submitting', duration: 3 });
+
             setDataSource([]);
             setGlobalSettings(null);
             globalForm.resetFields();
 
         } catch (error) {
-            messageApi.error(`提交失败: ${error.message}`);
+            console.error(error);
+            messageApi.error({ content: `提交失败: ${error.message}`, key: 'submitting', duration: 3 });
         }
     };
+
+    // ... (handleDownloadTemplate, handleExcelImport 保持不变) ...
     const handleDownloadTemplate = async () => {
         const category = globalForm.getFieldValue('category');
         if (!category) {
             messageApi.error('请先选择问题类型，再下载对应的模板！');
             return;
         }
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('模板');
-
-        // 使用与UI完全相同的列配置来生成模板
         const baseColumns = categoryColumnConfig[category] || [];
         const excelColumns = [...baseColumns].map(c => ({
             header: c.title,
             key: c.dataIndex,
             width: c.title.length > 20 ? 50 : 30
         }));
-
         worksheet.columns = excelColumns;
-
         messageApi.success(`已开始下载“${category}”类型的模板。`);
-
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
@@ -489,92 +531,64 @@ const BatchNoticeCreationPage = () => {
             messageApi.error('请先选择问题类型并点击“确认设置”，再导入对应的文件！');
             return false;
         }
-
         messageApi.loading({ content: '正在解析Excel文件...', key: 'excelParse' });
-
         try {
             const workbook = new ExcelJS.Workbook();
             const buffer = await file.arrayBuffer();
             await workbook.xlsx.load(buffer);
             const worksheet = workbook.getWorksheet(1);
-
-            // --- 核心修正：让期望的表头与下载模板的表头完全一致 ---
             const baseColumns = categoryColumnConfig[globalSettings.category] || [];
-            const expectedHeaders = [
-                ...baseColumns.map(col => col.title)
-            ];
+            const expectedHeaders = [...baseColumns.map(col => col.title)];
             const actualHeadersRaw = (worksheet.getRow(1).values || []);
-            // exceljs 的 .values 会包含一个空项在前面，并且可能比实际列数长
             const actualHeaders = actualHeadersRaw.slice(1, expectedHeaders.length + 1);
 
+            console.log('Expected Headers:', expectedHeaders);
+
+            console.log('Actual Headers:', actualHeaders);
+
             if (JSON.stringify(expectedHeaders) !== JSON.stringify(actualHeaders)) {
-                messageApi.error({
-                    content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。请下载最新模板。`,
-                    key: 'excelParse',
-                    duration: 5
-                });
-                console.log("期望的表头:", expectedHeaders);
-                console.log("实际的表头:", actualHeaders);
+                messageApi.error({ content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。`, key: 'excelParse', duration: 5 });
                 return false;
             }
 
-            // --- 图片解析逻辑 (保持不变) ---
             const imageMap = new Map();
             worksheet.getImages().forEach(image => {
                 const startRow = image.range.tl.nativeRow;
                 const img = workbook.getImage(image.imageId);
-                if (!img || !img.buffer) {
-                    console.warn(`无法读取第 ${startRow + 1} 行的图片数据。`);
-                    return;
-                }
+                if (!img || !img.buffer) return;
                 const imageBase64 = `data:image/${img.extension || 'png'};base64,${Buffer.from(img.buffer).toString('base64')}`;
                 if (!imageMap.has(startRow)) { imageMap.set(startRow, []); }
                 imageMap.get(startRow).push({ uid: `-${Math.random()}`, name: `image_${startRow}.${img.extension || 'png'}`, status: 'done', url: imageBase64 });
             });
 
-            // --- 数据解析逻辑 (保持不变) ---
             const importedData = [];
             let currentDataIndex = count;
             worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
                 if (rowNumber === 1) return;
-
                 const newRowData = {
                     key: currentDataIndex,
                     images: imageMap.get(rowNumber - 1) || [],
                     attachments: [],
                 };
-
-                // --- 在这里使用更健壮的单元格读取方法 ---
                 baseColumns.forEach((col, colIndex) => {
                     const cell = row.getCell(colIndex + 1);
                     let cellValue = '';
-
                     if (cell.value) {
-                        // 如果是富文本对象，则提取所有文本
                         if (cell.value.richText) {
                             cellValue = cell.value.richText.map(rt => rt.text).join('');
-                        }
-                        // 如果是普通对象（例如日期），转换为字符串
-                        else if (typeof cell.value === 'object') {
+                        } else if (typeof cell.value === 'object') {
                             cellValue = cell.value.toString();
-                        }
-                        // 其他情况
-                        else {
+                        } else {
                             cellValue = cell.value;
                         }
                     }
                     newRowData[col.dataIndex] = cellValue;
                 });
-
-                // 单独读取备注列
                 const commentsCell = row.getCell(baseColumns.length + 1);
                 newRowData['comments'] = commentsCell.value ? commentsCell.value.toString() : '';
-
                 importedData.push(newRowData);
                 currentDataIndex++;
             });
-
-            console.log('打印的Data', importedData)
 
             setDataSource(prevData => [...prevData, ...importedData]);
             setCount(currentDataIndex);
@@ -587,7 +601,6 @@ const BatchNoticeCreationPage = () => {
         return false;
     };
 
-
     return (
         <div>
             <Card style={{ marginBottom: 16 }}>
@@ -599,15 +612,10 @@ const BatchNoticeCreationPage = () => {
                             showSearch
                             style={{ width: 200 }}
                             placeholder="选择供应商"
-                            disabled={!!globalSettings || suppliersLoading} // 加载时也禁用
-                            loading={suppliersLoading} // 显示加载动画
-                            filterOption={(input, option) =>
-                                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={managedSuppliers.map(s => ({
-                                value: s.id,
-                                label: `${s.short_code} (${s.name})`
-                            }))}
+                            disabled={!!globalSettings || suppliersLoading}
+                            loading={suppliersLoading}
+                            filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                            options={managedSuppliers.map(s => ({ value: s.id, label: `${s.short_code} (${s.name})` }))}
                         />
                     </Form.Item>
 
@@ -625,7 +633,6 @@ const BatchNoticeCreationPage = () => {
                         <DatePicker disabled={!!globalSettings} />
                     </Form.Item>
                     <Form.Item>
-                        {/* 3. --- 核心修正：为确认按钮也添加 loading 状态 --- */}
                         {globalSettings ? (
                             <Button icon={<EditOutlined />} onClick={onModifySettings}>修改设置</Button>
                         ) : (
@@ -633,7 +640,6 @@ const BatchNoticeCreationPage = () => {
                                 type="primary"
                                 icon={<CheckCircleOutlined />}
                                 onClick={onConfirmSettings}
-                                // 当任何一个依赖的数据在加载时，都禁用并显示加载状态
                                 disabled={suppliersLoading || categoriesLoading}
                                 loading={suppliersLoading || categoriesLoading}
                             >
@@ -664,6 +670,24 @@ const BatchNoticeCreationPage = () => {
                     locale={{ emptyText: (<Empty description={globalSettings ? "请点击“手动添加一行”或从Excel导入" : "请先在上方确认全局设置"} />) }}
                 />
             </Card>
+
+            {/* --- 新增：API Key 设置区域 (批量版) --- */}
+            <Collapse ghost style={{ marginTop: 16 }}>
+                <Panel header={<><ApiOutlined /> AI 增强设置 (配置后可为每条数据生成智能检索向量)</>} key="1">
+                    <Form.Item label={<><GoogleOutlined /> Google Gemini API Key</>} help="设置 Key 后，系统将在提交时自动为每一行数据生成问题向量。">
+                        <Input.Password
+                            placeholder="请输入您的 Gemini API Key"
+                            value={apiKey}
+                            onChange={handleApiKeyChange}
+                        />
+                    </Form.Item>
+                    <Form.Item>
+                        <Checkbox checked={rememberApiKey} onChange={handleRememberChange}>
+                            在本地记住 API Key (下次无需输入)
+                        </Checkbox>
+                    </Form.Item>
+                </Panel>
+            </Collapse>
 
             <div style={{ marginTop: 24, textAlign: 'right' }}>
                 <Button type="primary" size="large" onClick={handleSubmitAll} disabled={dataSource.length === 0}>

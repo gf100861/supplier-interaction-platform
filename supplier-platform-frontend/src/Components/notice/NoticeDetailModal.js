@@ -132,6 +132,7 @@ const Historical8DDisplay = ({ notice }) => {
     const getEnglishOnly = (text = '') =>
         text.replace(/[^a-zA-Z0-9.,!?() \n]/g, '');
 
+    // console.log('Historical8DDisplay details:', no);
 
     // 打开预览
     const handlePreviewReport = () => {
@@ -187,6 +188,10 @@ const Historical8DDisplay = ({ notice }) => {
                 <Col span={12}>
                     <Text type="secondary">数量 (Qty):</Text>
                     <div>{details.quantity || 'N/A'}</div>
+                </Col>
+                 <Col span={12}>
+                    <Text type="secondary">供应商(Supplier):</Text>
+                    <div>{notice?.supplier?.shortCode || 'N/A'}</div>
                 </Col>
                 <Col span={12}>
                     <Text type="secondary">原始报告:</Text>
