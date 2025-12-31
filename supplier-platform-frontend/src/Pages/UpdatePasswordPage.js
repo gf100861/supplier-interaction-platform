@@ -3,12 +3,13 @@ import { Form, Input, Button, Card, Typography, message, Layout } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
-
+import { useNotification } from '../contexts/NotificationContext';
 const { Title, Text } = Typography;
 const { Content } = Layout;
 
 const UpdatePasswordPage = () => {
     const [loading, setLoading] = useState(false);
+    const { messageApi } = useNotification();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -17,7 +18,7 @@ const UpdatePasswordPage = () => {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
-                message.warning('无效的重置链接或链接已过期，请重新申请。');
+                messageApi.warning('无效的重置链接或链接已过期，请重新申请。');
                 navigate('/forgot-password');
             }
         };
@@ -33,14 +34,16 @@ const UpdatePasswordPage = () => {
 
             if (error) throw error;
 
-            message.success('密码修改成功！请使用新密码重新登录。');
+            messageApi.success('密码修改成功！请使用新密码重新登录。');
+
+            await new Promise(resolve => setTimeout(resolve, 1500));
             
             // 登出并跳转到登录页，确保用户用新密码登录
             await supabase.auth.signOut();
             navigate('/login');
 
         } catch (error) {
-            message.error(`密码修改失败: ${error.message}`);
+            messageApi.error(`密码修改失败: ${error.message}`);
         } finally {
             setLoading(false);
         }
