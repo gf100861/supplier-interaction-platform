@@ -1,17 +1,18 @@
-
+import React from 'react';
 import { ConfigProvider as AntdConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/es/locale/zh_CN';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 // Import all contexts
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
-import { LanguageProvider, useLanguage } from './contexts/LanguageContext'; // 1. 引入 LanguageContext
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { NoticeProvider } from './contexts/NoticeContext';
 import { SupplierProvider } from './contexts/SupplierContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { ConfigProvider } from './contexts/ConfigContext';
-import { CategoryProvider } from './contexts/CategoryContext'; // <-- 1. 导入
-import { AlertProvider } from './contexts/AlertContext'; // <-- 1. 在这里导入 AlertProvider
+import { CategoryProvider } from './contexts/CategoryContext';
+import { AlertProvider } from './contexts/AlertContext';
+
 // Import all pages and components
 import MainLayout from './Components/MainLayout';
 import ProtectedRoute from './Components/ProtectedRoute';
@@ -26,42 +27,50 @@ import ProblemAnalysisPage from './Pages/ProblemAnalysisPage';
 import ConsolidatedReportPage from './Pages/ConsolidatedReportPage';
 import AdminPage from './Pages/AdminPage';
 import ForgotPasswordPage from './Pages/ForgotPasswordPage';
-import ResetPasswordPage from './Pages/ResetPasswordPage';
+// import ResetPasswordPage from './Pages/ResetPasswordPage'; // 如果不再使用可以注释掉
 import NotFoundPage from './Pages/NotFoundPage'
-import EditNoticePage from './Pages/EditNoticePage'; // <-- 1. 导入新页面
+import EditNoticePage from './Pages/EditNoticePage';
 import IntelligentSearchPage from './Pages/IntelligentSearchPage';
 import MobileTransferPage from './Pages/MobileTransferPage';
 import HelpCenterPage from './Pages/help-center';
 import { FileSender } from './Pages/OfflineSharePage';
 import HistoricalImportPage from './Pages/HistoricalImportPage';
+import UpdatePasswordPage from './Pages/UpdatePasswordPage';
+
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
-    const { antdLocale } = useLanguage(); // 2. 获取当前语言包
+    const { antdLocale } = useLanguage();
 
     return (
         <AntdConfigProvider
-              locale={antdLocale}
+            locale={antdLocale}
             theme={{
                 algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
             }}
         >
-            {/* 1. 基础 Provider (无内部依赖) */}
             <NotificationProvider>
-                {/* 2. 依赖基础 Provider 的业务 Provider */}
                 <ConfigProvider>
                     <SupplierProvider>
                         <CategoryProvider>
                             <AlertProvider>
-
                                 <NoticeProvider>
-                                    {/* 3. 路由和UI */}
                                     <BrowserRouter>
                                         <Routes>
+                                            {/* --- 公开/认证路由 (无侧边栏) --- */}
                                             <Route path="/login" element={<LoginPage />} />
                                             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                                            <Route path="/reset-password" element={<ResetPasswordPage />} />
-                                                  <Route path="/help-center" element={<HelpCenterPage />} /> {/* 2. 添加路由 */}
+                                            
+                                            {/* 关键修改：UpdatePasswordPage 移到这里，与 Login 平级 */}
+                                            <Route path="/update-password" element={<UpdatePasswordPage />} />
+                                            
+                                            {/* 帮助中心通常也是公开的或者独立布局 */}
+                                            <Route path="/help-center" element={<HelpCenterPage />} />
+                                            
+                                            {/* 移动端上传页面通常也是独立的 */}
+                                            <Route path="/mobile-transfer" element={<MobileTransferPage />} />
+
+                                            {/* --- 受保护路由 (有侧边栏 MainLayout) --- */}
                                             <Route element={<ProtectedRoute />}>
                                                 <Route path="/" element={<MainLayout />}>
                                                     <Route index element={<DashboardPage />} />
@@ -73,37 +82,31 @@ const ThemedApp = () => {
                                                     <Route path="analysis" element={<ProblemAnalysisPage />} />
                                                     <Route path="reports" element={<ConsolidatedReportPage />} />
                                                     <Route path="admin" element={<AdminPage />} />
-                                                    <Route path="edit-notice/:id" element={<EditNoticePage />} /> {/* <-- 2. 添加新路由 */}
-                                                    <Route path="intelligence-search" element={<IntelligentSearchPage />}></Route>
-                                                    <Route path="offline-share" element={< FileSender/>}></Route>
-                                                    <Route path="/mobile-transfer" element={<MobileTransferPage />} />
+                                                    <Route path="edit-notice/:id" element={<EditNoticePage />} />
+                                                    <Route path="intelligence-search" element={<IntelligentSearchPage />} />
+                                                    <Route path="offline-share" element={<FileSender />} />
+                                                    <Route path="historical-import" element={<HistoricalImportPage />} />
                                                     
-                                                    <Route path="/historical-import" element={<HistoricalImportPage />} />
-
-                                                    <Route path="*" element={< NotFoundPage />} />
+                                                    {/* 404 页面放在受保护区域内部，或者外部都可以，视需求而定 */}
+                                                    <Route path="*" element={<NotFoundPage />} />
                                                 </Route>
                                             </Route>
                                         </Routes>
                                     </BrowserRouter>
-
                                 </NoticeProvider>
                             </AlertProvider>
-
-
                         </CategoryProvider>
                     </SupplierProvider>
                 </ConfigProvider>
             </NotificationProvider>
-
         </AntdConfigProvider>
     );
 }
 
-// The final App component wraps everything in the ThemeProvider
 function App() {
     return (
         <ThemeProvider>
-                <LanguageProvider>
+            <LanguageProvider>
                 <ThemedApp />
             </LanguageProvider>
         </ThemeProvider>

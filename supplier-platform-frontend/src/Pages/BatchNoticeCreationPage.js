@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
 // 1. 引入 Checkbox, Collapse 等组件
-import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal, Checkbox, Collapse, Row, Col } from 'antd';
-import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal, Checkbox, Collapse, Row, Col, Switch, Alert, Progress } from 'antd';
+import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined, ApiOutlined, GoogleOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
@@ -9,6 +9,14 @@ import { useNotification } from '../contexts/NotificationContext';
 import { Buffer } from 'buffer';
 import { useNotices } from '../contexts/NoticeContext';
 import { useCategories } from '../contexts/CategoryContext';
+import Tesseract from 'tesseract.js'; // 假设已安装 tesseract.js
+// 引入 pdfjs-dist 用于 PDF 转图片
+
+import { supabase } from '../supabaseClient'; // 确保导入 supabase
+
+// 设置 PDF.js worker
+// pdfjsLibProxy.GlobalWorkerOptions.workerSrc = pdfWorker;
+
 window.Buffer = Buffer;
 
 const { Title, Paragraph, Text } = Typography;
@@ -16,6 +24,71 @@ const { Option } = Select;
 const { TextArea } = Input;
 const { Dragger } = Upload;
 const { Panel } = Collapse;
+
+// --- 日志系统工具函数 (复用逻辑) ---
+// 如果没有 session id，生成一个
+const getSessionId = () => {
+    let sid = sessionStorage.getItem('app_session_id');
+    if (!sid) {
+        sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        sessionStorage.setItem('app_session_id', sid);
+    }
+    return sid;
+};
+
+// 获取IP (带缓存)
+let cachedIpAddress = null;
+const getClientIp = async () => {
+    if (cachedIpAddress) return cachedIpAddress;
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        cachedIpAddress = data.ip;
+        return data.ip;
+    } catch (error) {
+        return 'unknown';
+    }
+};
+
+// 简单的日志上报
+const logSystemEvent = async (params) => {
+    const { 
+        category = 'SYSTEM', 
+        eventType, 
+        severity = 'INFO', 
+        message, 
+        userId = null, 
+        meta = {} 
+    } = params;
+
+    try {
+        const clientIp = await getClientIp();
+        const sessionId = getSessionId();
+
+        // Fire-and-forget
+        supabase.from('system_logs').insert([{
+            category,
+            event_type: eventType,
+            severity,
+            message,
+            user_id: userId,
+            metadata: {
+                ip_address: clientIp,
+                session_id: sessionId,
+                userAgent: navigator.userAgent,
+                url: window.location.href,
+                page: 'BatchNoticeCreationPage',
+                ...meta,
+                timestamp_client: new Date().toISOString()
+            }
+        }]).then(({ error }) => {
+            if (error) console.warn("Log upload failed:", error);
+        });
+    } catch (e) {
+        console.error("Logger exception:", e);
+    }
+};
+
 
 // ... (EditableContext, EditableRow, getBase64, EditableCell 保持不变) ...
 const EditableContext = React.createContext(null);
@@ -141,7 +214,17 @@ const BatchNoticeCreationPage = () => {
             setApiKey(savedKey);
             setRememberApiKey(true);
         }
-    }, []);
+        
+        // 记录页面访问
+        if (currentUser) {
+            logSystemEvent({
+                category: 'INTERACTION',
+                eventType: 'PAGE_VIEW',
+                message: 'User visited Batch Notice Creation Page',
+                userId: currentUser.id
+            });
+        }
+    }, [currentUser]);
 
     const handleApiKeyChange = (e) => {
         const newKey = e.target.value;
@@ -186,6 +269,14 @@ const BatchNoticeCreationPage = () => {
         } catch (error) {
             console.error("生成向量失败:", error);
             // 批量时不打断流程，只记录错误
+            logSystemEvent({
+                category: 'AI',
+                eventType: 'EMBEDDING_FAILED',
+                severity: 'WARN',
+                message: `Embedding generation failed: ${error.message}`,
+                userId: currentUser?.id,
+                meta: { text_length: cleanText.length }
+            });
             return null;
         }
     };
@@ -398,87 +489,92 @@ const BatchNoticeCreationPage = () => {
 
         // --- 核心逻辑升级：并行处理图片转码 + 并行生成向量 ---
         const processRowDataAndEmbed = async (item, index) => {
-            // 1. 处理文件 (Base64)
-            const processFiles = async (fileList = []) => {
-                return Promise.all(fileList.map(async file => {
-                    if (file.originFileObj && !file.url) {
-                        const base64Url = await getBase64(file.originFileObj);
-                        return { uid: file.uid, name: file.name, status: 'done', url: base64Url };
-                    }
-                    return file;
-                }));
-            };
+            try {
+                // 1. 处理文件 (Base64)
+                const processFiles = async (fileList = []) => {
+                    return Promise.all(fileList.map(async file => {
+                        if (file.originFileObj && !file.url) {
+                            const base64Url = await getBase64(file.originFileObj);
+                            return { uid: file.uid, name: file.name, status: 'done', url: base64Url };
+                        }
+                        return file;
+                    }));
+                };
 
-            const processedImages = await processFiles(item.images);
-            const processedAttachments = await processFiles(item.attachments);
+                const processedImages = await processFiles(item.images);
+                const processedAttachments = await processFiles(item.attachments);
 
-            // 通用逻辑：把 details 里所有有价值的文本拼起来
-            // 比如 SEM 的 parameter/description，Process 的 title/description
-            const { key: _k, images: _i, attachments: _a, ...details } = item;
+                // 通用逻辑：把 details 里所有有价值的文本拼起来
+                // 比如 SEM 的 parameter/description，Process 的 title/description
+                const { key: _k, images: _i, attachments: _a, ...details } = item;
 
-            // --- 核心修改开始：使用列标题作为语义标签 ---
+                // --- 核心修改开始：使用列标题作为语义标签 ---
 
-            // 1. 获取当前分类的列配置
-            const currentColumns = categoryColumnConfig[globalSettings.category] || [];
+                // 1. 获取当前分类的列配置
+                const currentColumns = categoryColumnConfig[globalSettings.category] || [];
 
-            // 2. 生成带明确语义标签的文本
-            // 逻辑：尝试在配置中找到 dataIndex 对应的 title，如果找不到就用原 key
-            const textParts = Object.entries(details)
-                .filter(([k, v]) => k !== 'score' && k !== 'key' && v)
-                .map(([k, v]) => {
-                    const colConfig = currentColumns.find(col => col.dataIndex === k);
-                    // 如果能找到配置，就用配置里的 Title (例如 "Gap description")
-                    // 如果找不到，就映射一些通用词 (例如 "comments" -> "备注")
-                    // 否则直接用 key
-                    let label = k;
-                    if (colConfig) {
-                        label = colConfig.title;
-                    } else if (k === 'comments') {
-                        label = '备注';
-                    }
+                // 2. 生成带明确语义标签的文本
+                // 逻辑：尝试在配置中找到 dataIndex 对应的 title，如果找不到就用原 key
+                const textParts = Object.entries(details)
+                    .filter(([k, v]) => k !== 'score' && k !== 'key' && v)
+                    .map(([k, v]) => {
+                        const colConfig = currentColumns.find(col => col.dataIndex === k);
+                        // 如果能找到配置，就用配置里的 Title (例如 "Gap description")
+                        // 如果找不到，就映射一些通用词 (例如 "comments" -> "备注")
+                        // 否则直接用 key
+                        let label = k;
+                        if (colConfig) {
+                            label = colConfig.title;
+                        } else if (k === 'comments') {
+                            label = '备注';
+                        }
 
-                    return `[${label}]: ${v}`;
-                });
+                        return `[${label}]: ${v}`;
+                    });
 
-            console.log('Text parts for embedding:', textParts);
+                console.log('Text parts for embedding:', textParts);
 
-            const textToEmbed = `
-                [Category]: ${globalSettings.category}
-                [Supplier]: ${globalSettings.supplierName}
-                ${textParts.join('\n')}
-            `.trim();
+                const textToEmbed = `
+                    [Category]: ${globalSettings.category}
+                    [Supplier]: ${globalSettings.supplierName}
+                    ${textParts.join('\n')}
+                `.trim();
 
-            // 3. 生成向量 (如果 Key 存在)
-            let embeddingVector = null;
-            if (apiKey) {
-                embeddingVector = await getGeminiEmbedding(textToEmbed);
+                // 3. 生成向量 (如果 Key 存在)
+                let embeddingVector = null;
+                if (apiKey) {
+                    embeddingVector = await getGeminiEmbedding(textToEmbed);
+                }
+
+                // 4. 构建最终对象
+                const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${index}`;
+
+                return {
+                    notice_code: noticeCode,
+                    batch_id: batchId,
+                    category: globalSettings.category,
+                    title: details.title || details.parameter || 'New Notice',
+                    assigned_supplier_id: globalSettings.supplierId,
+                    assigned_supplier_name: globalSettings.supplierName,
+                    status: '待提交Action Plan',
+                    creator_id: currentUser.id,
+                    // *** 存入向量 ***
+                    embedding: embeddingVector,
+                    sd_notice: {
+                        creatorId: currentUser.id,
+                        description: details.description || '',
+                        creator: currentUser.name,
+                        createTime: globalSettings.createTime.format('YYYY-MM-DD'),
+                        images: processedImages,
+                        attachments: processedAttachments,
+                        details: details,
+                    },
+                    history: [],
+                };
+            } catch (error) {
+                console.error(`Error processing row ${index}:`, error);
+                throw error; // 将错误向上传递，以便在 Promise.all 中捕获或处理
             }
-
-            // 4. 构建最终对象
-            const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${index}`;
-
-            return {
-                notice_code: noticeCode,
-                batch_id: batchId,
-                category: globalSettings.category,
-                title: details.title || details.parameter || 'New Notice',
-                assigned_supplier_id: globalSettings.supplierId,
-                assigned_supplier_name: globalSettings.supplierName,
-                status: '待提交Action Plan',
-                creator_id: currentUser.id,
-                // *** 存入向量 ***
-                embedding: embeddingVector,
-                sd_notice: {
-                    creatorId: currentUser.id,
-                    description: details.description || '',
-                    creator: currentUser.name,
-                    createTime: globalSettings.createTime.format('YYYY-MM-DD'),
-                    images: processedImages,
-                    attachments: processedAttachments,
-                    details: details,
-                },
-                history: [],
-            };
         };
 
         try {
@@ -488,6 +584,16 @@ const BatchNoticeCreationPage = () => {
             // 提交到 Supabase
             await addNotices(batchNoticesToInsert);
             messageApi.success({ content: `成功提交 ${batchNoticesToInsert.length} 条通知单！`, key: 'submitting', duration: 3 });
+            
+            // 记录成功日志
+            logSystemEvent({
+                category: 'DATA',
+                eventType: 'BATCH_CREATE_SUCCESS',
+                severity: 'INFO',
+                message: `Successfully created ${batchNoticesToInsert.length} notices`,
+                userId: currentUser.id,
+                meta: { batch_id: batchId, count: batchNoticesToInsert.length }
+            });
 
             setDataSource([]);
             setGlobalSettings(null);
@@ -496,6 +602,16 @@ const BatchNoticeCreationPage = () => {
         } catch (error) {
             console.error(error);
             messageApi.error({ content: `提交失败: ${error.message}`, key: 'submitting', duration: 3 });
+            
+            // 记录失败日志
+            logSystemEvent({
+                category: 'DATA',
+                eventType: 'BATCH_CREATE_FAILED',
+                severity: 'ERROR',
+                message: `Batch create failed: ${error.message}`,
+                userId: currentUser.id,
+                meta: { batch_id: batchId, error: error.message }
+            });
         }
     };
 
@@ -548,6 +664,16 @@ const BatchNoticeCreationPage = () => {
 
             if (JSON.stringify(expectedHeaders) !== JSON.stringify(actualHeaders)) {
                 messageApi.error({ content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。`, key: 'excelParse', duration: 5 });
+                
+                // 记录模板错误日志
+                logSystemEvent({
+                    category: 'DATA',
+                    eventType: 'EXCEL_IMPORT_ERROR',
+                    severity: 'WARN',
+                    message: 'Excel template headers mismatch',
+                    userId: currentUser?.id,
+                    meta: { expected: expectedHeaders, actual: actualHeaders }
+                });
                 return false;
             }
 
@@ -594,9 +720,29 @@ const BatchNoticeCreationPage = () => {
             setCount(currentDataIndex);
             messageApi.success({ content: `成功导入 ${importedData.length} 条数据！`, key: 'excelParse' });
 
+            // 记录导入成功日志
+            logSystemEvent({
+                category: 'DATA',
+                eventType: 'EXCEL_IMPORT_SUCCESS',
+                severity: 'INFO',
+                message: `Successfully imported ${importedData.length} rows from Excel`,
+                userId: currentUser?.id,
+                meta: { count: importedData.length }
+            });
+
         } catch (error) {
             console.error("Excel 解析失败:", error);
             messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelParse', duration: 4 });
+            
+             // 记录解析异常日志
+             logSystemEvent({
+                category: 'DATA',
+                eventType: 'EXCEL_PARSE_EXCEPTION',
+                severity: 'ERROR',
+                message: error.message,
+                userId: currentUser?.id,
+                meta: { error_stack: error.stack }
+            });
         }
         return false;
     };
