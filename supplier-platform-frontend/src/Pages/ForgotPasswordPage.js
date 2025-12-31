@@ -12,25 +12,31 @@ const ForgotPasswordPage = () => {
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
 
-    const onFinish = async (values) => {
-        setLoading(true);
-        try {
-            // --- 1. 核心：调用 Supabase 的密码重置函数 ---
-            const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-                redirectTo: '/reset-password', // 告诉 Supabase 用户点击邮件链接后跳转到哪个页面
-            });
+   const onFinish = async (values) => {
+    setLoading(true);
+    try {
+        // --- 核心修改 ---
+        // 1. 使用 window.location.origin 自动获取当前域名 (localhost 或 vercel 域名)
+        // 2. 补全路径为 '/update-password' (必须与你 Supabase 后台白名单一致)
+        const redirectUrl = `${window.location.origin}/update-password`;
+        
+        console.log("正在请求重置，重定向地址为:", redirectUrl); // 方便调试
 
-            if (error) throw error;
-            
-            messageApi.success('密码重置邮件已发送！请检查您的收件箱（包括垃圾邮件），并按照邮件中的指示操作。');
-            navigate('/login'); // 发送成功后，可以跳回登录页
+        const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+            redirectTo: redirectUrl, 
+        });
 
-        } catch (error) {
-            messageApi.error(error.message || '发送邮件失败，请稍后重试。');
-        } finally {
-            setLoading(false);
-        }
-    };
+        if (error) throw error;
+        
+        messageApi.success('密码重置邮件已发送！请检查您的收件箱...');
+        navigate('/login'); 
+
+    } catch (error) {
+        messageApi.error(error.message || '发送邮件失败，请稍后重试。');
+    } finally {
+        setLoading(false);
+    }
+};
 
     return (
         <Layout style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f2f5' }}>
