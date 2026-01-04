@@ -134,6 +134,11 @@ async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
 // ==========================================
 // 4. 主处理函数
 // ==========================================
+// ... (上面的 import 和 工具函数 getEmbedding, extractSearchIntent 等保持不变) ...
+
+// ==========================================
+// 4. 主处理函数 (修复版)
+// ==========================================
 module.exports = async (req, res) => {
     // 1. 设置 CORS 头
     const requestOrigin = req.headers.origin || '*';
@@ -142,13 +147,15 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    // 2. 处理预检请求
+    // 2. 处理预检请求 (OPTIONS)
+    // 浏览器在发送 POST 之前会先发 OPTIONS，这个请求没有 Body
+    // 如果不在这里拦截返回，下面的代码就会试图读取 Body 从而报错
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
     try {
-        // 3. 运行中间件
+        // 3. 运行中间件 (CORS)
         await runMiddleware(req, res, corsMiddleware);
     } catch (e) {
         return res.status(500).json({ error: 'Internal Server Error (CORS)' });
@@ -156,18 +163,39 @@ module.exports = async (req, res) => {
 
     // 4. 业务逻辑
     try {
-        const body = req.body || {};
+        // === 关键修复开始：给 req.body 穿上防弹衣 ===
+        let body = req.body;
+
+        // 情况 A: Vercel 没解析，传来了字符串
+        if (typeof body === 'string') {
+            try {
+                body = JSON.parse(body);
+            } catch (e) {
+                console.error("JSON Parse Error:", e);
+                body = {};
+            }
+        }
+        
+        // 情况 B: 根本没有 body (比如 GET 请求或异常)，给个空对象防止崩溃
+        if (!body) {
+            body = {};
+        }
+        
+        // 现在可以安全地解构了
         const { query: rawQuery, model = 'qwen' } = body;
+        // === 关键修复结束 ===
         
         if (!rawQuery) {
-            return res.status(400).json({ error: "Query is required" });
+            // 打印一下收到的东西，方便去 Vercel 日志排查
+            console.log("Empty Query Received. Body was:", body);
+            return res.status(400).json({ error: "Query is required in request body" });
         }
 
         console.log(`[Smart Search] Processing: ${rawQuery}`);
 
         // --- Step 1: 意图识别 & 向量生成 ---
         const [intentData, embedding] = await Promise.all([
-            extractSearchIntent(rawQuery), // 调用之前缺失的函数
+            extractSearchIntent(rawQuery),
             getEmbedding(rawQuery, model)
         ]);
 
