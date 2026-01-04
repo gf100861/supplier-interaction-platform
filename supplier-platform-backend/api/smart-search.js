@@ -1,169 +1,218 @@
-// 文件路径: ./api/smart-search.js
-
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
 const https = require('https');
-// 1. 引入 Google SDK
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const cors = require('cors');
 
-// --- 配置部分 ---
+// ==========================================
+// 1. 初始化 CORS 中间件
+// ==========================================
+const corsMiddleware = cors({
+    origin: true, 
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
+    credentials: true,
+});
 
-// 初始化 Supabase
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+function runMiddleware(req, res, fn) {
+    return new Promise((resolve, reject) => {
+        fn(req, res, (result) => {
+            if (result instanceof Error) {
+                return reject(result);
+            }
+            return resolve(result);
+        });
+    });
+}
 
-// SSL 代理 (解决公司内网问题)
+// ==========================================
+// 2. 初始化客户端
+// ==========================================
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// 简单的容错，防止 crashing
+const supabase = createClient(supabaseUrl || 'https://placeholder.co', supabaseKey || 'placeholder');
 const agent = new https.Agent({ rejectUnauthorized: false });
 
-// A. 初始化 Qwen/OpenAI 客户端
 const llmClient = new OpenAI({
-    apiKey: process.env.QWEN_API_KEY, 
+    apiKey: process.env.QWEN_API_KEY || 'dummy', 
     baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     httpAgent: agent
 });
 
-// B. 初始化 Google Gemini 客户端
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy');
 
-// --- 核心工具函数 ---
+// ==========================================
+// 3. 工具函数定义 (你之前缺少的就在这里！)
+// ==========================================
 
-// 1. 获取向量 (注意：必须与你数据库里存储的向量模型保持一致！)
-// 如果你之前是用 Gemini 存的向量，这里必须用 Gemini 生成查询向量，否则搜不到！
+// --- 工具 A: 获取向量 ---
 async function getEmbedding(text, modelType) {
     try {
-        // 假设数据库是用 Gemini 004 建的索引 (根据你之前的代码)
-        // 如果想混用，建议统一在这里写死一种，比如始终用 Gemini 或 始终用 OpenAI
+        // 这里默认用 Gemini Embedding，因为它免费且维度是768
+        // 如果你的数据库是用 OpenAI 建的索引，请改用 llmClient.embeddings.create
         const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
         const result = await model.embedContent(text);
         return result.embedding.values;
-
-        // 如果想用 Qwen/OpenAI 的向量，解开下面注释：
-        /*
-        const response = await llmClient.embeddings.create({
-            model: "text-embedding-v3-small", 
-            input: text,
-        });
-        return response.data[0].embedding;
-        */
     } catch (e) {
         console.error("Embedding Error:", e);
         return null;
     }
 }
 
-// 2. 通用生成函数 (根据 modelType 切换)
-async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
-    console.log(`[Model Switch] Using: ${modelType}`);
-
-    // --- 分支 A: Google Gemini ---
-    if (modelType === 'gemini') {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const result = await model.generateContent([
-            systemPrompt, // Gemini 没有明确的 system role，通常直接拼在前面或者用 instruction
-            userContextPrompt
-        ]);
-        return result.response.text();
-    } 
-    
-    // --- 分支 B: Qwen / OpenAI ---
-    else {
-        // 默认使用 Qwen (兼容 OpenAI 协议)
-        const targetModel = modelType === 'openai' ? 'gpt-4o' : 'qwen-plus'; // 简单映射
-        
-        const response = await llmClient.chat.completions.create({
-            model: targetModel, 
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userContextPrompt }
-            ],
-            temperature: 0.3
-        });
-        return response.choices[0].message.content;
-    }
-}
-
-// 3. 查询重写 (通常用一个快速模型即可，这里默认用 Qwen)
-async function rewriteQuery(userQuery) {
+// --- 工具 B: 意图提取 (这就是你报错缺失的函数！) ---
+async function extractSearchIntent(query) {
     try {
         const response = await llmClient.chat.completions.create({
-            model: "text-embedding-v4", // 用便宜快模型
+            model: "qwen-turbo", // 使用轻量模型提取意图
             messages: [
-                { role: "system", content: "你是一个搜索助手。请扩展用户的搜索关键词，展开缩写，提取核心实体。直接输出优化后的关键词，不要废话。" },
-                { role: "user", content: userQuery }
-            ]
+                { role: "system", content: `提取用户问题中的"供应商(supplier)"或"人名"。返回JSON: {"supplier_name": "名字", "is_asking_count": boolean}。若无则返回 {}` },
+                { role: "user", content: query }
+            ],
+            response_format: { type: "json_object" }
         });
-        return response.choices[0].message.content;
+        return JSON.parse(response.choices[0].message.content);
     } catch (e) {
-        return userQuery;
+        console.warn("Intent extraction failed, skipping.", e.message);
+        return {}; 
     }
 }
 
-// 4. 简单重排序
+// --- 工具 C: 数据库统计 ---
+async function getSupplierStats(supplierName) {
+    if (!supplierName) return null;
+    // 使用 ilike 进行模糊匹配统计
+    const { count, error } = await supabase.from('notices')
+        .select('*', { count: 'exact', head: true })
+        .ilike('assigned_supplier_name', `%${supplierName}%`);
+        
+    if (error) return null;
+    return count;
+}
+
+// --- 工具 D: 重排序 ---
 function simpleRerank(docs, query) {
     const keywords = query.toLowerCase().split(/[\s,，]+/);
     return docs.map(doc => {
         let score = 0;
-        const content = JSON.stringify(doc).toLowerCase();
+        // 安全地处理 content，防止 doc.content 为空导致 crash
+        const contentStr = JSON.stringify(doc.sd_notice || doc.content || "").toLowerCase();
+        
         keywords.forEach(k => {
-            if (content.includes(k)) score += 1;
-            if (doc.notice_code && content.includes(k)) score += 10; // 单号匹配加重权
+            if (contentStr.includes(k)) score += 1;
+            if (doc.title && doc.title.toLowerCase().includes(k)) score += 3;
+            if (doc.notice_code && contentStr.includes(k)) score += 10;
         });
         return { ...doc, rerank_score: score };
     }).sort((a, b) => b.rerank_score - a.rerank_score);
 }
 
-// === 主处理函数 ===
+// --- 工具 E: 生成最终回答 ---
+async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
+    console.log(`Generating with model: ${modelType}`);
+    
+    if (modelType === 'gemini') {
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const result = await model.generateContent([systemPrompt, userContextPrompt]);
+        return result.response.text();
+    } else {
+        // 默认走 Qwen / OpenAI 协议
+        const targetModel = modelType === 'openai' ? 'gpt-4o' : 'text-embedding-v4';
+        const response = await llmClient.chat.completions.create({
+            model: targetModel, 
+            messages: [
+                { role: "system", content: systemPrompt }, 
+                { role: "user", content: userContextPrompt }
+            ],
+            temperature: 0.1
+        });
+        return response.choices[0].message.content;
+    }
+}
+
+// ==========================================
+// 4. 主处理函数
+// ==========================================
 module.exports = async (req, res) => {
+    // 1. 设置 CORS 头
+    const requestOrigin = req.headers.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // 2. 处理预检请求
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     try {
-        // 1. 接收前端传来的 model 参数
-        const { query: rawQuery, model = 'qwen' } = req.body; 
-        
-        if (!rawQuery) return res.status(400).json({ error: "Query required" });
+        // 3. 运行中间件
+        await runMiddleware(req, res, corsMiddleware);
+    } catch (e) {
+        return res.status(500).json({ error: 'Internal Server Error (CORS)' });
+    }
 
-        // 2. 智能重写
-        const optimizedQuery = await rewriteQuery(rawQuery);
-
-        // 3. 获取向量 (重要：确保和数据库已有向量是同一种模型生成的)
-        const embedding = await getEmbedding(optimizedQuery, model);
+    // 4. 业务逻辑
+    try {
+        const body = req.body || {};
+        const { query: rawQuery, model = 'qwen' } = body;
         
-        // 4. 数据库检索
-        const [vectorResults, keywordResults] = await Promise.all([
-            supabase.rpc('match_notices', {
-                query_embedding: embedding,
-                match_threshold: 0.45,
-                match_count: 15
-            }),
-            supabase.from('notices').select('*')
-                .textSearch('content_tsvector', rawQuery, { config: 'chinese', type: 'websearch' })
-                .limit(5)
+        if (!rawQuery) {
+            return res.status(400).json({ error: "Query is required" });
+        }
+
+        console.log(`[Smart Search] Processing: ${rawQuery}`);
+
+        // --- Step 1: 意图识别 & 向量生成 ---
+        const [intentData, embedding] = await Promise.all([
+            extractSearchIntent(rawQuery), // 调用之前缺失的函数
+            getEmbedding(rawQuery, model)
         ]);
 
-        // 5. 合并去重
+        // --- Step 2: 统计信息 ---
+        let statsInfo = "";
+        if (intentData.supplier_name) {
+            const totalCount = await getSupplierStats(intentData.supplier_name);
+            if (totalCount !== null) {
+                statsInfo = `\n[系统数据库统计]: 供应商 "${intentData.supplier_name}" 在数据库中总共有 ${totalCount} 条通知单记录。`;
+            }
+        }
+
+        // --- Step 3: 混合检索 ---
+        const [vectorResults, keywordResults] = await Promise.all([
+            supabase.rpc('match_notices', { query_embedding: embedding, match_threshold: 0.45, match_count: 15 }),
+            supabase.from('notices').select('*').textSearch('content_tsvector', rawQuery, { config: 'chinese', type: 'websearch' }).limit(5)
+        ]);
+
+        // --- Step 4: 合并 & 重排序 ---
         const allDocsMap = new Map();
         [...(vectorResults.data || []), ...(keywordResults.data || [])].forEach(d => allDocsMap.set(d.id, d));
         let uniqueDocs = Array.from(allDocsMap.values());
+        
+        // 简单重排序
+        uniqueDocs = simpleRerank(uniqueDocs, rawQuery).slice(0, 6);
 
-        // 6. 重排序
-        uniqueDocs = simpleRerank(uniqueDocs, rawQuery).slice(0, 5);
-
-        // 7. 构建上下文
+        // --- Step 5: 构建 Prompt ---
         const contextText = uniqueDocs.map((d, i) => 
-            `[文档${i}] 单号:${d.notice_code} | 标题:${d.title}\n内容:${JSON.stringify(d.sd_notice || d.content).substring(0, 800)}`
+            `[文档${i}] 单号:${d.notice_code} | 供应商:${d.assigned_supplier_name} | 标题:${d.title}\n内容:${JSON.stringify(d.sd_notice || d.content || "").substring(0, 300)}`
         ).join('\n---\n');
 
-        const systemPrompt = "你是一个严谨的质量助手。请基于以下参考文档回答问题。必须在回答末尾引用实际使用到的文档编号，格式如 $$REFS$$: [0, 2]。如果文档无法回答问题，请直说。";
-        const userPrompt = `参考文档:\n${contextText}\n\n问题: ${rawQuery}`;
+        const systemPrompt = `你是一个质量助手。1. 优先基于[系统数据库统计]回答数量问题。2. 细节参考[参考文档]。3. 必须引用文档编号 $$REFS$$: [0, 1]。`;
+        const userPrompt = `${statsInfo} \n[参考文档]:\n${contextText}\n问题: ${rawQuery}`;
 
-        // 8. 生成回答 (动态切换模型)
+        // --- Step 6: 生成 ---
         const answer = await generateCompletion(model, systemPrompt, userPrompt);
 
-        res.json({
+        res.status(200).json({
             answer: answer,
             sources: uniqueDocs,
-            optimizedQuery: optimizedQuery
+            optimizedQuery: intentData.supplier_name ? `查找 ${intentData.supplier_name}` : rawQuery
         });
 
     } catch (error) {
-        console.error("[Backend Error]", error);
+        console.error("[Backend Logic Error]", error);
         res.status(500).json({ error: error.message });
     }
 };

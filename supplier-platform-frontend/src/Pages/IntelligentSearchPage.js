@@ -395,7 +395,7 @@ const IntelligentSearchPage = () => {
             // === 核心改动：调用 Node.js 后端 ===
             // 注意：这里假设你的 Node.js 服务器运行在 3001 端口
             // 在 handleSendMessage 函数内
-            const response = await fetch(`${BACKEND_URL}/api/smart-search.js`, {
+            const response = await fetch(`${BACKEND_URL}/api/smart-search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
