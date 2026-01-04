@@ -166,13 +166,16 @@ async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
 // ==========================================
 module.exports = async (req, res) => {
     // 1. 设置 CORS 头
-    const requestOrigin = req.headers.origin || '*';
-    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*'); // 或你的前端域名
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    );
 
-    // 2. 处理预检请求
+    // 关键：如果是 OPTIONS 请求，直接返回 200，立刻结束！
+    // 不要往下走，不要读 Body，不要连数据库
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
