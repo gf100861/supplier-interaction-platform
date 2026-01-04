@@ -46,7 +46,6 @@ app.all('/api/delete-user', async (req, res) => {
 // 2. 注册 Smart Search 路由
 app.post('/api/smart-search', async (req, res) => {
     // 增加超时设置，因为 RAG 可能会慢
-    req.setTimeout(60000); // 60秒超时
     await smartSearchHandler(req, res);
 });
 
