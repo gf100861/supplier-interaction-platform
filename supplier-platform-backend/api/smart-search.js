@@ -5,10 +5,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cors = require('cors');
 
 // ==========================================
-// 1. 初始化 CORS 中间件 (仿照 send-email.js)
+// 1. 初始化 CORS 中间件
 // ==========================================
 const corsMiddleware = cors({
-    origin: '*', // 允许所有来源，避免复杂的跨域判定问题
+    origin: '*', // 允许所有来源
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
     credentials: true,
@@ -98,7 +98,7 @@ async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
         const result = await model.generateContent([systemPrompt, userContextPrompt]);
         return result.response.text();
     } else {
-            const targetModel = modelType === 'openai' ? 'gpt-4o' : 'text-embedding-v4';
+         const targetModel = modelType === 'openai' ? 'gpt-4o' : 'text-embedding-v4';
         const response = await llmClient.chat.completions.create({
             model: targetModel, 
             messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContextPrompt }],
@@ -129,26 +129,29 @@ module.exports = async (req, res) => {
 
     try {
         // === 关键修改：简化的参数获取逻辑 ===
-        // 优先从 POST body 获取，如果没有则尝试从 URL query 获取 (兼容 GET 请求)
-        let rawQuery = req.body?.query || req.query?.query;
-        let model = req.body?.model || req.query?.model || 'qwen';
+        // Vercel Serverless Functions usually parse JSON body automatically if Content-Type is application/json
+        let body = req.body;
 
-        // 如果 body 是字符串 (有时候 content-type 不对会导致这种情况)，尝试 parse
-        if (!rawQuery && typeof req.body === 'string') {
+        // If body is a string (e.g., misconfigured content-type), try parsing it
+        if (typeof body === 'string') {
             try {
-                const parsed = JSON.parse(req.body);
-                rawQuery = parsed.query;
-                model = parsed.model || model;
+                body = JSON.parse(body);
             } catch (e) {
-                console.log('Failed to parse body string');
+                console.error('Failed to parse body string:', e);
+                // Don't crash, just let body remain a string or partial object
             }
         }
 
+        // 优先从 POST body 获取，如果没有则尝试从 URL query 获取 (兼容 GET 请求)
+        let rawQuery = body?.query || req.query?.query;
+        console.log("Received Smart Search Request. Body:", body, "Query Params:", req.query);
+        let model = body?.model || req.query?.model || 'qwen';
+
         if (!rawQuery) {
-            console.log("Error: No query found. Body:", req.body, "Query:", req.query);
+            console.log("Error: No query found. Body:", body, "Query:", req.query);
             return res.status(400).json({ 
                 error: "Query is required in request body or url parameters",
-                debug_body: req.body, // 调试用
+                debug_body: body, // 调试用
                 debug_query: req.query
             });
         }
