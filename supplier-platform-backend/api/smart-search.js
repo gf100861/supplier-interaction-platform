@@ -5,10 +5,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cors = require('cors');
 
 // ==========================================
-// 1. 初始化 CORS 中间件
+// 1. 初始化 CORS 中间件 (仿照 send-email.js)
 // ==========================================
 const corsMiddleware = cors({
-    origin: true, 
+    origin: '*', // 允许所有来源，避免复杂的跨域判定问题
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
     credentials: true,
@@ -26,49 +26,7 @@ function runMiddleware(req, res, fn) {
 }
 
 // ==========================================
-// 2. 强力 Body 解析器 (解决 Vercel req.body undefined 问题)
-// ==========================================
-const parseRequestBody = async (req) => {
-    // 1. 如果 Vercel 已经解析好了 (对象)
-    if (req.body && typeof req.body === 'object') {
-        return req.body;
-    }
-
-    // 2. 如果 Vercel 解析成了字符串
-    if (req.body && typeof req.body === 'string') {
-        try {
-            return JSON.parse(req.body);
-        } catch (e) {
-            console.error("JSON parse failed (string):", e);
-        }
-    }
-
-    // 3. (兜底) 如果 req.body 为空，手动读取流
-    // 这通常发生在 Vercel 认为 Content-Type 不标准时
-    return new Promise((resolve) => {
-        let data = '';
-        req.on('data', chunk => {
-            data += chunk;
-        });
-        req.on('end', () => {
-            if (!data) return resolve({});
-            try {
-                resolve(JSON.parse(data));
-            } catch (e) {
-                console.error("Manual JSON parse failed:", e);
-                console.log("Raw Data:", data);
-                resolve({});
-            }
-        });
-        req.on('error', (err) => {
-            console.error("Stream read error:", err);
-            resolve({});
-        });
-    });
-};
-
-// ==========================================
-// 3. 初始化客户端 & 工具函数
+// 2. 初始化客户端 & 工具函数
 // ==========================================
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -136,11 +94,11 @@ function simpleRerank(docs, query) {
 // --- 工具函数 E: 生成 ---
 async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
     if (modelType === 'gemini') {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent([systemPrompt, userContextPrompt]);
         return result.response.text();
     } else {
-        const targetModel = modelType === 'openai' ? 'gpt-4o' : 'qwen-plus';
+            const targetModel = modelType === 'openai' ? 'gpt-4o' : 'text-embedding-v4';
         const response = await llmClient.chat.completions.create({
             model: targetModel, 
             messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContextPrompt }],
@@ -151,40 +109,47 @@ async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
 }
 
 // ==========================================
-// 4. 主处理函数
+// 3. 主处理函数
 // ==========================================
 module.exports = async (req, res) => {
-    // 1. 设置 CORS 头
-    const requestOrigin = req.headers.origin || '*';
-    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-    // 2. 处理预检请求
+    // 1. 处理 OPTIONS 预检请求
     if (req.method === 'OPTIONS') {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         return res.status(200).end();
     }
 
+    // 2. 运行 CORS 中间件
     try {
-        // 3. 运行 CORS 中间件
         await runMiddleware(req, res, corsMiddleware);
     } catch (e) {
-        return res.status(500).json({ error: 'Internal Server Error (CORS)' });
+        return res.status(500).json({ error: 'CORS failed' });
     }
 
     try {
-        // === 关键修改：使用强力解析器 ===
-        const body = await parseRequestBody(req);
-        // ============================
+        // === 关键修改：简化的参数获取逻辑 ===
+        // 优先从 POST body 获取，如果没有则尝试从 URL query 获取 (兼容 GET 请求)
+        let rawQuery = req.body?.query || req.query?.query;
+        let model = req.body?.model || req.query?.model || 'qwen';
 
-        const { query: rawQuery, model = 'qwen' } = body;
-        
+        // 如果 body 是字符串 (有时候 content-type 不对会导致这种情况)，尝试 parse
+        if (!rawQuery && typeof req.body === 'string') {
+            try {
+                const parsed = JSON.parse(req.body);
+                rawQuery = parsed.query;
+                model = parsed.model || model;
+            } catch (e) {
+                console.log('Failed to parse body string');
+            }
+        }
+
         if (!rawQuery) {
-            console.log("Error: No query found. Body received:", JSON.stringify(body));
+            console.log("Error: No query found. Body:", req.body, "Query:", req.query);
             return res.status(400).json({ 
-                error: "Query is required in request body",
-                debug_body: body // 为了调试，把收到的东西返回给你看
+                error: "Query is required in request body or url parameters",
+                debug_body: req.body, // 调试用
+                debug_query: req.query
             });
         }
 
@@ -206,8 +171,13 @@ module.exports = async (req, res) => {
         }
 
         // --- Step 3: 检索 ---
+        // 注意：确保 embedding 不为 null
+        const vectorPromise = embedding 
+            ? supabase.rpc('match_notices', { query_embedding: embedding, match_threshold: 0.45, match_count: 15 })
+            : Promise.resolve({ data: [] });
+
         const [vectorResults, keywordResults] = await Promise.all([
-            supabase.rpc('match_notices', { query_embedding: embedding, match_threshold: 0.45, match_count: 15 }),
+            vectorPromise,
             supabase.from('notices').select('*').textSearch('content_tsvector', rawQuery, { config: 'chinese', type: 'websearch' }).limit(5)
         ]);
 
