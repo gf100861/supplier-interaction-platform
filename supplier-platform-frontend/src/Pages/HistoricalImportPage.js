@@ -5,7 +5,6 @@ import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 // --- 第三方库 CDN 导入 ---
-import * as ExcelJS from 'https://esm.sh/exceljs@4.4.0';
 import Tesseract from 'https://esm.sh/tesseract.js@5.0.3';
 import * as pdfjsLibProxy from 'https://esm.sh/pdfjs-dist@3.11.174';
 import { supabase } from '../supabaseClient';
@@ -31,68 +30,27 @@ const mockAddNotices = async (notices) => {
 // *** 修改点 1: 默认 API Key ***
 const DEFAULT_API_KEY = '';
 
+
+const PROVIDERS = {
+    QWEN: { label: '阿里云 Qwen', value: 'qwen', defaultModel: 'qwen-vl-max' },
+    GEMINI: { label: 'Google Gemini', value: 'gemini', defaultModel: 'gemini-2.5-flash' },
+    OPENAI: { label: 'OpenAI (GPT-4o)', value: 'openai', defaultModel: 'gpt-4o' }
+};
+
 const HistoricalImportPage = () => {
-    // --- 状态管理 ---
     const [loading, setLoading] = useState(false);
     const [parsing, setParsing] = useState(false);
     const [parseProgress, setParseProgress] = useState('');
-    const [useGemini, setUseGemini] = useState(true);
+    const [useAI, setUseAI] = useState(true); // 改名为 useAI
 
-    // 新增：批量解析相关状态
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, percent: 0 });
-    const [parsedResults, setParsedResults] = useState([]); // 存储批量解析的结果
-    const [activeResultIndex, setActiveResultIndex] = useState(-1); // 当前正在编辑/查看的结果索引
-
-    const [rememberApiKey, setRememberApiKey] = useState(false);
+    const [parsedResults, setParsedResults] = useState([]);
+    const [activeResultIndex, setActiveResultIndex] = useState(-1);
 
     const { messageApi } = useNotification();
     const { suppliers } = useSuppliers();
 
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-
-    const DEFAULT_API_KEY = '';
-    const LS_API_KEY_KEY = 'gemini_api_key_local_storage'; // *** 定义 LocalStorage 的键名 ***
-
-    // *** 新增 Effect: 组件加载时读取本地存储 ***
-    useEffect(() => {
-        const savedKey = localStorage.getItem(LS_API_KEY_KEY);
-        if (savedKey) {
-            setApiKey(savedKey);
-            setRememberApiKey(true);
-        }
-    }, []);
-
-    // *** 新增处理函数: API Key 变更时同步更新本地存储 ***
-    const handleApiKeyChange = (e) => {
-        const newKey = e.target.value;
-        setApiKey(newKey);
-        if (rememberApiKey) {
-            localStorage.setItem(LS_API_KEY_KEY, newKey);
-        }
-    };
-
-    // *** 新增处理函数: Checkbox 切换逻辑 ***
-    const handleRememberChange = (e) => {
-        const checked = e.target.checked;
-        setRememberApiKey(checked);
-        if (checked) {
-            localStorage.setItem(LS_API_KEY_KEY, apiKey);
-            messageApi.success('API Key 已保存到本地');
-        } else {
-            localStorage.removeItem(LS_API_KEY_KEY);
-            messageApi.info('不再记住 API Key');
-        }
-    };
-
-    // 辅助函数：将 File 对象转换为 Base64 字符串
-    const fileToBase64 = (file) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file); // 结果将是 "data:application/pdf;base64,..."
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = (error) => reject(error);
-        });
-    };
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser) return [];
@@ -104,17 +62,68 @@ const HistoricalImportPage = () => {
         return [];
     }, [currentUser, suppliers]);
 
-    // *** 修改点 2: API Key ***
-    const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
-
-    // *** 修改点 3: 模型选择 ***
-    const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash');
+    // --- 2. 修改：多厂商状态管理 ---
+    const [provider, setProvider] = useState(PROVIDERS.GEMINI.value); // 默认 Gemini
+    const [apiKeys, setApiKeys] = useState({
+        gemini: '',
+        qwen: '',
+        openai: ''
+    });
+    const [currentModel, setCurrentModel] = useState(PROVIDERS.GEMINI.defaultModel);
+    const [rememberApiKey, setRememberApiKey] = useState(false);
 
     const addNotices = mockAddNotices;
     const [form] = Form.useForm();
 
+    // 从本地存储加载 Keys
+    useEffect(() => {
+        const savedKeys = localStorage.getItem('app_api_keys');
+        if (savedKeys) {
+            try {
+                const parsed = JSON.parse(savedKeys);
+                setApiKeys(prev => ({ ...prev, ...parsed }));
+                setRememberApiKey(true);
+            } catch (e) { }
+        }
+    }, []);
 
-    // --- 新增：调用 Gemini 生成向量 ---
+    const handleApiKeyChange = (val) => {
+        const newKeys = { ...apiKeys, [provider]: val };
+        setApiKeys(newKeys);
+        if (rememberApiKey) {
+            localStorage.setItem('app_api_keys', JSON.stringify(newKeys));
+        }
+    };
+
+    const handleProviderChange = (val) => {
+        setProvider(val);
+        // 切换厂商时自动切换到该厂商的默认模型
+        const providerKey = Object.keys(PROVIDERS).find(k => PROVIDERS[k].value === val);
+        if (providerKey) {
+            setCurrentModel(PROVIDERS[providerKey].defaultModel);
+        }
+    };
+
+    const handleRememberChange = (e) => {
+        setRememberApiKey(e.target.checked);
+        if (e.target.checked) {
+            localStorage.setItem('app_api_keys', JSON.stringify(apiKeys));
+            messageApi.success('API Key 已保存到本地');
+        } else {
+            localStorage.removeItem('app_api_keys');
+            messageApi.info('不再记住 API Key');
+        }
+    };
+  // 辅助函数：将 File 对象转换为 Base64 字符串
+    const fileToBase64 = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file); // 结果将是 "data:application/pdf;base64,..."
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (error) => reject(error);
+        });
+    };
+
     const getGeminiEmbedding = async (text) => {
         if (!text || !text.trim()) return null;
 
@@ -123,7 +132,7 @@ const HistoricalImportPage = () => {
 
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKeys.gemini}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -144,22 +153,20 @@ const HistoricalImportPage = () => {
             return null; // 失败了不要卡住流程，存 null 即可
         }
     };
+    // --- 核心：统一 AI 调用入口 ---
+    const callUnifiedAI = async (base64Images) => {
+        const apiKey = apiKeys[provider];
+        if (!apiKey) throw new Error(`请先输入 ${PROVIDERS[Object.keys(PROVIDERS).find(k => PROVIDERS[k].value === provider)].label} 的 API Key`);
 
-    // --- Google Gemini API 调用核心逻辑 (支持多页 + 图片深度解析) ---
-    const callGeminiVisionAPI = async (base64Images) => {
-        if (!apiKey) {
-            throw new Error("API Key 为空！请在设置栏输入 Google API Key。");
-        }
-
-        const prompt = `
-  You are a Super Quality Engineer expert. Analyze this 8D Report / NCR document.
-  Extract the information into a pure JSON object.
-
+        // 通用 Prompt
+        const systemPrompt = `
+         You are a Super Quality Engineer expert. Analyze this 8D Report / NCR document.Extract the information into a pure JSON object.
   *** STRICT DATA CLEANING RULES ***
-  1. **NO TRANSLATION**: You must output the content in its **ORIGINAL LANGUAGE**. 
-     - If the text is in Chinese, keep it Chinese. 
-     - If it is mixed Chinese/English, keep it mixed. 
+  1. **NO TRANSLATION**: You must output the content in its **ORIGINAL LANGUAGE**.
+     - If the text is in Chinese, keep it Chinese.
+     - If it is mixed Chinese/English, keep it mixed.
      - Do NOT translate Chinese to English under any circumstances.
+
   2. **NO TEMPLATE/BOILERPLATE TEXT**: Do NOT extract standard footer notes, legal disclaimers, or form instructions.
      - **Explicitly Exclude** phrases like:
        - "Please let me know your investigation and corrective action plan..."
@@ -169,16 +176,16 @@ const HistoricalImportPage = () => {
        - "Administrative Cost"
        - "Standard citation"
        - "Approval & Closing"
+
   3. **Data Formatting**:
      - Return **null** or empty string if a field is not found.
      - **partNumber**: Must be a numeric string.
      - **date**: Format YYYY-MM-DD.
 
   *** EXTRACTION LOGIC ***
-  
   **1. Identity Information:**
-  - **partNumber**: 
-      - Locate "Part number" or "Part No". Pick the numeric string (typically 8 digits for Volvo) found **next to** the label. 
+  - **partNumber**:
+      - Locate "Part number" or "Part No". Pick the numeric string (typically 8 digits for Volvo) found **next to** the label.
       - Verify it is TOTALLY DIFFERENT from the Report No.
   - **reportNo**: The main NCR/MRB number (often starts with 530...).
   - **supplierCode**: The vendor code (usually 5 digits).
@@ -186,14 +193,17 @@ const HistoricalImportPage = () => {
   - **quantity**: Locate "Quantity". Extract the numeric value next to it(e.g., "1 EA" -> "1").
 
   **2. Technical Content (D2, D4, D5/D6):**
+
   - **subject**: The main issue title (D2). Keep original language.
   - **summary**: The problem description. Keep original language.
   - **rootCause**: (D4) Combine all "Root Cause" or "Why" analysis text.
       - **Logic**: Stop extracting when you reach "5. Interim" or "Cost claim".
       - **Keep Original Language**: Do not summarize into English. Copy the raw text/list.
   - **interimAction**: (D5/D6) Combine "Interim Action", "Corrective Action", or "Solution".
-      - **Logic**: Stop extracting when you reach "Verification", "Approval", or the "Please let me know..." footer.
+   - **Logic**: Stop extracting when you reach "Verification", "Approval", or the "Please let me know..." footer.
       - **Keep Original Language**.
+
+
 
   Fields to extract:
   - reportNo: Report number / NCR No. (Look for "Report No" or the number starting with 530... at the top).
@@ -203,63 +213,118 @@ const HistoricalImportPage = () => {
   - partName: Part name / Description (Merge split lines).
   - quantity: Quantity.
   - date: Issue date (Format: YYYY-MM-DD).
-  - summary: Problem description (D2). 
-  - rootCause: Root cause analysis (D4). EXTRACT FULL TEXT. 
-  - interimAction: Interim & Potential Corrective Action (D5/D6). 
-`;
+  - summary: Problem description (D2).
+  - rootCause: Root cause analysis (D4). EXTRACT FULL TEXT.
+  - interimAction: Interim & Potential Corrective Action (D5/D6).
+        `;
 
-        // *** 核心修改：构建包含多张图片的 Payload ***
+        if (provider === 'gemini') {
+            return await callGeminiAPI(apiKey, currentModel, systemPrompt, base64Images);
+        } else if (provider === 'qwen') {
+            return await callQwenAPI(apiKey, currentModel, systemPrompt, base64Images);
+        } else if (provider === 'openai') {
+            return await callOpenAIAPI(apiKey, currentModel, systemPrompt, base64Images);
+        }
+    };
+
+    // 1. Google Gemini 实现
+    const callGeminiAPI = async (key, model, prompt, images) => {
         const parts = [{ text: prompt }];
+        images.forEach(img => parts.push({ inline_data: { mime_type: "image/jpeg", data: img } }));
 
-        // 确保输入是数组
-        const images = Array.isArray(base64Images) ? base64Images : [base64Images];
-
-        images.forEach(imgData => {
-            parts.push({
-                inline_data: {
-                    mime_type: "image/jpeg",
-                    data: imgData
-                }
-            });
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
+            })
         });
 
-        const payload = {
-            contents: [{ parts: parts }],
-            generationConfig: {
+        if (!response.ok) throw new Error(`Gemini API Error: ${response.status}`);
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        return parseJSON(text);
+    };
+
+    // 2. 阿里云 Qwen (通义千问 VL) 实现
+    const callQwenAPI = async (key, model, prompt, images) => {
+        // Qwen VL 目前通过 DashScope API 调用，通常需要图片 URL，或者 Base64
+        // 注意：DashScope 的 Base64 格式通常需要 data:image/jpeg;base64, 前缀
+
+        // 构造 Qwen VL 的消息体 (OpenAI 兼容格式或 DashScope 原生格式)
+        // 这里使用 DashScope 的多模态兼容接口
+        const messages = [
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: prompt },
+                    ...images.map(img => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img}` } }))
+                ]
+            }
+        ];
+
+        const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: model, // e.g., qwen-vl-max
+                messages: messages,
+                max_tokens: 2000
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(`Qwen API Error: ${err.error?.message || response.status}`);
+        }
+        const data = await response.json();
+        return parseJSON(data.choices[0].message.content);
+    };
+
+    // 3. OpenAI (GPT-4o) 实现
+    const callOpenAIAPI = async (key, model, prompt, images) => {
+        const messages = [
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: prompt },
+                    ...images.map(img => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img}` } }))
+                ]
+            }
+        ];
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: messages,
+                max_tokens: 4096,
                 temperature: 0.2,
-                maxOutputTokens: 8192, // 增加 Token 限制以容纳更多内容
-            }
-        };
+                response_format: { type: "json_object" } // 强制 JSON
+            })
+        });
 
+        if (!response.ok) throw new Error(`OpenAI API Error: ${response.status}`);
+        const data = await response.json();
+        return parseJSON(data.choices[0].message.content);
+    };
+
+    const parseJSON = (text) => {
+        if (!text) throw new Error("API 返回空内容");
+        const jsonStr = text.replace(/```json|```/g, '').trim();
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error?.message || `API 请求失败: ${response.status}`);
-            }
-
-            const data = await response.json();
-            const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-            if (!textResponse) throw new Error("API 返回了空内容");
-
-            const jsonStr = textResponse.replace(/```json|```/g, '').trim();
-
-            try {
-                return JSON.parse(jsonStr);
-            } catch (e) {
-                console.error("JSON Parse Error. Raw Text:", textResponse);
-                throw new Error("AI 返回的数据格式无法解析为 JSON，请重试。");
-            }
-
-        } catch (error) {
-            console.error("Gemini API Error:", error);
-            throw error;
+            return JSON.parse(jsonStr);
+        } catch (e) {
+            console.error("JSON Parse Error:", text);
+            throw new Error("无法解析 AI 返回的 JSON");
         }
     };
 
@@ -369,74 +434,65 @@ const HistoricalImportPage = () => {
             return;
         }
 
-        // 检查所有文件类型
-        const invalidFiles = fileList.filter(f => f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf'));
-        if (invalidFiles.length > 0) {
-            messageApi.error("包含不支持的文件类型，仅支持 PDF。");
-            return;
-        }
-
         setParsing(true);
-        setParsedResults([]); // 清空旧结果
+        setParsedResults([]);
         setActiveResultIndex(-1);
         setBatchProgress({ current: 0, total: fileList.length, percent: 0 });
 
         const results = [];
 
-        const loadingMsgKey = ['魔法开始...', '正在施展魔法...', '魔法进行中...', '魔法即将完成...'];
-
         for (let i = 0; i < fileList.length; i++) {
             const fileItem = fileList[i];
             const file = fileItem.originFileObj;
 
-            // 更新进度
             setBatchProgress({ current: i + 1, total: fileList.length, percent: Math.round(((i) / fileList.length) * 100) });
             setParseProgress(`正在处理 (${i + 1}/${fileList.length}): ${file.name}...`);
 
             try {
                 let data = {};
-                let status = 'success';
-                let errorMsg = null;
 
-                if (useGemini) {
-                    if (!apiKey) throw new Error("缺少 Google API Key");
+                if (useAI) {
+                    if (!apiKeys[provider]){
+
+                        messageApi.error(`缺少 ${PROVIDERS[provider.toUpperCase()].label} API Key`);
+                        throw new Error(`缺少 ${PROVIDERS[provider.toUpperCase()].label} API Key`);
+
+                    } 
 
                     const base64Images = await convertPdfToImages(file);
+                    setParseProgress(`正在请求 ${currentModel} 分析...`);
 
-                    // setParseProgress(loadingMsgKey[i % loadingMsgKey.length]);
-                    setParseProgress(`正在 AI 分析 (${i + 1}/${fileList.length})...`);
-                    const result = await callGeminiVisionAPI(base64Images);
+                    // *** 切换为通用调用函数 ***
+                    const result = await callUnifiedAI(base64Images);
 
                     data = {
                         ...result,
                         date: result.date ? dayjs(result.date) : dayjs(),
-                        title: result.subject ? result.subject : `${result.partNumber ? `[${result.partNumber}] ` : ''}${result.partName ? `${result.partName} - ` : ''}${result.summary ? result.summary.substring(0, 20) : 'Gemini Analysis'}...`
+                        title: result.subject ? result.subject : `${result.partNo || ''} - ${result.partName || ''}`
                     };
                 } else {
-                    setParseProgress(`正在 OCR 识别 (${i + 1}/${fileList.length})...`);
-                    const rawText = await extractTextLocal(file);
+                    // 本地 OCR
+                    setParseProgress(`正在 OCR 识别...`);
+                    // ... 调用本地 OCR 逻辑 ...
+                    const rawText = await extractTextLocal(file); // 需确保此函数存在
                     data = parse8DReportTextLocal(rawText);
                 }
 
-                // 自动匹配供应商
+                // 自动匹配供应商 (保持不变)
                 let matchedSupplierId = undefined;
                 if (data.supplierCode && suppliers) {
                     const targetCode = data.supplierCode.toString().trim().toUpperCase();
-                    const found = suppliers.find(s =>
-                        (s.short_code && s.short_code.toUpperCase() === targetCode) ||
-                        (s.parma_id && s.parma_id.toString() === targetCode)
-                    );
+                    const found = suppliers.find(s => (s.short_code && s.short_code.toUpperCase() === targetCode) || (s.parma_id && s.parma_id.toString() === targetCode));
                     if (found) matchedSupplierId = found.id;
                 }
 
-                // 存入结果对象
                 results.push({
                     key: i,
                     fileName: file.name,
                     fileObj: file,
                     data: { ...data, supplierId: matchedSupplierId },
                     status: 'success',
-                    isArchived: false // 是否已归档
+                    isArchived: false
                 });
 
             } catch (error) {
@@ -456,14 +512,12 @@ const HistoricalImportPage = () => {
         setParsedResults(results);
         setParsing(false);
         setParseProgress('');
-        messageApi.success(`批量解析完成！成功: ${results.filter(r => r.status === 'success').length}, 失败: ${results.filter(r => r.status === 'error').length}`);
 
-        // 如果有成功的结果，自动加载第一个到表单预览
+        // 自动加载第一个成功项
         const firstSuccess = results.findIndex(r => r.status === 'success');
-        if (firstSuccess !== -1) {
-            loadResultToForm(results[firstSuccess], firstSuccess);
-        }
+        if (firstSuccess !== -1) loadResultToForm(results[firstSuccess], firstSuccess);
     };
+
 
     // 将选中的解析结果填入表单以便编辑
     const loadResultToForm = (resultItem, index) => {
@@ -728,50 +782,70 @@ const HistoricalImportPage = () => {
                                 <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
                                     <Form.Item label="文件上传" style={{ marginBottom: 12 }}>
                                         <Form.Item name="file" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e && e.fileList} noStyle>
-                                            <Upload multiple beforeUpload={() => false} accept=".pdf" fileList={form.getFieldValue('file')}>
+                                            <Upload multiple beforeUpload={() => false} accept=".pdf">
                                                 <Button icon={<UploadOutlined />} block>选择 PDF 文件 (支持多选)</Button>
                                             </Upload>
                                         </Form.Item>
                                     </Form.Item>
 
                                     <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 6, marginBottom: 16 }}>
-                                        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
                                             <span><ApiOutlined /> 解析引擎:</span>
                                             <Switch
-                                                checkedChildren={<><GoogleOutlined /> Google Gemini</>}
-                                                unCheckedChildren={<><RobotOutlined /> 本地 OCR</>}
-                                                checked={useGemini}
-                                                onChange={setUseGemini}
+                                                checkedChildren="AI 增强模式"
+                                                unCheckedChildren="本地 OCR"
+                                                checked={useAI}
+                                                onChange={setUseAI}
                                             />
                                         </Space>
-                                        {useGemini && (
-                                            <div style={{ marginTop: 8 }}>
-                                                <Input.Password
-                                                    placeholder="Google API Key"
-                                                    value={apiKey}
-                                                    onChange={handleApiKeyChange}
-                                                    style={{ marginBottom: 8 }}
-                                                />
-                                                {/* *** 修改点: 添加 Checkbox *** */}
-                                                <div style={{ marginBottom: 8 }}>
-                                                    <Checkbox
-                                                        checked={rememberApiKey}
-                                                        onChange={handleRememberChange}
-                                                    >
-                                                        在本地记住 API Key (下次无需输入)
-                                                    </Checkbox>
-                                                </div>
+                                        {useAI && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                                {/* 1. 选择提供商 */}
+                                                <Form.Item label="模型提供商" style={{ marginBottom: 0 }}>
+                                                    <Select value={provider} onChange={handleProviderChange}>
+                                                        {Object.values(PROVIDERS).map(p => (
+                                                            <Option key={p.value} value={p.value}>
+                                                                <Space>{p.icon} {p.label}</Space>
+                                                            </Option>
+                                                        ))}
+                                                    </Select>
+                                                </Form.Item>
 
-                                                <Select
-                                                    value={geminiModel}
-                                                    onChange={setGeminiModel}
-                                                    placeholder="选择模型"
-                                                    style={{ width: '100%' }}
-                                                >
-                                                    <Option value="gemini-2.5-flash">Gemini 2.5 Flash(Recommended)</Option>
-                                                    <Option value="gemini-2.5-flash-lite">Gemini 2.5 Flsh Lite</Option>
-                                                    <Option value="gemini-3-flash">gemini-latest</Option>
-                                                </Select>
+                                                {/* 2. 输入 Key */}
+                                                <Input.Password
+                                                    placeholder={`请输入 ${PROVIDERS[provider.toUpperCase()]?.label} API Key`}
+                                                    value={apiKeys[provider]}
+                                                    onChange={e => handleApiKeyChange(e.target.value)}
+                                                />
+
+                                                {/* 3. 选择模型 */}
+                                                <Form.Item label="选择模型" style={{ marginBottom: 0 }}>
+                                                    <Select value={currentModel} onChange={setCurrentModel}>
+                                                        {provider === 'gemini' && (
+                                                            <>
+                                                                <Option value="gemini-2.5-flash">Gemini 2.5 Flash</Option>
+                                                                <Option value="gemini-2.5-pro">Gemini 2.5 Pro</Option>
+                                                            </>
+                                                        )}
+                                                        {provider === 'qwen' && (
+                                                            <>
+                                                                <Option value="qwen-vl-max">Qwen-VL-Max (通义千问-视觉增强)</Option>
+                                                                <Option value="qwen-vl-plus">Qwen-VL-Plus</Option>
+                                                                <Option value="qwen3-vl-plus">Qwen3-vl-plus</Option>
+                                                            </>
+                                                        )}
+                                                        {provider === 'openai' && (
+                                                            <>
+                                                                <Option value="gpt-4o">GPT-4o (Omni)</Option>
+                                                                <Option value="gpt-4-turbo">GPT-4 Turbo</Option>
+                                                            </>
+                                                        )}
+                                                    </Select>
+                                                </Form.Item>
+
+                                                <Checkbox checked={rememberApiKey} onChange={handleRememberChange}>
+                                                    记住 API Key (本地存储)
+                                                </Checkbox>
                                             </div>
                                         )}
                                     </div>

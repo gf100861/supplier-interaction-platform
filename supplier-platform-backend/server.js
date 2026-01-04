@@ -1,3 +1,4 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -8,7 +9,7 @@ const nodemailer = require('nodemailer');
 // --- 引入 API 处理逻辑 ---
 const createUserHandler = require('./api/create-user');
 const deleteUserHandler = require('./api/delete-user'); // 引入 delete-user
-
+const smartSearchHandler = require('./api/smart-search');
 const app = express();
 const server = http.createServer(app);
 
@@ -43,6 +44,12 @@ app.all('/api/delete-user', async (req, res) => {
     await deleteUserHandler(req, res);
 });
 
+// 2. 注册 Smart Search 路由
+app.post('/api/smart-search', async (req, res) => {
+    // 增加超时设置，因为 RAG 可能会慢
+    req.setTimeout(60000); // 60秒超时
+    await smartSearchHandler(req, res);
+});
 
 // --- 2. 邮件 API ---
 app.post('/api/send-alert-email', async (req, res) => {
@@ -93,4 +100,5 @@ server.listen(PORT, () => {
     console.log(`📧 Email endpoint: http://localhost:${PORT}/api/send-alert-email`);
     console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`);
     console.log(`🗑️ Delete User endpoint: http://localhost:${PORT}/api/delete-user`);
+    console.log(`🧠 Smart Search endpoint: http://localhost:${PORT}/api/smart-search`); // 打印一下方便确认
 });

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Upload, Avatar, Layout, Menu, Typography, Card, Row, Col, Anchor, Divider, Space, Tag, Button, Breadcrumb, Steps, Input, AutoComplete, Collapse, Timeline, List, Empty } from 'antd';
+import { message,  Upload, Avatar, Layout, Menu, Typography, Card, Row, Col, Anchor, Divider, Space, Tag, Button, Breadcrumb, Steps, Input, AutoComplete, Collapse, Timeline, List, Empty } from 'antd';
 import {
     UserOutlined, SolutionOutlined, FileTextOutlined,
     QuestionCircleOutlined, RobotOutlined, CloudUploadOutlined,
