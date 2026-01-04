@@ -81,7 +81,7 @@ const IntelligentSearchPage = () => {
         // { label: 'OpenAI GPT-4o (Node)', value: 'openai', icon: '🤖' },
     ];
 
-    const [currentModel, setCurrentModel] = useState('hybrid-smart');
+    const [currentModel, setCurrentModel] = useState('qwen');
     const [showSettings, setShowSettings] = useState(false);
 
     // API Keys 依然保留在 LocalStorage，虽然现在主要由后端代理
