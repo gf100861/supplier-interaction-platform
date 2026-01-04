@@ -570,7 +570,7 @@ const IntelligentSearchPage = () => {
                     <div className="chat-input-wrapper">
                         <div className="input-box-container">
                             <TextArea
-                                placeholder={isLoading ? `正在生成回答...` : `请输入您的问题... (Shift+Enter 换行)`}
+                                placeholder={isLoading ? `正在生成回答...` : `请输入您的问题...示例: "${placeholderValue}"`}
                                 autoSize={{ minRows: 1, maxRows: 6 }}
                                 value={inputValue}
                                 onChange={e => setInputValue(e.target.value)}
@@ -610,7 +610,7 @@ const IntelligentSearchPage = () => {
                         {
                             key: '2', label: 'OpenAI', children: (
                                 <>
-                                    <Form.Item label="OpenAI API Key" name="openai"><Input.Password placeholder="sk-..." /></Form.Item>
+                                    <Form.Item label="OpenAI API Key" name="qwen"><Input.Password placeholder="sk-..." /></Form.Item>
                                     <Form.Item label="API Base URL" name="openaiBaseUrl"><Input placeholder="https://api.openai.com/v1" /></Form.Item>
                                 </>
                             )

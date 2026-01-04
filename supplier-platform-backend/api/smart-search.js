@@ -8,7 +8,7 @@ const cors = require('cors');
 // 1. 初始化 CORS 中间件
 // ==========================================
 const corsMiddleware = cors({
-    origin: '*', // 允许所有来源
+    origin: true, 
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
     credentials: true,
@@ -26,7 +26,49 @@ function runMiddleware(req, res, fn) {
 }
 
 // ==========================================
-// 2. 初始化客户端 & 工具函数
+// 2. 强力 Body 解析器 (解决 Vercel req.body undefined 问题)
+// ==========================================
+const parseRequestBody = async (req) => {
+    // 1. 如果 Vercel 已经解析好了 (对象)
+    if (req.body && typeof req.body === 'object') {
+        return req.body;
+    }
+
+    // 2. 如果 Vercel 解析成了字符串
+    if (req.body && typeof req.body === 'string') {
+        try {
+            return JSON.parse(req.body);
+        } catch (e) {
+            console.error("JSON parse failed (string):", e);
+        }
+    }
+
+    // 3. (兜底) 如果 req.body 为空，手动读取流
+    // 这通常发生在 Vercel 认为 Content-Type 不标准时
+    return new Promise((resolve) => {
+        let data = '';
+        req.on('data', chunk => {
+            data += chunk;
+        });
+        req.on('end', () => {
+            if (!data) return resolve({});
+            try {
+                resolve(JSON.parse(data));
+            } catch (e) {
+                console.error("Manual JSON parse failed:", e);
+                console.log("Raw Data:", data);
+                resolve({});
+            }
+        });
+        req.on('error', (err) => {
+            console.error("Stream read error:", err);
+            resolve({});
+        });
+    });
+};
+
+// ==========================================
+// 3. 初始化客户端 & 工具函数
 // ==========================================
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -94,14 +136,25 @@ function simpleRerank(docs, query) {
 // --- 工具函数 E: 生成 ---
 async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
     if (modelType === 'gemini') {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([systemPrompt, userContextPrompt]);
         return result.response.text();
     } else {
-         const targetModel = modelType === 'openai' ? 'gpt-4o' : 'text-embedding-v4';
+        console.log("Using model:", modelType);
+        
+        // ❌ 错误写法 (你现在的代码):
+        // const targetModel = modelType == 'openai' ? 'gpt-4o' : 'text-embedding-v4'; 
+        
+        // ✅ 正确写法:
+        // 如果是 Qwen，必须用 qwen-plus (或 qwen-max, qwen-turbo)
+        const targetModel = modelType == 'openai' ? 'gpt-4o' : 'qwen3-max-preview'; 
+        
         const response = await llmClient.chat.completions.create({
-            model: targetModel, 
-            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContextPrompt }],
+            model: targetModel, // 这里必须是聊天模型
+            messages: [
+                { role: "system", content: systemPrompt }, 
+                { role: "user", content: userContextPrompt }
+            ],
             temperature: 0.1
         });
         return response.choices[0].message.content;
@@ -109,50 +162,40 @@ async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
 }
 
 // ==========================================
-// 3. 主处理函数
+// 4. 主处理函数
 // ==========================================
 module.exports = async (req, res) => {
-    // 1. 处理 OPTIONS 预检请求
+    // 1. 设置 CORS 头
+    const requestOrigin = req.headers.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // 2. 处理预检请求
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         return res.status(200).end();
     }
 
-    // 2. 运行 CORS 中间件
     try {
+        // 3. 运行 CORS 中间件
         await runMiddleware(req, res, corsMiddleware);
     } catch (e) {
-        return res.status(500).json({ error: 'CORS failed' });
+        return res.status(500).json({ error: 'Internal Server Error (CORS)' });
     }
 
     try {
-        // === 关键修改：简化的参数获取逻辑 ===
-        // Vercel Serverless Functions usually parse JSON body automatically if Content-Type is application/json
-        let body = req.body;
+        // === 关键修改：使用强力解析器 ===
+        const body = await parseRequestBody(req);
+        // ============================
 
-        // If body is a string (e.g., misconfigured content-type), try parsing it
-        if (typeof body === 'string') {
-            try {
-                body = JSON.parse(body);
-            } catch (e) {
-                console.error('Failed to parse body string:', e);
-                // Don't crash, just let body remain a string or partial object
-            }
-        }
-
-        // 优先从 POST body 获取，如果没有则尝试从 URL query 获取 (兼容 GET 请求)
-        let rawQuery = body?.query || req.query?.query;
-        console.log("Received Smart Search Request. Body:", body, "Query Params:", req.query);
-        let model = body?.model || req.query?.model || 'qwen';
-
+        const { query: rawQuery, model = 'qwen' } = body;
+        
         if (!rawQuery) {
-            console.log("Error: No query found. Body:", body, "Query:", req.query);
+            console.log("Error: No query found. Body received:", JSON.stringify(body));
             return res.status(400).json({ 
-                error: "Query is required in request body or url parameters",
-                debug_body: body, // 调试用
-                debug_query: req.query
+                error: "Query is required in request body",
+                debug_body: body // 为了调试，把收到的东西返回给你看
             });
         }
 
@@ -174,13 +217,8 @@ module.exports = async (req, res) => {
         }
 
         // --- Step 3: 检索 ---
-        // 注意：确保 embedding 不为 null
-        const vectorPromise = embedding 
-            ? supabase.rpc('match_notices', { query_embedding: embedding, match_threshold: 0.45, match_count: 15 })
-            : Promise.resolve({ data: [] });
-
         const [vectorResults, keywordResults] = await Promise.all([
-            vectorPromise,
+            supabase.rpc('match_notices', { query_embedding: embedding, match_threshold: 0.45, match_count: 15 }),
             supabase.from('notices').select('*').textSearch('content_tsvector', rawQuery, { config: 'chinese', type: 'websearch' }).limit(5)
         ]);
 
