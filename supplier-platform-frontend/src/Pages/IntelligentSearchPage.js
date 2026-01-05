@@ -5,13 +5,20 @@ import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
 import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
 import { useNotification } from '../contexts/NotificationContext';
-import dayjs from 'dayjs';
 import { supabase } from '../supabaseClient';
 import './IntelligentSearchPage.css';
 
 const { Title, Paragraph, Text } = Typography;
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
+
+// --- CSS 动画样式 (内联注入，确保 Spinner 能转动) ---
+const spinAnimationStyles = `
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+`;
 
 // --- 日志系统工具函数 ---
 const getSessionId = () => {
@@ -66,26 +73,46 @@ const IntelligentSearchPage = () => {
     const [sessions, setSessions] = useState([]);
     const [activeSessionId, setActiveSessionId] = useState(null);
     const [collapsed, setCollapsed] = useState(false);
+    
+    // 状态
     const [isLoading, setIsLoading] = useState(false);
     const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+    
+    // 计时器状态
+    const [liveTimer, setLiveTimer] = useState(0.0);
+    const timerRef = useRef(null); 
+
+
+    const { notices } = useNotices();
+    const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
+    const { messageApi } = useNotification();
+    const currentUser = useMemo(() => {
+        try {
+            return JSON.parse(localStorage.getItem('user'));
+        } catch (e) { return null; }
+    }, []);
+    const messagesEndRef = useRef(null);
+
+    const [showRatingModal, setShowRatingModal] = useState(false);
+    const [currentRating, setCurrentRating] = useState(0);
+    const [ratingComment, setRatingComment] = useState('');
+
+    const navigate = useNavigate();
 
     const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    
-    const BACKEND_URL = isDev 
+
+    const BACKEND_URL = isDev
         ? 'http://localhost:3001'  // 本地开发环境
         : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 
     const MODEL_OPTIONS = [
-        { label: 'Google Gemini', value: 'gemini'},
-        { label: '阿里通义千问(Better)', value: 'qwen'},
-        // { label: 'OpenAI GPT-4o (Node)', value: 'openai', icon: '🤖' },
+        { label: 'Google Gemini', value: 'gemini' },
+        { label: '阿里通义千问(Better)', value: 'qwen' },
     ];
 
     const [currentModel, setCurrentModel] = useState('qwen');
     const [showSettings, setShowSettings] = useState(false);
 
-    // API Keys 依然保留在 LocalStorage，虽然现在主要由后端代理
-    // 如果将来想让后端使用前端传过去的 Key，可以在 fetch body 里带上
     const [apiKeys, setApiKeys] = useState({
         gemini: '',
         openai: '',
@@ -112,21 +139,7 @@ const IntelligentSearchPage = () => {
         });
     }, []);
 
-    const { notices } = useNotices();
-    const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
-    const { messageApi } = useNotification();
-    const currentUser = useMemo(() => {
-        try {
-            return JSON.parse(localStorage.getItem('user'));
-        } catch (e) { return null; }
-    }, []);
-    const messagesEndRef = useRef(null);
 
-    const [showRatingModal, setShowRatingModal] = useState(false);
-    const [currentRating, setCurrentRating] = useState(0);
-    const [ratingComment, setRatingComment] = useState('');
-
-    const navigate = useNavigate();
 
     // --- 全局错误监听 ---
     useEffect(() => {
@@ -162,7 +175,49 @@ const IntelligentSearchPage = () => {
             setIsHistoryLoading(false);
         }
     };
+    
+    // --- TypewriterText 组件 (放在文件顶部 imports 下面) ---
+const TypewriterText = ({ content, onComplete }) => {
+    const [displayedText, setDisplayedText] = useState('');
+    const [isTyping, setIsTyping] = useState(true);
 
+    useEffect(() => {
+        // 如果内容为空，直接结束
+        if (!content) {
+            setDisplayedText('');
+            setIsTyping(false);
+            return;
+        }
+
+        let currentIndex = 0;
+        const totalLength = content.length;
+        
+        // 动态计算打字速度：字数越多越快，避免长文等太久
+        // 基础速度 30ms，最快 10ms
+        const speed = Math.max(10, 30 - Math.floor(totalLength / 100));
+
+        const timer = setInterval(() => {
+            if (currentIndex < totalLength) {
+                // 每次增加一个字
+                setDisplayedText(content.slice(0, currentIndex + 1));
+                currentIndex++;
+            } else {
+                clearInterval(timer);
+                setIsTyping(false);
+                if (onComplete) onComplete();
+            }
+        }, speed);
+
+        return () => clearInterval(timer);
+    }, [content]);
+
+    return (
+        <span style={{ whiteSpace: 'pre-wrap' }}>
+            {displayedText}
+            {isTyping && <span className="typing-cursor"></span>}
+        </span>
+    );
+};
     // --- 处理消息反馈 ---
     const handleFeedback = async (messageId, type) => {
         setMessages(prev => prev.map(msg =>
@@ -196,9 +251,41 @@ const IntelligentSearchPage = () => {
         }
     };
 
-    // --- 渲染消息内容 ---
+    // --- 渲染消息内容 (修改版) ---
     const renderMessageContent = (msg) => {
-        if (msg.isThinking) return <Spin size="small" tip="AI 正在阅读文档并深度思考..." />;
+        // 【核心修改】如果正在思考，显示打点计时器，而不是简单的 Spin
+        if (msg.isThinking) {
+            return (
+                <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {/* 注入 CSS 动画 */}
+                    <style>{spinAnimationStyles}</style>
+                    
+                    {/* 自定义 Spinner */}
+                    <div className="spinner" style={{
+                        width: '16px', 
+                        height: '16px',
+                        border: '2px solid #ccc', 
+                        borderTopColor: '#1890ff',
+                        borderRadius: '50%', 
+                        animation: 'spin 1s linear infinite'
+                    }} />
+                    
+                    <div style={{ fontSize: '14px', color: '#666' }}>
+                        AI 正在阅读文档并思考...
+                        <span style={{ 
+                            fontFamily: 'monospace', 
+                            fontWeight: 'bold', 
+                            color: '#1890ff', 
+                            marginLeft: '8px',
+                            display: 'inline-block',
+                            minWidth: '40px'
+                        }}>
+                            {liveTimer.toFixed(1)}s
+                        </span>
+                    </div>
+                </div>
+            );
+        }
 
         let content = msg.content;
         let parsedContent = null;
@@ -230,12 +317,15 @@ const IntelligentSearchPage = () => {
                                 <RobotOutlined style={{ marginRight: 8, color: '#1890ff' }} />
                                 <span style={{ whiteSpace: 'pre-wrap' }}>{parsedContent.answer}</span>
                             </Paragraph>
+                            
+                            {/* 显示最终耗时 */}
+                            <div style={{ fontSize: '10px', color: '#888', marginTop: '5px', textAlign: 'right' }}>
+                                ⚡ 耗时: {parsedContent.meta?.duration || parsedContent.thinkingTime || 0}s
+                            </div>
                         </div>
 
                         {(() => {
                             const sourceIds = parsedContent.sources || [];
-                            // 这里假设前端 notices 上下文已经包含了所有数据
-                            // 如果后端返回了新的 ID，这里通过 context 查找
                             const sourceDocs = sourceIds.map(id => notices.find(n => n.id === id)).filter(Boolean);
 
                             if (sourceDocs.length > 0) {
@@ -260,10 +350,10 @@ const IntelligentSearchPage = () => {
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
                                                                 <Text ellipsis strong>{item.title || '无标题'}</Text>
                                                             </div>
-                                                            <Tag color="blue">{item.noticeCode || item.notice_code}</Tag>
+                                                            <Tag color="blue" style={{ marginLeft: 8 }}>{item.noticeCode || item.notice_code}</Tag>
                                                         </div>
                                                         <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
-                                                            供应商: {item.supplier?.short_code || 'N/A'}
+                                                            供应商: {item.supplier?.shortCode || 'N/A'}
                                                         </div>
                                                     </Card>
                                                 </List.Item>
@@ -357,7 +447,7 @@ const IntelligentSearchPage = () => {
         messageApi.success('配置已更新');
     };
 
-    // --- 核心：发送消息处理 (已改造为调用后端) ---
+    // --- 核心：发送消息处理 (整合版) ---
     const handleSendMessage = async () => {
         const userQuery = inputValue.trim();
         if (!userQuery || !currentUser?.id) {
@@ -366,6 +456,14 @@ const IntelligentSearchPage = () => {
         };
 
         setIsLoading(true);
+        setLiveTimer(0); // 重置计时器
+
+        // 1. 【新增】启动打点计时器 (每 100ms 更新一次)
+        if (timerRef.current) clearInterval(timerRef.current); // 防止重复启动
+        timerRef.current = setInterval(() => {
+            setLiveTimer(prev => parseFloat((prev + 0.1).toFixed(1)));
+        }, 100);
+
         const startTime = Date.now();
 
         // 1. Session 管理
@@ -373,7 +471,7 @@ const IntelligentSearchPage = () => {
         if (!currentSessionId) {
             const firstTitle = userQuery.length > 8 ? `${userQuery.substring(0, 8)}...` : userQuery;
             const { data: newSession, error } = await supabase.from('chat_sessions').insert({ user_id: currentUser.id, title: firstTitle }).select().single();
-            if (error) { messageApi.error('创建会话失败'); setIsLoading(false); return; }
+            if (error) { messageApi.error('创建会话失败'); setIsLoading(false); if(timerRef.current) clearInterval(timerRef.current); return; }
             currentSessionId = newSession.id;
             setActiveSessionId(currentSessionId);
             setSessions(prev => [newSession, ...prev]);
@@ -385,48 +483,51 @@ const IntelligentSearchPage = () => {
         setMessages(prev => [
             ...prev,
             { id: `temp-${Date.now()}`, sender: 'user', content: userQuery, timestamp: new Date().toISOString() },
-            { id: tempSystemMsgId, sender: 'system', content: <Spin size="small" tip="AI 正在阅读文档并生成回答..." />, isThinking: true }
+            // isThinking: true 会触发 renderMessageContent 里的计时器界面
+            { id: tempSystemMsgId, sender: 'system', content: '', isThinking: true }
         ]);
         setInputValue('');
 
         await supabase.from('chat_messages').insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery });
 
+        // 3. 路由判断 (根据环境决定是否加 .js)
         const apiPath = isDev ? '/api/smart-search' : '/api/smart-search.js';
         const targetUrl = `${BACKEND_URL}${apiPath}`;
-        
-        console.log(`[Environment] isDev=${isDev}, Requesting: ${targetUrl}`); // 方便调试看路径对不对
+
+        console.log(`[Environment] isDev=${isDev}, Requesting: ${targetUrl}`);
 
         try {
-            // ---------------------------------------------------------
-            // 2. 【修改】使用动态生成的 targetUrl
-            // ---------------------------------------------------------
-            const response = await fetch(targetUrl, { 
+            const response = await fetch(targetUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     query: userQuery,
-                    model: currentModel 
-                }) 
+                    model: currentModel
+                })
             });
 
             if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Backend request failed');
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `Request failed with status ${response.status}`);
             }
 
             const data = await response.json();
+
+            // 4. 请求结束，停止计时
+            if (timerRef.current) clearInterval(timerRef.current);
 
             // 构造符合前端渲染结构的数据
             const resultPayload = {
                 type: "rag_result",
                 answer: data.answer,
-                // 后端返回的是完整对象，这里提取 ID 供前端映射
                 sources: data.sources.map(doc => doc.id),
+                // 优先使用后端返回的精确耗时，如果没有则计算总耗时
+                thinkingTime: data.thinkingTime, 
                 meta: {
                     method: 'node-hybrid',
                     model: 'qwen-plus',
-                    optimizedQuery: data.optimizedQuery, // 新增：显示优化后的查询
-                    duration: Date.now() - startTime
+                    optimizedQuery: data.optimizedQuery,
+                    duration: data.thinkingTime || ((Date.now() - startTime) / 1000).toFixed(2)
                 }
             };
 
@@ -436,10 +537,11 @@ const IntelligentSearchPage = () => {
                 user_id: currentUser.id,
                 session_id: currentSessionId,
                 sender: 'system',
-                content: resultString
+                content: resultString,
+                duration: data.thinkingTime || ((Date.now() - startTime) / 1000).toFixed(2)
             }).select().single();
 
-            // 更新 UI
+            // 更新 UI：将 isThinking 设为 false，替换为真实内容
             setMessages(prev => prev.map(msg =>
                 msg.id === tempSystemMsgId ? { ...savedSystemMsg } : msg
             ));
@@ -447,7 +549,10 @@ const IntelligentSearchPage = () => {
         } catch (error) {
             console.error(error);
             messageApi.error(`处理失败: ${error.message}`);
-            // 移除 Loading 消息，或者替换为错误提示
+            
+            // 出错也要停止计时
+            if (timerRef.current) clearInterval(timerRef.current);
+            
             setMessages(prev => prev.map(msg =>
                 msg.id === tempSystemMsgId ? { ...msg, content: `服务出错: ${error.message}`, isThinking: false } : msg
             ));
@@ -507,7 +612,6 @@ const IntelligentSearchPage = () => {
                     />
                 </div>
 
-                {/* --- 修复：设置按钮回归 --- */}
                 <div
                     onClick={() => setShowSettings(true)}
                     className="sider-footer"
@@ -534,7 +638,8 @@ const IntelligentSearchPage = () => {
             <Layout className="chat-content-layout">
                 <div className="chat-main-header">
                     <div className="header-left">
-                        <Title level={4} style={{ margin: 0 }}>AI 助手</Title>
+                        <Title level={4} style={{ margin: 0 }}>AI 助手 </Title>
+                        <span style={{ marginLeft: 12, color: '#999', fontSize: 12 }}>基于{notices.length}条发现项</span>
                     </div>
                     <div className="header-center">
                         <Select

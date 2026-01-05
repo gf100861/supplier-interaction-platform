@@ -165,16 +165,10 @@ async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
 // 4. 主处理函数
 // ==========================================
 module.exports = async (req, res) => {
-    // // 1. 设置 CORS 头
-    // res.setHeader('Access-Control-Allow-Credentials', true);
-    // res.setHeader('Access-Control-Allow-Origin', '*'); // 或你的前端域名
-    // res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-    // res.setHeader(
-    //     'Access-Control-Allow-Headers',
-    //     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-    // );
 
-    // 关键：如果是 OPTIONS 请求，直接返回 200，立刻结束！
+    // 1. 【新增】开始计时
+    const startTime = Date.now();
+ 
     // 不要往下走，不要读 Body，不要连数据库
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -190,8 +184,6 @@ module.exports = async (req, res) => {
     try {
         // === 关键修改：使用强力解析器 ===
         const body = await parseRequestBody(req);
-        // ============================
-
         const { query: rawQuery, model = 'qwen' } = body;
         
         if (!rawQuery) {
@@ -201,8 +193,6 @@ module.exports = async (req, res) => {
                 debug_body: body // 为了调试，把收到的东西返回给你看
             });
         }
-
-        console.log(`[Smart Search] Processing: ${rawQuery}`);
 
         // --- Step 1: 意图 & 向量 ---
         const [intentData, embedding] = await Promise.all([
@@ -242,10 +232,15 @@ module.exports = async (req, res) => {
         // --- Step 6: 生成 ---
         const answer = await generateCompletion(model, systemPrompt, userPrompt);
 
+        // 2. 【新增】结束计时 & 计算耗时 (单位：秒，保留2位小数)
+        const endTime = Date.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
+
         res.status(200).json({
             answer: answer,
             sources: uniqueDocs,
-            optimizedQuery: intentData.supplier_name ? `查找 ${intentData.supplier_name}` : rawQuery
+            optimizedQuery: intentData.supplier_name ? `查找 ${intentData.supplier_name}` : rawQuery,
+            thinkingTime: duration // <--- 把这个字段传给前端
         });
 
     } catch (error) {

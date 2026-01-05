@@ -310,15 +310,16 @@
     transition: all 0.2s;
     border: 1px solid #e8e8e8;
     background: #fff;
-    padding: 4px 10px;
+    /* padding: 4px 10px; */
     border-radius: 6px;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 13px;
+    /* font-size: 13px; */
     color: #555;
-    margin-left: 20px;
+    /* margin-left: 20px; */
 }
+
 .source-card:hover, .ant-tag:hover {
     border-color: #1890ff;
     color: #1890ff;
@@ -348,4 +349,25 @@
 }
 .row-system:hover .message-feedback-actions {
     opacity: 1;
+}
+
+/* 光标闪烁动画 */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: #1890ff; /* Ant Design 蓝色 */
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+
+/* 增加一点文本显示的平滑感 */
+.rag-answer-section span {
+  transition: all 0.1s ease;
 }
