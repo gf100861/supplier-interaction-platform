@@ -391,17 +391,22 @@ const IntelligentSearchPage = () => {
 
         await supabase.from('chat_messages').insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery });
 
+        const apiPath = isDev ? '/api/smart-search' : '/api/smart-search.js';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
+        
+        console.log(`[Environment] isDev=${isDev}, Requesting: ${targetUrl}`); // 方便调试看路径对不对
+
         try {
-            // === 核心改动：调用 Node.js 后端 ===
-            // 注意：这里假设你的 Node.js 服务器运行在 3001 端口
-            // 在 handleSendMessage 函数内
-            const response = await fetch(`${BACKEND_URL}/api/smart-search.js`, {
+            // ---------------------------------------------------------
+            // 2. 【修改】使用动态生成的 targetUrl
+            // ---------------------------------------------------------
+            const response = await fetch(targetUrl, { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify({ 
                     query: userQuery,
-                    model: currentModel // <--- 关键：把当前选中的 'gemini' 或 'qwen' 传给后端
-                })
+                    model: currentModel 
+                }) 
             });
 
             if (!response.ok) {
