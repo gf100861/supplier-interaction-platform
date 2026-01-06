@@ -3,28 +3,25 @@ import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carous
 import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
-import { supabase } from '../supabaseClient';
 import './LoginPage.css';
 
 const { Title, Paragraph, Text, Link } = Typography;
 
-// --- 错误翻译函数 ---
-const translateError = (error) => {
-    const msg = error?.message || error || '未知错误';
+// --- 🔧 新增：定义后端 API 基础地址 ---
+// 如果你在 .env 文件里配置了 REACT_APP_API_URL 就用那个，否则默认连本地 3001
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+// --- 错误翻译函数 (保持不变) ---
+const translateError = (errorMsg) => {
+    const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
     if (msg.includes('Invalid login credentials')) return '登录凭证无效或已过期，请尝试重新登录';
     if (msg.includes('User not found')) return '用户不存在';
-    if (msg.includes('duplicate key value')) return '该记录已存在，请勿重复添加';
-    if (msg.includes('violates foreign key constraint')) return '关联数据无效或不存在';
-    if (msg.includes('violates row-level security policy')) return '权限不足，您无法执行此操作';
-    if (msg.includes('violates not-null constraint')) return '缺少必填字段';
     if (msg.includes('JWT expired')) return '登录会话已过期，请刷新页面';
-    if (msg.includes('Cannot coerce the result to a single JSON object')) return '请求的数据不存在,请联系Louis';
-    if (msg.includes('Failed to fetch')) return '网络请求失败，请检查网络连接';
-    return msg; 
+    if (msg.includes('Failed to fetch')) return '无法连接到服务器，请确认后端服务(Port 3001)已启动';
+    return msg;
 };
 
 // --- 工具函数：获取或生成 Session ID ---
-// Session ID 用于将同一个用户在关闭浏览器前的一系列操作串联起来
 const getSessionId = () => {
     let sid = sessionStorage.getItem('app_session_id');
     if (!sid) {
@@ -34,7 +31,7 @@ const getSessionId = () => {
     return sid;
 };
 
-// --- IP 获取与缓存逻辑 ---
+// --- IP 获取 ---
 let cachedIpAddress = null;
 const getClientIp = async () => {
     if (cachedIpAddress) return cachedIpAddress;
@@ -48,7 +45,7 @@ const getClientIp = async () => {
     }
 };
 
-// --- 通用系统日志上报函数 ---
+// --- [API] 通用系统日志上报函数 ---
 const logSystemEvent = async (params) => {
     const { 
         category = 'SYSTEM', 
@@ -62,11 +59,11 @@ const logSystemEvent = async (params) => {
 
     try {
         const clientIp = await getClientIp();
-        const sessionId = getSessionId(); // 获取会话ID
+        const sessionId = getSessionId();
 
         const environmentInfo = {
             ip_address: clientIp,
-            session_id: sessionId,      // <--- 关键新增：串联行为链路
+            session_id: sessionId,
             userAgent: navigator.userAgent,
             language: navigator.language,
             platform: navigator.platform,
@@ -76,27 +73,31 @@ const logSystemEvent = async (params) => {
             referrer: document.referrer
         };
 
-        supabase.from('system_logs').insert([{
-            category,
-            event_type: eventType,
-            severity,
-            message,
-            user_email: email,
-            user_id: userId,
-            metadata: {
-                ...environmentInfo,
-                ...meta,
-                timestamp_client: new Date().toISOString()
-            }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
+        // ✅ 修改点 1: 使用 API_BASE_URL 拼接完整路径
+        await fetch(`${API_BASE_URL}/api/system-log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                category,
+                event_type: eventType,
+                severity,
+                message,
+                user_email: email,
+                user_id: userId,
+                metadata: {
+                    ...environmentInfo,
+                    ...meta,
+                    timestamp_client: new Date().toISOString()
+                }
+            })
         });
+
     } catch (e) {
-        console.error("Logger exception:", e);
+        console.warn("Logger exception:", e);
     }
 };
 
-// --- Custom Hook: Typing Effect ---
+// --- Custom Hook: Typing Effect (保持不变) ---
 const useTypingEffect = (textToType, speed = 50) => {
     const [displayedText, setDisplayedText] = useState("");
     const [index, setIndex] = useState(0);
@@ -119,7 +120,7 @@ const useTypingEffect = (textToType, speed = 50) => {
     return displayedText;
 };
 
-// --- Dynamic Image Carousel ---
+// --- LoginCarousel (保持不变) ---
 const LoginCarousel = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
     
@@ -245,10 +246,8 @@ const LoginPage = () => {
         };
     }, []);
 
-    // 监听输入框变化，检测是否可能是自动填充 (非常快速的输入通常意味着自动填充)
+    // 监听输入框变化
     const handleFormChange = (changedValues) => {
-        // 简单的启发式判断：如果页面刚加载极短时间内就有值，或者没有触发正常的 keypress 序列（Antd封装较深，这里简化处理）
-        // 实际场景中，可以在 onFinish 里判断 duration 是否极短
         if (Date.now() - pageInitTime.current < 500) {
             setIsAutoFill(true);
         }
@@ -257,36 +256,40 @@ const LoginPage = () => {
     const onFinish = async (values) => {
         setLoading(true);
         const submitTime = Date.now();
-        const stayDuration = submitTime - pageInitTime.current; // 停留时长
+        const stayDuration = submitTime - pageInitTime.current;
 
-        // 1. 记录尝试 (加入行为特征)
+        // 1. 记录尝试
         logSystemEvent({
             category: 'AUTH',
             eventType: 'LOGIN_ATTEMPT',
             severity: 'INFO',
             message: 'User attempting to login',
             email: values.email,
-            meta: {
-                stay_duration_ms: stayDuration, // <--- 关键指标：停留时长
-                is_likely_autofill: isAutoFill, // <--- 关键指标：是否自动填充
-            }
+            meta: { stay_duration_ms: stayDuration, is_likely_autofill: isAutoFill }
         });
 
         try {
-            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-                email: values.email,
-                password: values.password,
+            // ✅ 修改点 2: 使用 API_BASE_URL 拼接完整路径
+            // 后端对应 server.js 中的 app.post('/api/auth/login', ...)
+            const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: values.email,
+                    password: values.password
+                })
             });
-            if (authError) throw authError;
 
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select(`*, managed_suppliers:sd_supplier_assignments(supplier:suppliers(*))`)
-                .eq('id', authData.user.id)
-                .single();
-            if (userError) throw userError;
+            const result = await response.json();
 
-            const apiDuration = Date.now() - submitTime; // 接口耗时
+            if (!response.ok) {
+                // 如果后端返回错误，抛出异常
+                throw new Error(result.error || '登录失败');
+            }
+
+            // result 应该包含 { user: ..., session: ... }
+            const userData = result.user;
+            const apiDuration = Date.now() - submitTime;
 
             // 2. 记录成功
             logSystemEvent({
@@ -299,17 +302,18 @@ const LoginPage = () => {
                 meta: {
                     api_duration_ms: apiDuration,
                     role: userData.role,
-                    stay_duration_ms: stayDuration // 成功登录的用户的停留时长分布很有分析价值
+                    stay_duration_ms: stayDuration
                 }
             });
 
             messageApi.success('登录成功!');
             localStorage.setItem('user', JSON.stringify(userData));
+            
             navigate('/');
 
         } catch (error) {
             const apiDuration = Date.now() - submitTime;
-            const translatedMsg = translateError(error);
+            const translatedMsg = translateError(error.message);
             messageApi.error(translatedMsg);
 
             // 3. 记录失败
@@ -321,7 +325,6 @@ const LoginPage = () => {
                 email: values.email,
                 meta: {
                     original_error: error.message,
-                    error_code: error.status || error.code,
                     api_duration_ms: apiDuration,
                     stay_duration_ms: stayDuration,
                     is_likely_autofill: isAutoFill,
@@ -358,7 +361,7 @@ const LoginPage = () => {
                         <Form 
                             name="login_form" 
                             onFinish={onFinish} 
-                            onValuesChange={handleFormChange} // 监听表单变化检测自动填充
+                            onValuesChange={handleFormChange}
                             layout="vertical" 
                             autoComplete="off"
                         >
@@ -403,9 +406,7 @@ const LoginPage = () => {
 
             <Layout.Footer style={{ textAlign: 'center', background: 'transparent' }}>
                 <Text type="secondary" style={{ fontSize: '12px' }}>
-                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved. (
-                    {new Date().toLocaleDateString('cn-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
-                    )
+                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved.
                 </Text>
             </Layout.Footer>
         </Layout>

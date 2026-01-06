@@ -136,7 +136,7 @@ function simpleRerank(docs, query) {
 // --- 工具函数 E: 生成 ---
 async function generateCompletion(modelType, systemPrompt, userContextPrompt) {
     if (modelType === 'gemini') {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent([systemPrompt, userContextPrompt]);
         return result.response.text();
     } else {

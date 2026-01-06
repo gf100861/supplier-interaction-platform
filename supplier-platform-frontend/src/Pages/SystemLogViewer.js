@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
     Table, Tag, Space, Card, DatePicker, Select, Input, Button, 
-    Typography, Drawer, Descriptions, Tooltip, Statistic, Row, Col, Badge 
+    Typography, Drawer, Descriptions, Tooltip, Statistic, Row, Col, Badge, message 
 } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, BugOutlined, 
     InfoCircleOutlined, WarningOutlined, CloseCircleOutlined,
-    EyeOutlined, CodeOutlined, CalendarOutlined, UserOutlined,
+    EyeOutlined, CodeOutlined, UserOutlined,
     FilterOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { supabase } from '../supabaseClient';
+// ❌ 移除 Supabase 客户端引用
+// import { supabase } from '../supabaseClient';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
-const { Text, Title, Paragraph } = Typography;
+const { Text } = Typography;
+
+// --- 配置 API 基础地址 ---
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 // 配置日志级别的颜色和图标
 const SEVERITY_CONFIG = {
@@ -33,62 +37,46 @@ const SystemLogViewer = () => {
     // Filters
     const [searchText, setSearchText] = useState('');
     const [severityFilter, setSeverityFilter] = useState(null);
-    const [eventTypeFilter, setEventTypeFilter] = useState(''); // 新增：事件类型筛选
+    const [eventTypeFilter, setEventTypeFilter] = useState('');
     const [dateRange, setDateRange] = useState([dayjs().subtract(7, 'day'), dayjs()]);
     
     // Detail View
     const [drawerVisible, setDrawerVisible] = useState(false);
     const [selectedLog, setSelectedLog] = useState(null);
 
-    // Stats
-    const [stats, setStats] = useState({ total: 0, errors: 0, warnings: 0 });
-
     // --- Data Fetching ---
     const fetchLogs = useCallback(async () => {
         setLoading(true);
         try {
-            // 1. 构建基础查询
-            let query = supabase
-                .from('system_logs')
-                .select('*', { count: 'exact' });
-
-            // 2. 应用筛选条件
-            if (severityFilter) {
-                query = query.eq('severity', severityFilter);
-            }
-            // 新增：事件类型筛选 (模糊匹配，忽略大小写)
-            if (eventTypeFilter) {
-                query = query.ilike('event_type', `%${eventTypeFilter}%`);
-            }
+            // 1. 构建 URL 查询参数
+            const params = new URLSearchParams();
+            params.append('current', pagination.current);
+            params.append('pageSize', pagination.pageSize);
             
-            if (searchText) {
-                // 支持搜索消息内容、用户邮箱或类别
-                query = query.or(`message.ilike.%${searchText}%,user_email.ilike.%${searchText}%,category.ilike.%${searchText}%`);
-            }
+            if (severityFilter) params.append('severity', severityFilter);
+            if (eventTypeFilter) params.append('eventType', eventTypeFilter);
+            if (searchText) params.append('search', searchText);
+            
             if (dateRange && dateRange[0] && dateRange[1]) {
-                query = query
-                    .gte('created_at', dateRange[0].startOf('day').toISOString())
-                    .lte('created_at', dateRange[1].endOf('day').toISOString());
+                params.append('startDate', dateRange[0].startOf('day').toISOString());
+                params.append('endDate', dateRange[1].endOf('day').toISOString());
             }
 
-            // 3. 应用分页排序
-            const from = (pagination.current - 1) * pagination.pageSize;
-            const to = from + pagination.pageSize - 1;
-            
-            const { data, count, error } = await query
-                .order('created_at', { ascending: false })
-                .range(from, to);
+            // 2. ✅ 发起 Fetch 请求替代 supabase.from()
+            const response = await fetch(`${API_BASE_URL}/api/admin/system-logs?${params.toString()}`);
+            const result = await response.json();
 
-            if (error) throw error;
+            if (!response.ok) {
+                throw new Error(result.error || '获取日志失败');
+            }
 
-            setLogs(data);
-            setPagination(prev => ({ ...prev, total: count || 0 }));
-            
-            // 4. 简单的统计
-            setStats(prev => ({ ...prev, total: count }));
+            // 3. 更新状态
+            setLogs(result.data || []);
+            setPagination(prev => ({ ...prev, total: result.total || 0 }));
 
         } catch (error) {
             console.error('Error fetching logs:', error);
+            message.error('无法加载日志: ' + error.message);
         } finally {
             setLoading(false);
         }
@@ -110,7 +98,7 @@ const SystemLogViewer = () => {
 
     const handleSearch = () => {
         setPagination(prev => ({ ...prev, current: 1 }));
-        fetchLogs(); // Search button trigger
+        // fetchLogs 会因为 dependency 变化自动触发，或者你可以显式调用
     };
 
     // --- Components ---
@@ -185,7 +173,7 @@ const SystemLogViewer = () => {
 
     return (
         <div style={{ background: '#f0f2f5', padding: '24px', borderRadius: 8 }}>
-            {/* 1. 顶部统计卡片 (Dashboard Feel) */}
+            {/* 1. 顶部统计卡片 */}
             <Row gutter={16} style={{ marginBottom: 24 }}>
                 <Col span={8}>
                     <Card bordered={false} bodyStyle={{ padding: 20 }}>
@@ -230,13 +218,13 @@ const SystemLogViewer = () => {
                             style={{ width: 110 }} 
                             allowClear
                             onChange={setSeverityFilter}
+                            value={severityFilter}
                         >
                             <Option value="INFO">Info</Option>
                             <Option value="WARN">Warning</Option>
                             <Option value="ERROR">Error</Option>
                         </Select>
                         
-                        {/* 新增：事件类型筛选输入框 */}
                         <Input 
                             placeholder="事件类型 (e.g. LOGIN)" 
                             prefix={<FilterOutlined style={{ color: '#bfbfbf' }} />}
@@ -276,7 +264,7 @@ const SystemLogViewer = () => {
                 />
             </Card>
 
-            {/* 3. 详情抽屉 */}
+            {/* 3. 详情抽屉 (保持不变) */}
             <Drawer
                 title={
                     <Space>
@@ -331,6 +319,7 @@ const SystemLogViewer = () => {
                                         size="small" 
                                         onClick={() => {
                                             navigator.clipboard.writeText(JSON.stringify(selectedLog.metadata, null, 2));
+                                            message.success('已复制');
                                         }}
                                     >
                                         复制 JSON
