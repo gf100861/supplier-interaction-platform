@@ -5,4 +5,3 @@ module.exports = (req, res) => {
         time: new Date().toISOString()
     });
 };
-
