@@ -11,7 +11,7 @@ const { createClient } = require('@supabase/supabase-js');
 const createUserHandler = require('./api/create-user');
 const deleteUserHandler = require('./api/delete-user');
 const smartSearchHandler = require('./api/smart-search');
-
+const systemLogHandler = require('./api/system-log');
 const app = express();
 const server = http.createServer(app);
 
@@ -87,26 +87,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 // 2. [新增] 系统日志 API
 // 替代前端直接写库的操作
-app.post('/api/system-log', async (req, res) => {
-    try {
-        const logData = req.body;
-        
-        // 异步写入，不等待结果直接返回成功，提高前端响应速度
-        // 或者使用 await 确保写入成功
-        const { error } = await supabaseAdmin.from('system_logs').insert([logData]);
-
-        if (error) {
-            console.error('[Log] Insert failed:', error.message);
-            // 日志写入失败通常不阻断前端流程，但可以返回 500 供调试
-            return res.status(500).json({ error: error.message });
-        }
-
-        res.json({ success: true });
-    } catch (error) {
-        console.error('[Log] Handler error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+app.post('/api/system-log', systemLogHandler);
 
 app.get('/api/admin/system-logs', async (req, res) => {
     try {
