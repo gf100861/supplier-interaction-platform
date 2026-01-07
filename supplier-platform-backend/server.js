@@ -87,7 +87,10 @@ app.post('/api/auth/login', async (req, res) => {
 
 // 2. [新增] 系统日志 API
 // 替代前端直接写库的操作
-app.post('/api/system-log', systemLogHandler);
+// app.post('/api/system-log', systemLogHandler);
+
+app.post('/api/system-log', async (req, res) => {await systemLogHandler(req, res);});
+
 
 app.get('/api/admin/system-logs', async (req, res) => {
     try {
