@@ -1,14 +1,20 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '../supabaseClient';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+// ❌ 移除 Supabase
+// import { supabase } from '../supabaseClient';
 
 const AlertContext = createContext();
+
+// 🔧 环境配置
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-backend.vercel.app'; // ⚠️ 替换为真实域名
 
 export const AlertProvider = ({ children }) => {
     const [alerts, setAlerts] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
-    // 获取当前用户信息
     const getCurrentUser = () => {
         try {
             const userStr = localStorage.getItem('user');
@@ -18,33 +24,26 @@ export const AlertProvider = ({ children }) => {
         }
     };
 
-    // 辅助函数：根据 alerts 数组计算未读数量
     const calculateUnreadCount = (alertsList) => {
         return (alertsList || []).filter(a => !a.is_read).length;
     };
 
+    // --- 1. 获取通知 (GET) ---
     const fetchAlerts = useCallback(async () => {
         const user = getCurrentUser();
         if (!user) {
             setAlerts([]);
-            setUnreadCount(0);
             setLoading(false);
             return;
         }
 
         try {
-            // 只获取发送给当前登录用户的通知
-            let query = supabase
-                .from('alerts')
-                .select('*')
-                .eq('target_user_id', user.id) 
-                .order('created_at', { ascending: false })
-                .limit(50); // 限制最近50条，避免数据过多
-
-            const { data, error } = await query;
-
-            if (error) throw error;
-
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const response = await fetch(`${targetUrl}?userId=${user.id}`);
+            if (!response.ok) throw new Error('Fetch failed');
+            
+            const data = await response.json();
             setAlerts(data || []);
             setUnreadCount(calculateUnreadCount(data));
         } catch (error) {
@@ -54,125 +53,88 @@ export const AlertProvider = ({ children }) => {
         }
     }, []);
 
-    // 标记单个通知为已读
-const markAsRead = async (alertId) => {
+    // --- 2. 标记单个已读 (PATCH) ---
+    const markAsRead = async (alertId) => {
         try {
-            // 1. 乐观更新
+            // 乐观更新
             setAlerts(prev => {
                 const newAlerts = prev.map(a => a.id === alertId ? { ...a, is_read: true } : a);
                 setUnreadCount(calculateUnreadCount(newAlerts));
                 return newAlerts;
             });
 
-            // 2. 数据库更新
-            const { error } = await supabase
-                .from('alerts')
-                .update({ is_read: true })
-                .eq('id', alertId);
-
-            if (error) {
-                // --- 重点：查看这里的报错信息 ---
-                console.error("数据库更新失败详细信息:", error.message, error.details); 
-                // 如果是 RLS 错误，这里会显示 "new row violates row-level security policy"
-                
-                // 回滚状态
-                fetchAlerts(); 
-                throw error;
-            } else {
-                console.log("数据库已读状态更新成功");
-            }
+            // 调用后端
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            await fetch(`${targetUrl}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'markAsRead', alertId })
+            });
         } catch (error) {
             console.error("Error marking alert as read:", error);
+            fetchAlerts(); // 回滚
         }
     };
-    // 标记所有通知为已读
+
+    // --- 3. 标记全部已读 (PATCH) ---
     const markAllAsRead = async () => {
         const user = getCurrentUser();
         if (!user) return;
 
         try {
-            // 1. 乐观更新
+            // 乐观更新
             setAlerts(prev => {
                 const newAlerts = prev.map(a => ({ ...a, is_read: true }));
                 setUnreadCount(0);
                 return newAlerts;
             });
 
-            // 2. 后端更新
-            const { error } = await supabase
-                .from('alerts')
-                .update({ is_read: true })
-                .eq('target_user_id', user.id)
-                .eq('is_read', false); // 只更新那些未读的，减少数据库压力
-
-            if (error) {
-                console.error("Error marking all alerts as read (DB):", error);
-                fetchAlerts();
-                throw error;
-            }
+            // 调用后端
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            await fetch(`${targetUrl}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'markAllAsRead', userId: user.id })
+            });
         } catch (error) {
-            console.error("Error marking all alerts as read:", error);
+            console.error("Error marking all read:", error);
+            fetchAlerts();
         }
     };
 
-    // --- 新增：删除单个通知 ---
+    // --- 4. 删除通知 (DELETE) ---
     const deleteAlert = async (alertId) => {
         try {
-            // 1. 乐观更新：先从 UI 移除
+            // 乐观更新
             setAlerts(prev => {
                 const newAlerts = prev.filter(a => a.id !== alertId);
-                setUnreadCount(calculateUnreadCount(newAlerts)); // 重新计算未读数
+                setUnreadCount(calculateUnreadCount(newAlerts));
                 return newAlerts;
             });
 
-            // 2. 后端删除
-            const { error } = await supabase
-                .from('alerts')
-                .delete()
-                .eq('id', alertId);
-
-            if (error) {
-                console.error("Error deleting alert (DB):", error);
-                fetchAlerts(); // 失败兜底
-                throw error;
-            }
+            // 调用后端
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            await fetch(`${targetUrl}?alertId=${alertId}`, {
+                method: 'DELETE'
+            });
         } catch (error) {
             console.error("Error deleting alert:", error);
+            fetchAlerts();
         }
     };
 
-    // 实时订阅逻辑
+    // --- 实时订阅逻辑 (暂时移除) ---
+    // 由于我们移除了前端 Supabase 客户端，前端无法直接监听数据库变更。
+    // 在迁移到 Azure + Socket.IO 架构完善前，建议使用短轮询或手动刷新。
     useEffect(() => {
         fetchAlerts();
-
-        const user = getCurrentUser();
-        if (!user) return;
-
-        const channel = supabase.channel(`public:alerts:target_user_id=eq.${user.id}`)
-            .on('postgres_changes', 
-                { 
-                    event: 'INSERT', 
-                    schema: 'public', 
-                    table: 'alerts', 
-                    filter: `target_user_id=eq.${user.id}` 
-                }, 
-                (payload) => {
-                    console.log('收到新警报:', payload.new);
-                    setAlerts(prev => {
-                        // 防止重复添加 (虽然 insert 事件一般是新的)
-                        if (prev.some(a => a.id === payload.new.id)) return prev;
-                        
-                        const newAlerts = [payload.new, ...prev];
-                        setUnreadCount(calculateUnreadCount(newAlerts));
-                        return newAlerts;
-                    });
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        
+        // 可选：简单的轮询 (每30秒刷新一次)
+        const interval = setInterval(fetchAlerts, 30000);
+        return () => clearInterval(interval);
     }, [fetchAlerts]);
 
     const value = {
@@ -182,7 +144,7 @@ const markAsRead = async (alertId) => {
         fetchAlerts,
         markAsRead,
         markAllAsRead,
-        deleteAlert // 导出删除方法
+        deleteAlert
     };
 
     return (
@@ -192,7 +154,6 @@ const markAsRead = async (alertId) => {
     );
 };
 
-// 导出 Hook，方便组件使用
 export const useAlert = () => {
     return useContext(AlertContext);
 };

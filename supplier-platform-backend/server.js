@@ -15,6 +15,11 @@ const systemLogHandler = require('./api/system-log');
 const getSystemLogsHandler = require('./api/admin/system-logs');
 const loginHandler = require('./api/auth/login');
 const categoriesHandler = require('./api/categories');
+const configHandler = require('./api/config'); // 引入新文件
+const alertsHandler = require('./api/alerts'); // 引入新文件
+const usersHandler = require('./api/users');   // 新增
+const noticesHandler = require('./api/notices'); // 新增
+const suppliersHandler = require('./api/suppliers'); // 引入新文件
 const app = express();
 const server = http.createServer(app);
 
@@ -26,7 +31,8 @@ const supabaseAdmin = createClient(
 );
 
 // 允许跨域
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS', 'DELETE'] })); 
+// ✅ 添加 'PATCH'
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS', 'DELETE', 'PATCH'] }));
 app.use(express.json());
 
 // --- Socket.IO (仅本地有效) ---
@@ -71,9 +77,33 @@ app.post('/api/smart-search', async (req, res) => {
     await smartSearchHandler(req, res);
 });
 
+//  新增config API
+app.get('/api/config', async (req, res) => {
+    await configHandler(req, res);
+});
 //添加catogories API
 app.get('/api/categories', async (req, res) => {
     await categoriesHandler(req, res);
+});
+
+// 添加alerts API
+app.all('/api/alerts', async (req, res) => {
+    await alertsHandler(req, res);
+});
+
+// 添加users API
+app.all('/api/users', async (req, res) => {
+    await usersHandler(req, res);
+});
+
+// 添加suppliers API
+app.get('/api/suppliers', async (req, res) => {
+    await suppliersHandler(req, res);
+});
+
+// 添加notices API
+app.all('/api/notices', async (req, res) => {
+    await noticesHandler(req, res);
 });
 
 // 6. 原有 API: 邮件发送

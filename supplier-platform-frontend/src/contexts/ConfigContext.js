@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient'; // 1. 导入我们创建的 Supabase 客户端
+// ❌ 移除 Supabase 客户端
+// import { supabase } from '../supabaseClient'; 
 
 const ConfigContext = createContext();
+
+// 🔧 配置 API 基础地址 (包含环境判断)
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-backend.vercel.app'; // ⚠️ 替换为你真实的 Vercel 域名
 
 export const ConfigProvider = ({ children }) => {
     const [config, setConfig] = useState({
@@ -13,21 +20,27 @@ export const ConfigProvider = ({ children }) => {
     useEffect(() => {
         const fetchConfig = async () => {
             try {
-                // --- 2. 核心修正：从 Supabase 的 'notice_categories' 表中获取数据 ---
-                const { data, error } = await supabase
-                    .from('notice_categories')
-                    .select('*')
-                    .order('created_at', { ascending: true });
-                
-                if (error) throw error;
+                // ✅ 修改点：Fetch 后端接口
+                const apiPath = isDev ? `/api/config` : `/api/config.js`;
+                const targetUrl = `${BACKEND_URL}${apiPath}`;
+                const response = await fetch(targetUrl);
 
-                // --- 3. 将从数据库获取的数据，处理成我们前端需要的两种格式 ---
-                const categories = data.map(c => c.name); //  -> ['产品质量', '现场管理', ...]
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // 后端返回的是原始数组 data
+                const data = await response.json();
+
+                // --- 保持原本的数据处理逻辑不变 ---
+                // 1. 提取名称列表
+                const categories = data.map(c => c.name); 
                 
+                // 2. 构建详情映射对象
                 const details = data.reduce((acc, c) => {
                     acc[c.name] = { id: c.id, name: c.name, color: c.color };
                     return acc;
-                }, {}); // -> { '产品质量': { id: 'QC', ..., color: 'blue' }, ... }
+                }, {});
 
                 setConfig({
                     noticeCategories: categories,
@@ -35,7 +48,8 @@ export const ConfigProvider = ({ children }) => {
                 });
 
             } catch (err) {
-                console.error("从Supabase获取配置数据失败:", err);
+                console.error("从API获取配置数据失败:", err);
+                // 可选：设置默认值防止页面崩溃
             } finally {
                 setLoading(false);
             }
