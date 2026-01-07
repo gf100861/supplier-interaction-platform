@@ -13,6 +13,7 @@ const deleteUserHandler = require('./api/delete-user');
 const smartSearchHandler = require('./api/smart-search');
 const systemLogHandler = require('./api/system-log');
 const getSystemLogsHandler = require('./api/admin/system-logs');
+const loginHandler = require('./api/auth/login');
 const app = express();
 const server = http.createServer(app);
 
@@ -43,48 +44,7 @@ io.on('connection', (socket) => {
 
 // 1. [新增] 登录 API
 // 替代前端原本的 supabase.auth.signInWithPassword
-app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
-    try {
-        console.log(`[Auth] Attempting login for: ${email}`);
-        
-        // 1. 验证账号密码
-        const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
-            email,
-            password,
-        });
-
-        if (authError) {
-            console.warn('[Auth] Login failed:', authError.message);
-            return res.status(401).json({ error: '登录凭证无效或密码错误' });
-        }
-
-        // 2. 获取用户详细信息 (关联 suppliers 表)
-        const { data: userData, error: userError } = await supabaseAdmin
-            .from('users')
-            .select(`*, managed_suppliers:sd_supplier_assignments(supplier:suppliers(*))`)
-            .eq('id', authData.user.id)
-            .single();
-
-        if (userError) {
-            console.error('[Auth] User profile fetch error:', userError);
-            return res.status(500).json({ error: '无法获取用户信息' });
-        }
-
-        console.log(`[Auth] Login success: ${email}`);
-        
-        // 3. 返回前端需要的数据
-        res.json({
-            success: true,
-            user: userData,
-            session: authData.session 
-        });
-
-    } catch (error) {
-        console.error('[Auth] Unexpected error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
+app.post('/api/auth/login', async (req, res) => {await loginHandler(req, res);});
 
 // 2. [新增] 系统日志 API
 // 替代前端直接写库的操作
@@ -92,7 +52,9 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/system-log', async (req, res) => {await systemLogHandler(req, res);});
 
-app.get('/api/admin/system-logs', getSystemLogsHandler);
+app.get('/api/admin/system-logs', async (req, res) => {
+    await getSystemLogsHandler(req, res);
+});
 // 3. 原有 API: Create User
 app.all('/api/create-user', async (req, res) => {
     await createUserHandler(req, res);
