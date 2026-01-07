@@ -209,19 +209,12 @@ app.post('/api/send-alert-email', async (req, res) => {
 
 // --- 启动服务器 ---
 const PORT = process.env.PORT || 3001;
-// 只有在“非 Vercel 环境”（直接运行 node server.js）时，才由我们自己监听端口
-if (require.main === module) {
-    server.listen(PORT, () => {
-        console.log(`✅ Local Backend running on http://localhost:${PORT}`);
-        console.log(`🔑 Login endpoint: http://localhost:${PORT}/api/auth/login`);
-        console.log(`📝 Log endpoint: http://localhost:${PORT}/api/system-log`);
-        console.log(`📧 Email endpoint: http://localhost:${PORT}/api/send-alert-email`);
-        console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`);
-        console.log(`🗑️ Delete User endpoint: http://localhost:${PORT}/api/delete-user`);
-        console.log(`🧠 Smart Search endpoint: http://localhost:${PORT}/api/smart-search`);
-    });
-}
-
-// 🔴 关键修改 2：必须导出 app
-// 这样 Vercel 的 api/index.js 才能获取到您的 Express 实例并处理请求
-module.exports = app;
+server.listen(PORT, () => {
+    console.log(`✅ Local Backend running on http://localhost:${PORT}`);
+    console.log(`🔑 Login endpoint: http://localhost:${PORT}/api/auth/login`); // 打印确认
+    console.log(`📝 Log endpoint: http://localhost:${PORT}/api/system-log`);   // 打印确认
+    console.log(`📧 Email endpoint: http://localhost:${PORT}/api/send-alert-email`);
+    console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`);
+    console.log(`🗑️ Delete User endpoint: http://localhost:${PORT}/api/delete-user`);
+    console.log(`🧠 Smart Search endpoint: http://localhost:${PORT}/api/smart-search`);
+});
