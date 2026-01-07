@@ -11,6 +11,11 @@ const { Title, Paragraph, Text, Link } = Typography;
 // 如果你在 .env 文件里配置了 REACT_APP_API_URL 就用那个，否则默认连本地 3001
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
+ const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    const BACKEND_URL = isDev
+        ? 'http://localhost:3001'  // 本地开发环境
+        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 // --- 错误翻译函数 (保持不变) ---
 const translateError = (errorMsg) => {
     const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
@@ -58,6 +63,8 @@ const logSystemEvent = async (params) => {
     } = params;
 
     try {
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log.js';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
 
@@ -74,7 +81,7 @@ const logSystemEvent = async (params) => {
         };
 
         // ✅ 修改点 1: 使用 API_BASE_URL 拼接完整路径
-        await fetch(`${API_BASE_URL}/api/system-log`, {
+        await fetch(`${targetUrl}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -271,7 +278,9 @@ const LoginPage = () => {
         try {
             // ✅ 修改点 2: 使用 API_BASE_URL 拼接完整路径
             // 后端对应 server.js 中的 app.post('/api/auth/login', ...)
-            const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+             const apiPath = isDev ? '/api/auth/login' : '/api/auth/login.js';
+             const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
