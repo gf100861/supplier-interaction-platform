@@ -74,7 +74,7 @@ const logSystemEvent = async (params) => {
         };
 
         // ✅ 修改点 1: 使用 API_BASE_URL 拼接完整路径
-        await fetch(`${API_BASE_URL}/api/system-log.js`, {
+        await fetch(`${API_BASE_URL}/api/system-log`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
