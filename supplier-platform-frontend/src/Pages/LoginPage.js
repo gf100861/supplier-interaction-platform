@@ -8,12 +8,10 @@ import './LoginPage.css';
 const { Title, Paragraph, Text, Link } = Typography;
 
 // --- 🔧 新增：定义后端 API 基础地址 ---
-// 如果你在 .env 文件里配置了 REACT_APP_API_URL 就用那个，否则默认连本地 3001
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-    const BACKEND_URL = isDev
+const BACKEND_URL = isDev
         ? 'http://localhost:3001'  // 本地开发环境
         : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 // --- 错误翻译函数 (保持不变) ---

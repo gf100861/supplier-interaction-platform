@@ -14,6 +14,7 @@ const smartSearchHandler = require('./api/smart-search');
 const systemLogHandler = require('./api/system-log');
 const getSystemLogsHandler = require('./api/admin/system-logs');
 const loginHandler = require('./api/auth/login');
+const categoriesHandler = require('./api/categories');
 const app = express();
 const server = http.createServer(app);
 
@@ -68,6 +69,11 @@ app.all('/api/delete-user', async (req, res) => {
 // 5. 原有 API: Smart Search
 app.post('/api/smart-search', async (req, res) => {
     await smartSearchHandler(req, res);
+});
+
+//添加catogories API
+app.get('/api/categories', async (req, res) => {
+    await categoriesHandler(req, res);
 });
 
 // 6. 原有 API: 邮件发送

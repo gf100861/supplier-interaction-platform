@@ -19,11 +19,17 @@ const { Option } = Select;
 const { Search, TextArea } = Input;
 
 // --- 配置后端 API 地址 ---
-const isDev = process.env.NODE_ENV === 'development';
-const API_BASE_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+// const isDev = process.env.NODE_ENV === 'development';
+// const API_BASE_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
 
+    
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const BACKEND_URL = isDev
+        ? 'http://localhost:3001'  // 本地开发环境
+        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix', 'alarm'];
 const feedbackStatusConfig = {
     new: { color: 'blue', label: '新反馈', icon: <ClockCircleOutlined /> },
@@ -202,7 +208,9 @@ const AdminPage = () => {
                 }
             }
 
-            const response = await fetch(`${API_BASE_URL}/api/create-user`, {
+            const apiPath = isDev ? `/api/create-user` : `/api/create-user.js`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -231,7 +239,9 @@ const AdminPage = () => {
         setLoading(true);
         try {
             // 调用后端 API 删除
-            const response = await fetch(`${API_BASE_URL}/api/delete-user`, {
+            const apiPath = isDev ? `/api/delete-user` : `/api/delete-user.js`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId })
