@@ -20,6 +20,11 @@ const { Text } = Typography;
 // --- 配置 API 基础地址 ---
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
+ const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const BACKEND_URL = isDev
+        ? 'http://localhost:3001'  // 本地开发环境
+        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 // 配置日志级别的颜色和图标
 const SEVERITY_CONFIG = {
     INFO: { color: 'processing', icon: <InfoCircleOutlined />, label: '信息' },
@@ -63,7 +68,9 @@ const SystemLogViewer = () => {
             }
 
             // 2. ✅ 发起 Fetch 请求替代 supabase.from()
-            const response = await fetch(`${API_BASE_URL}/api/admin/system-logs?${params.toString()}`);
+             const apiPath = isDev ? `${API_BASE_URL}/api/admin/system-logs?${params.toString()}` : `${API_BASE_URL}/api/admin/system-logs.js?${params.toString()}`;
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const response = await fetch(`${targetUrl}`);
             const result = await response.json();
 
             if (!response.ok) {

@@ -12,6 +12,7 @@ const createUserHandler = require('./api/create-user');
 const deleteUserHandler = require('./api/delete-user');
 const smartSearchHandler = require('./api/smart-search');
 const systemLogHandler = require('./api/system-log');
+const getSystemLogsHandler = require('./api/admin/system-logs');
 const app = express();
 const server = http.createServer(app);
 
@@ -91,68 +92,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/system-log', async (req, res) => {await systemLogHandler(req, res);});
 
-
-app.get('/api/admin/system-logs', async (req, res) => {
-    try {
-        // 1. 获取查询参数
-        const { 
-            current = 1, 
-            pageSize = 10, 
-            severity, 
-            eventType, 
-            search, 
-            startDate, 
-            endDate 
-        } = req.query;
-
-        // 2. 构建查询 (使用 supabaseAdmin，因为它有权限读所有日志)
-        let query = supabaseAdmin
-            .from('system_logs')
-            .select('*', { count: 'exact' });
-
-        // 3. 应用筛选条件
-        if (severity) {
-            query = query.eq('severity', severity);
-        }
-        if (eventType) {
-            query = query.ilike('event_type', `%${eventType}%`);
-        }
-        if (search) {
-            // 支持搜索消息、邮箱或类别
-            query = query.or(`message.ilike.%${search}%,user_email.ilike.%${search}%,category.ilike.%${search}%`);
-        }
-        if (startDate) {
-            query = query.gte('created_at', startDate);
-        }
-        if (endDate) {
-            query = query.lte('created_at', endDate);
-        }
-
-        // 4. 应用分页
-        const pageNum = parseInt(current);
-        const sizeNum = parseInt(pageSize);
-        const from = (pageNum - 1) * sizeNum;
-        const to = from + sizeNum - 1;
-
-        const { data, count, error } = await query
-            .order('created_at', { ascending: false })
-            .range(from, to);
-
-        if (error) throw error;
-
-        // 5. 返回结果
-        res.json({
-            data,
-            total: count,
-            success: true
-        });
-
-    } catch (error) {
-        console.error('Fetch Logs Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
+app.get('/api/admin/system-logs', getSystemLogsHandler);
 // 3. 原有 API: Create User
 app.all('/api/create-user', async (req, res) => {
     await createUserHandler(req, res);
