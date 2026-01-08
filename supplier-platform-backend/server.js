@@ -4,34 +4,37 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-// 1. 新增：引入 Supabase 客户端
 const { createClient } = require('@supabase/supabase-js');
 
 // --- 引入 API 处理逻辑 ---
-const createUserHandler = require('./api/create-user');
-const deleteUserHandler = require('./api/delete-user');
-const smartSearchHandler = require('./api/smart-search');
-const systemLogHandler = require('./api/system-log');
-const getSystemLogsHandler = require('./api/admin/system-logs');
-const loginHandler = require('./api/auth/login');
-const categoriesHandler = require('./api/categories');
-const configHandler = require('./api/config'); // 引入新文件
-const alertsHandler = require('./api/alerts'); // 引入新文件
-const usersHandler = require('./api/users');   // 新增
-const noticesHandler = require('./api/notices'); // 新增
-const suppliersHandler = require('./api/suppliers'); // 引入新文件
+// ⚠️ 注意：请确保您的文件夹名确实是 'controllers' (复数)
+const createUserHandler = require('./controllers/create-user');
+const deleteUserHandler = require('./controllers/delete-user');
+const smartSearchHandler = require('./controllers/smart-search');
+const systemLogHandler = require('./controllers/system-log');
+// ⚠️ 请确认 controllers 目录下是否有 admin 文件夹
+const getSystemLogsHandler = require('./controllers/admin/system-logs'); 
+// ⚠️ 请确认 controllers 目录下是否有 auth 文件夹
+const loginHandler = require('./controllers/auth/login'); 
+
+const categoriesHandler = require('./controllers/categories');
+// 🔴 修正：统一改为 controllers (复数)
+const configHandler = require('./controllers/config'); 
+const alertsHandler = require('./controllers/alerts'); 
+const usersHandler = require('./controllers/users'); 
+const noticesHandler = require('./controllers/notices'); 
+const suppliersHandler = require('./controllers/suppliers');
+
 const app = express();
 const server = http.createServer(app);
 
-// 2. 新增：初始化 Supabase Admin 客户端
-// 使用 Service Role Key 以便后端拥有足够的权限（例如写入系统日志、读取用户详情）
+// 初始化 Supabase Admin
 const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// 允许跨域
-// ✅ 添加 'PATCH'
+// 允许跨域 (包含 PATCH)
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS', 'DELETE', 'PATCH'] }));
 app.use(express.json());
 
@@ -39,123 +42,78 @@ app.use(express.json());
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
-
 io.on('connection', (socket) => {
     console.log('Local Socket connected:', socket.id);
-    socket.on('disconnect', () => console.log('User disconnected:', socket.id));
 });
 
 // ==========================================
 // --- 注册 API 路由 ---
 // ==========================================
+// 💡 优化：直接传入 Handler 函数，代码更干净
 
-// 1. [新增] 登录 API
-// 替代前端原本的 supabase.auth.signInWithPassword
-app.post('/api/auth/login', async (req, res) => {await loginHandler(req, res);});
+// Auth
+app.post('/api/auth/login', loginHandler);
 
-// 2. [新增] 系统日志 API
-// 替代前端直接写库的操作
-// app.post('/api/system-log', systemLogHandler);
+// Logs
+app.post('/api/system-log', systemLogHandler);
+app.get('/api/admin/system-logs', getSystemLogsHandler);
 
-app.post('/api/system-log', async (req, res) => {await systemLogHandler(req, res);});
+// Users
+app.all('/api/create-user', createUserHandler);
+app.all('/api/delete-user', deleteUserHandler);
+app.all('/api/users', usersHandler); // 获取用户列表
 
-app.get('/api/admin/system-logs', async (req, res) => {
-    await getSystemLogsHandler(req, res);
-});
-// 3. 原有 API: Create User
-app.all('/api/create-user', async (req, res) => {
-    await createUserHandler(req, res);
-});
+// Core Business
+app.post('/api/smart-search', smartSearchHandler);
+app.get('/api/config', configHandler);
+app.get('/api/categories', categoriesHandler);
+app.get('/api/suppliers', suppliersHandler);
 
-// 4. 原有 API: Delete User
-app.all('/api/delete-user', async (req, res) => {
-    await deleteUserHandler(req, res);
-});
+// Alerts & Notices (支持 GET/POST/PATCH/DELETE)
+app.all('/api/alerts', alertsHandler);
+app.all('/api/notices', noticesHandler);
 
-// 5. 原有 API: Smart Search
-app.post('/api/smart-search', async (req, res) => {
-    await smartSearchHandler(req, res);
-});
-
-//  新增config API
-app.get('/api/config', async (req, res) => {
-    await configHandler(req, res);
-});
-//添加catogories API
-app.get('/api/categories', async (req, res) => {
-    await categoriesHandler(req, res);
-});
-
-// 添加alerts API
-app.all('/api/alerts', async (req, res) => {
-    await alertsHandler(req, res);
-});
-
-// 添加users API
-app.all('/api/users', async (req, res) => {
-    await usersHandler(req, res);
-});
-
-// 添加suppliers API
-app.get('/api/suppliers', async (req, res) => {
-    await suppliersHandler(req, res);
-});
-
-// 添加notices API
-app.all('/api/notices', async (req, res) => {
-    await noticesHandler(req, res);
-});
-
-// 6. 原有 API: 邮件发送
+// Email (保留简单逻辑)
 app.post('/api/send-alert-email', async (req, res) => {
-    console.log('Local Server receiving email request...');
     const { recipients, supplierCount, user, timestamp } = req.body;
+    if (!recipients?.length) return res.status(400).json({ error: 'No recipients' });
 
-    if (!recipients || !recipients.length) return res.status(400).json({ error: 'No recipients' });
-
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-
-    if (!smtpHost || !smtpUser || !smtpPass) {
-        console.error('Missing SMTP config in .env');
-        return res.status(500).json({ error: 'SMTP config missing' });
-    }
+    const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: parseInt(process.env.SMTP_PORT) === 465,
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        tls: { rejectUnauthorized: false }
+    });
 
     try {
-        const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpPort === 465,
-            auth: { user: smtpUser, pass: smtpPass },
-            connectionTimeout: 10000, 
-            tls: { rejectUnauthorized: false }
-        });
-
         await transporter.sendMail({
-            from: `"Local Dev" <${process.env.SMTP_FROM_EMAIL || smtpUser}>`,
+            from: `"Local Dev" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: recipients.join(','),
             subject: `[本地测试] 异常导出拦截 - ${supplierCount} 家`,
             text: `用户 ${user} 尝试导出 ${supplierCount} 家供应商数据。时间: ${timestamp}`
         });
-
-        console.log('Local email sent successfully');
         res.json({ success: true });
     } catch (error) {
-        console.error('Local email failed:', error);
+        console.error('Email failed:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// --- 启动服务器 ---
+// ==========================================
+// --- 启动服务器 (Vercel 关键配置) ---
+// ==========================================
+
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-    console.log(`✅ Local Backend running on http://localhost:${PORT}`);
-    console.log(`🔑 Login endpoint: http://localhost:${PORT}/api/auth/login`); // 打印确认
-    console.log(`📝 Log endpoint: http://localhost:${PORT}/api/system-log`);   // 打印确认
-    console.log(`📧 Email endpoint: http://localhost:${PORT}/api/send-alert-email`);
-    console.log(`👤 Create User endpoint: http://localhost:${PORT}/api/create-user`);
-    console.log(`🗑️ Delete User endpoint: http://localhost:${PORT}/api/delete-user`);
-    console.log(`🧠 Smart Search endpoint: http://localhost:${PORT}/api/smart-search`);
-});
+
+// 🔴 关键修改：只有在本地直接运行 (node server.js) 时才监听端口
+// Vercel 环境下不运行这一段，防止端口冲突
+if (require.main === module) {
+    server.listen(PORT, () => {
+        console.log(`✅ Local Backend running on http://localhost:${PORT}`);
+        console.log(`Routes loaded: Login, Logs, Users, Alerts, Notices, Suppliers...`);
+    });
+}
+
+// 🔴 关键修改：必须导出 app，供 Vercel 的 api/index.js 使用
+module.exports = app;
