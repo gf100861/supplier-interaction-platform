@@ -34,7 +34,22 @@ module.exports = async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
-        const { supplierId, action } = req.query;
+        const { supplierId, action, includeManaged } = req.query;
+
+        // 场景 1: AdminPage 获取完整用户列表 (带管理供应商信息)
+        // 对应前端 fetch: /api/users?includeManaged=true
+        if (includeManaged === 'true') {
+            const { data, error } = await supabaseAdmin
+                .from('users')
+                .select(`
+                    id, username, email, phone, role, created_at,
+                    managed_suppliers:sd_supplier_assignments(supplier_id)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return res.json(data);
+        }
 
         // 场景 1: 获取指定供应商下的所有用户 (用于重分配通知)
         if (supplierId) {

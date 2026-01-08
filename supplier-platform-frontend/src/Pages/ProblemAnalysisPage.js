@@ -23,11 +23,9 @@ const isDev = process.env.NODE_ENV === 'development';
 // 1. 本地开发时，指向本地后端端口 (通常是 3001)
 // 2. 生产环境时，填入你部署后的 Vercel 后端域名
 //    !!! 重要：请将下方的 URL 替换为你实际部署的后端 Vercel 域名 !!!
-// const API_BASE_URL = isDev 
-//     ? 'http://localhost:3001' 
-//     : 'https://supplier-interaction-platform-fwcc.vercel.app/'; 
-
-const API_BASE_URL ='https://supplier-interaction-platform-backend.vercel.app'
+const API_BASE_URL = isDev 
+    ? 'http://localhost:3001' 
+    : 'https://supplier-interaction-platform-backend.vercel.app'; 
 
 const ProblemAnalysisPage = () => {
     const currentUser = JSON.parse(localStorage.getItem('user'));
@@ -149,7 +147,7 @@ const ProblemAnalysisPage = () => {
             // messageApi.loading({ content: '正在向管理员发送安全警报邮件...', key: 'sending_email' });
 
             // 确保路径正确，使用上面定义的 API_BASE_URL
-            const endpoint = `${API_BASE_URL}/api/send-alert-email.js`;
+            const endpoint = `${API_BASE_URL}/api/send-alert-email`;
 
             const response = await fetch(endpoint, {
                 method: 'POST',

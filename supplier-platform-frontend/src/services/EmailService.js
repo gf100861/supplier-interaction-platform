@@ -3,6 +3,12 @@
 // 请替换为您实际的后端地址 (不要带 /api，因为后端路由会处理)
 const API_BASE_URL = 'https://supplier-interaction-platform-backend.vercel.app';
 
+ const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const BACKEND_URL = isDev
+        ? 'http://localhost:3001'  // 本地开发环境
+        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+
 const getEmailLayout = (title, content, actionLink = 'https://supplier-interaction-platform.vercel.app/login', actionText = '登录平台查看') => {
     return `
     <!DOCTYPE html>
@@ -61,7 +67,7 @@ export const EmailService = {
      */
     async send({ to, subject, html }) {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/send-email.js`, {
+            const response = await fetch(`${BACKEND_URL}/api/send-email`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ to, subject, html })

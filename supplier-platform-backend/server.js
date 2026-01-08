@@ -24,7 +24,11 @@ const alertsHandler = require('./controllers/alerts');
 const usersHandler = require('./controllers/users'); 
 const noticesHandler = require('./controllers/notices'); 
 const suppliersHandler = require('./controllers/suppliers');
-
+const adminUpdateUserHandler = require('./controllers/admin/update-user');
+const adminManageAssignmentsHandler = require('./controllers/admin/manage-assignments');
+const adminFeedbackHandler = require('./controllers/admin/feedback');
+const adminSystemNoticesHandler = require('./controllers/admin/system-notices');
+const emailController = require('./controllers/email');
 const app = express();
 const server = http.createServer(app);
 
@@ -73,33 +77,18 @@ app.get('/api/suppliers', suppliersHandler);
 app.all('/api/alerts', alertsHandler);
 app.all('/api/notices', noticesHandler);
 
+// Admin 特定功能
+app.patch('/api/admin/update-user', adminUpdateUserHandler);
+app.post('/api/admin/manage-assignments', adminManageAssignmentsHandler);
+app.all('/api/admin/feedback', adminFeedbackHandler);
+app.all('/api/admin/system-notices', adminSystemNoticesHandler);
 // Email (保留简单逻辑)
-app.post('/api/send-alert-email', async (req, res) => {
-    const { recipients, supplierCount, user, timestamp } = req.body;
-    if (!recipients?.length) return res.status(400).json({ error: 'No recipients' });
+// 1. 发送安全警报邮件 (对应之前的 /api/send-alert-email)
+app.post('/api/send-alert-email', emailController.sendAlertEmail);
 
-    const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: parseInt(process.env.SMTP_PORT) === 465,
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-        tls: { rejectUnauthorized: false }
-    });
-
-    try {
-        await transporter.sendMail({
-            from: `"Local Dev" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
-            to: recipients.join(','),
-            subject: `[本地测试] 异常导出拦截 - ${supplierCount} 家`,
-            text: `用户 ${user} 尝试导出 ${supplierCount} 家供应商数据。时间: ${timestamp}`
-        });
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Email failed:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
+// 2. 发送普通通知邮件 (对应之前的 /api/send-email)
+// 如果您前端有用这个接口，可以注册它；如果没有，可以不加
+app.post('/api/send-email', emailController.sendGeneralEmail);
 // ==========================================
 // --- 启动服务器 (Vercel 关键配置) ---
 // ==========================================

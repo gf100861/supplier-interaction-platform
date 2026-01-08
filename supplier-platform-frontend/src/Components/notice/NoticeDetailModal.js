@@ -17,7 +17,6 @@ import { EnhancedImageDisplay } from '../common/EnhancedImageDisplay';
 import { AttachmentsDisplay } from '../common/AttachmentsDisplay';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { supabase } from '../../supabaseClient'; // 确保导入 supabase
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
