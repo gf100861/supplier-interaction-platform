@@ -8,7 +8,7 @@ const ConfigContext = createContext();
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-backend.vercel.app'; // ⚠️ 替换为你真实的 Vercel 域名
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // ⚠️ 替换为你真实的 Vercel 域名
 
 export const ConfigProvider = ({ children }) => {
     const [config, setConfig] = useState({

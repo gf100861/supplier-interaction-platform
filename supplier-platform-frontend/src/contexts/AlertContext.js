@@ -8,7 +8,7 @@ const AlertContext = createContext();
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-backend.vercel.app'; // ⚠️ 替换为真实域名
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // ⚠️ 替换为真实域名
 
 export const AlertProvider = ({ children }) => {
     const [alerts, setAlerts] = useState([]);

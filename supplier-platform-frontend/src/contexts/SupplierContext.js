@@ -8,7 +8,7 @@ const SupplierContext = createContext();
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-backend.vercel.app'; // ⚠️ 请替换为你真实的 Vercel 项目域名
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // ⚠️ 请替换为你真实的 Vercel 项目域名
 
 export const SupplierProvider = ({ children }) => {
     const [suppliers, setSuppliers] = useState([]);
