@@ -19,9 +19,16 @@ function runMiddleware(req, res, fn) {
     });
 }
 
-// --- 3. 辅助函数：创建 Transporter (复用配置) ---
 const createTransporter = () => {
+    // [调试] 打印配置，确保环境变量读到了 (不要打印密码)
+    console.log('[Email Debug] SMTP Config:', {
+        host: process.env.SMTP_HOST,
+        port: process.env.SMTP_PORT,
+        user: process.env.SMTP_USER ? '***Set***' : 'Missing'
+    });
+
     const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+    
     return nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: smtpPort,
@@ -30,16 +37,20 @@ const createTransporter = () => {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS,
         },
-        // 增加超时设置，防止 Vercel 连接抖动
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
+        // 🔴 优化 1: 增加超时设置到 60秒 (原 10秒)
+        connectionTimeout: 60000, 
+        greetingTimeout: 60000,
+        socketTimeout: 60000,
+        
+        // 🔴 优化 2: 开启调试模式，查看握手细节
+        debug: true, 
+        logger: true, 
+        
         tls: {
             rejectUnauthorized: false // 兼容性设置
         }
     });
 };
-
 // ==========================================
 // --- Handler 1: 发送安全警报邮件 (Alert) ---
 // ==========================================
