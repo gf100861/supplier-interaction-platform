@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Serverless backend for Supplier Interaction Platform",
   "main": "api/index.js",
- "scripts": {
-  "start": "node api/index.js",
-  "dev": "nodemon server.js",
-  "build": "mkdir -p public" 
-},
+"scripts": {
+    "start": "node api/index.js",
+    "dev": "nodemon server.js",
+    "build": "mkdir -p public && echo 'Backend is running' > public/index.html"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.89.0",
