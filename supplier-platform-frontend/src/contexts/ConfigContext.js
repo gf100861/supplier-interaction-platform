@@ -21,7 +21,7 @@ export const ConfigProvider = ({ children }) => {
         const fetchConfig = async () => {
             try {
                 // ✅ 修改点：Fetch 后端接口
-                const apiPath = isDev ? `/api/config` : `/api/config.js`;
+                const apiPath = isDev ? `/api/config` : `/api/config`;
                 const targetUrl = `${BACKEND_URL}${apiPath}`;
                 const response = await fetch(targetUrl);
 

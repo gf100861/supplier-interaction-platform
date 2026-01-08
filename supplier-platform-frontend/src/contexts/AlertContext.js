@@ -38,7 +38,7 @@ export const AlertProvider = ({ children }) => {
         }
 
         try {
-            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}?userId=${user.id}`);
             if (!response.ok) throw new Error('Fetch failed');
@@ -64,7 +64,7 @@ export const AlertProvider = ({ children }) => {
             });
 
             // 调用后端
-            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             await fetch(`${targetUrl}`, {
                 method: 'PATCH',
@@ -91,7 +91,7 @@ export const AlertProvider = ({ children }) => {
             });
 
             // 调用后端
-            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             await fetch(`${targetUrl}`, {
                 method: 'PATCH',
@@ -115,7 +115,7 @@ export const AlertProvider = ({ children }) => {
             });
 
             // 调用后端
-            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             await fetch(`${targetUrl}?alertId=${alertId}`, {
                 method: 'DELETE'

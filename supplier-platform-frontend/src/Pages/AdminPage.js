@@ -208,7 +208,7 @@ const AdminPage = () => {
                 }
             }
 
-            const apiPath = isDev ? `/api/create-user` : `/api/create-user.js`;
+            const apiPath = isDev ? `/api/create-user` : `/api/create-user`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
@@ -239,7 +239,7 @@ const AdminPage = () => {
         setLoading(true);
         try {
             // 调用后端 API 删除
-            const apiPath = isDev ? `/api/delete-user` : `/api/delete-user.js`;
+            const apiPath = isDev ? `/api/delete-user` : `/api/delete-user`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}`, {
                 method: 'POST',

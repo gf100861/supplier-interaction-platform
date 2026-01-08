@@ -61,7 +61,7 @@ const logSystemEvent = async (params) => {
     } = params;
 
     try {
-        const apiPath = isDev ? '/api/system-log' : '/api/system-log.js';
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
         const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
@@ -276,7 +276,7 @@ const LoginPage = () => {
         try {
             // ✅ 修改点 2: 使用 API_BASE_URL 拼接完整路径
             // 后端对应 server.js 中的 app.post('/api/auth/login', ...)
-             const apiPath = isDev ? '/api/auth/login' : '/api/auth/login.js';
+             const apiPath = isDev ? '/api/auth/login' : '/api/auth/login';
              const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}`, {
                 method: 'POST',

@@ -18,7 +18,7 @@ export const SupplierProvider = ({ children }) => {
         const fetchSuppliers = async () => {
             try {
                 // ✅ 修改点：Fetch 后端 API
-                const apiPath = isDev ? `/api/suppliers` : `/api/suppliers.js`;
+                const apiPath = isDev ? `/api/suppliers` : `/api/suppliers`;
                 const targetUrl = `${BACKEND_URL}${apiPath}`;
 
 

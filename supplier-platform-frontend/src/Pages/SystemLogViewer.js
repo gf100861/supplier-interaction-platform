@@ -66,7 +66,7 @@ const SystemLogViewer = () => {
             }
 
             // 2. ✅ 发起 Fetch 请求替代 supabase.from()
-            const apiPath = isDev ? `/api/admin/system-logs?${params.toString()}` : `/api/admin/system-logs.js?${params.toString()}`;
+            const apiPath = isDev ? `/api/admin/system-logs?${params.toString()}` : `/api/admin/system-logs?${params.toString()}`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}`);
             const result = await response.json();

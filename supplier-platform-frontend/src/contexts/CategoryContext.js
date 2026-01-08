@@ -18,7 +18,7 @@ export const CategoryProvider = ({ children }) => {
         const fetchCategories = async () => {
             try {
                 // ✅ 修改点：改为 fetch 后端 API
-                const apiPath = isDev ? `/api/categories` : `/api/categories.js`;
+                const apiPath = isDev ? `/api/categories` : `/api/categories`;
                 const targetUrl = `${BACKEND_URL}${apiPath}`;
                 const response = await fetch(`${targetUrl}`);
                 

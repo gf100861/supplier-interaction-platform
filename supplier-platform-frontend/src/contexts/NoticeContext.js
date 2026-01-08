@@ -38,7 +38,7 @@ export const NoticeProvider = ({ children }) => {
     useEffect(() => {
         const fetchNotices = async () => {
             try {
-                const apiPath = isDev ? `/api/notices` : `/api/notices.js`;
+                const apiPath = isDev ? `/api/notices` : `/api/notices`;
                 const targetUrl = `${BACKEND_URL}${apiPath}`;
 
                 const response = await fetch(targetUrl);
@@ -66,7 +66,7 @@ export const NoticeProvider = ({ children }) => {
     const createSystemAlerts = async (alertsData) => {
         if (!alertsData || alertsData.length === 0) return;
         try {
-            const apiPath = isDev ? `/api/alerts` : `/api/alerts.js`;
+            const apiPath = isDev ? `/api/alerts` : `/api/alerts`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             await fetch(targetUrl, {
                 method: 'POST',
@@ -81,7 +81,7 @@ export const NoticeProvider = ({ children }) => {
     // --- 3. 辅助：获取用户列表 (调用后端 API) ---
     const fetchUsersBySupplier = async (supplierId) => {
         try {
-            const apiPath = isDev ? `/api/users` : `/api/users.js`;
+            const apiPath = isDev ? `/api/users` : `/api/users`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const res = await fetch(`${targetUrl}?supplierId=${supplierId}`);
             if (!res.ok) return [];
@@ -95,7 +95,7 @@ export const NoticeProvider = ({ children }) => {
     const updateNotice = async (noticeId, updates) => {
         try {
             // A. 调用后端更新数据
-            const apiPath = isDev ? `/api/notices` : `/api/notices.js`;
+            const apiPath = isDev ? `/api/notices` : `/api/notices`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(targetUrl, {
                 method: 'PATCH',
@@ -211,7 +211,7 @@ export const NoticeProvider = ({ children }) => {
     const sendSystemAnnouncement = async (title, content, priority) => {
         try {
             // A. 获取所有用户
-            const apiPath = isDev ? `/api/users` : `/api/users.js`;
+            const apiPath = isDev ? `/api/users` : `/api/users`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const res = await fetch(`${targetUrl}?action=all_users`);
             const users = await res.json();
@@ -242,7 +242,7 @@ export const NoticeProvider = ({ children }) => {
     const addNotices = async (newNoticesArray) => {
         try {
             // A. 调用后端 API 创建
-            const apiPath = isDev ? `/api/notices` : `/api/notices.js`;
+            const apiPath = isDev ? `/api/notices` : `/api/notices`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(targetUrl, {
                 method: 'POST',
@@ -311,7 +311,7 @@ export const NoticeProvider = ({ children }) => {
     const deleteNotice = async (noticeId) => {
         setLoading(true);
         try {
-            const apiPath = isDev ? `/api/notices` : `/api/notices.js`;
+            const apiPath = isDev ? `/api/notices` : `/api/notices`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             await fetch(targetUrl, {
                 method: 'DELETE',
@@ -331,7 +331,7 @@ export const NoticeProvider = ({ children }) => {
         if (!noticeIds || noticeIds.length === 0) throw new Error("未选择");
         setLoading(true);
         try {
-            const apiPath = isDev ? `/api/notices` : `/api/notices.js`;
+            const apiPath = isDev ? `/api/notices` : `/api/notices`;
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             await fetch(targetUrl, {
                 method: 'DELETE',
