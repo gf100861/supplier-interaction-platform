@@ -17,7 +17,7 @@ const { Option } = Select;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-backend.vercel.app'; 
+    : 'supplier-interaction-platform-backend.vercel.app'; 
 
 const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
 
