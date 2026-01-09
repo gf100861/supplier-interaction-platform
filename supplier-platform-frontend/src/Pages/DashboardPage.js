@@ -26,7 +26,7 @@ const { Title, Paragraph, Text } = Typography;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'http://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app'; 
 
 // --- 辅助函数 ---
 const getPlanIcon = (type) => {
