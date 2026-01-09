@@ -1,12 +1,19 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Button, Modal, Form, Input, Select, Tag, Typography, Card, Popconfirm, Empty, Avatar, Space, Tooltip, Divider, Spin, Statistic, Row, Col, Radio } from 'antd';
-import { DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, DownloadOutlined, UndoOutlined, ReconciliationOutlined, FileTextOutlined, CalendarOutlined } from '@ant-design/icons';
+import { 
+    Button, Modal, Form, Input, Select, Tag, Typography, Card, 
+    Popconfirm, Space, Tooltip, Divider, Spin, 
+    Statistic, Row, Col, Radio 
+} from 'antd';
+import { 
+    DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, 
+    RightOutlined, CheckCircleOutlined, DownloadOutlined, 
+    UndoOutlined, ReconciliationOutlined, FileTextOutlined, 
+    CalendarOutlined 
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
-// ❌ 移除 Supabase
-// import { supabase } from '../supabaseClient';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -45,27 +52,32 @@ const matrixStyles = {
         zIndex: 1
     },
     headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
-    cell: { padding: '12px', borderRight: '1px solid #f0f0f0', borderTop: '1px solid #f0f0f0', minHeight: '80px' },
+    // ✅ 修改：单元格样式，支持点击手势和 flex 布局
+    cell: { 
+        padding: '8px', 
+        borderRight: '1px solid #f0f0f0', 
+        borderTop: '1px solid #f0f0f0', 
+        minHeight: '100px', // 稍微加高一点保证有点击区域
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-start',
+        cursor: 'pointer', // 鼠标移上去显示手型
+        transition: 'background-color 0.2s'
+    },
 };
 
-// --- 错误信息翻译辅助函数 ---
 const translateError = (error) => {
     const msg = error?.message || error || '未知错误';
     if (msg.includes('Invalid login credentials')) return '登录凭证无效或已过期，请尝试重新登录';
     if (msg.includes('User not found')) return '用户不存在';
     if (msg.includes('duplicate key value')) return '该记录已存在，请勿重复添加';
-    if (msg.includes('violates foreign key constraint')) return '关联数据无效或不存在（如供应商ID错误）';
-    if (msg.includes('violates row-level security policy')) return '权限不足，您无法执行此操作';
-    if (msg.includes('violates not-null constraint')) return '缺少必填字段';
-    if (msg.includes('JWT expired')) return '登录会话已过期，请刷新页面';
-    if (msg.includes('Failed to fetch')) return '网络请求失败，请检查网络连接';
     return msg; 
 };
 
 const AuditPlanPage = () => {
     const [events, setEvents] = useState([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
-    const [eventType, setEventType] = useState('audit');
+    const [eventType, setEventType] = useState('audit'); 
     const [form] = Form.useForm();
     const [currentYear, setCurrentYear] = useState(dayjs().year());
     const [loading, setLoading] = useState(true);
@@ -98,41 +110,24 @@ const AuditPlanPage = () => {
         return options;
     }, []);
 
-    useEffect(() => {
-        if (currentUser.role === 'Supplier') {
-            navigate('/');
-        }
-    }, [currentUser, navigate]);
-
-    // --- 核心修改：Fetch Data 改为 API 调用 ---
     const fetchData = async () => {
         setLoading(true);
         try {
-            // 1. 获取审计计划
             const eventsRes = await fetch(`${BACKEND_URL}/api/audit-plans?year=${currentYear}`);
             if (!eventsRes.ok) throw new Error('Fetch audit plans failed');
             const eventsData = await eventsRes.json();
-            console.log('Fetched audit plans:', eventsData);
             setEvents(eventsData || []);
 
-            // 2. 获取问题类型 (复用 /api/config 接口，它返回所有配置包括 categories)
             const configRes = await fetch(`${BACKEND_URL}/api/config`);
             if (!configRes.ok) throw new Error('Fetch config failed');
             const configData = await configRes.json();
-            
-            // 假设 /api/config 返回的是 notice_categories 表的原始数组
-            // 如果后端 /api/config 返回结构不同，请相应调整。
-            // 之前定义的 /api/config 返回的是 `select('*')` from `notice_categories`
-            const categoriesData = Array.isArray(configData) ? configData : []; 
+            const categoriesData = Array.isArray(configData) ? configData : (configData.categories || []); 
 
             const sortedCategories = categoriesData.sort((a, b) => {
                 const order = { "Process Audit": 1, "SEM": 2 };
-                const aOrder = order[a.name] || Infinity;
-                const bOrder = order[b.name] || Infinity;
-                return aOrder - bOrder;
+                return (order[a.name] || Infinity) - (order[b.name] || Infinity);
             });
             setCategories(sortedCategories);
-
         } catch (error) {
             console.error(error);
             messageApi.error(`加载规划数据失败: ${translateError(error.message)}`);
@@ -141,41 +136,27 @@ const AuditPlanPage = () => {
         }
     };
 
-    useEffect(() => {
-        fetchData();
-    }, [currentYear]);
+    useEffect(() => { fetchData(); }, [currentYear]);
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
-        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-            return suppliers;
-        }
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') return suppliers;
         if (currentUser.role === 'SD') {
             const managed = currentUser.managed_suppliers || [];
-            console.log('Current User Managed Supplier IDs:', managed);       
-            const managedIds = managed.map(m => m.supplier.id);
-
+            const managedIds = managed.map(m => m.supplier_id || m.supplier?.id || m); 
             return suppliers.filter(s => managedIds.includes(s.id));
         }
         return [];
     }, [currentUser, suppliers]);
 
-    // --- 过滤逻辑 (保持不变) ---
     const filteredEvents = useMemo(() => {
         if (!currentUser) return [];
-
         let roleFilteredEvents = [];
-        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
-            roleFilteredEvents = events;
-        } else if (currentUser.role === 'SD') {
+        if (currentUser.role === 'Manager' || currentUser.role === 'Admin') roleFilteredEvents = events;
+        else if (currentUser.role === 'SD') {
             const managedSupplierIds = new Set(managedSuppliers.map(s => s.id));
-
-            console.log('Managed Supplier IDs for SD:', managedSupplierIds);    
             roleFilteredEvents = events.filter(event => managedSupplierIds.has(event.supplier_id));
-
-            // console.log('Filtered events for SD:', roleFilteredEvents);
         }
-
         return roleFilteredEvents.filter(event => {
             const statusMatch = selectedStatusKey === 'all' || event.status === selectedStatusKey;
             const supplierMatch = selectedSupplierKeys.length === 0 || selectedSupplierKeys.includes(event.supplier_id);
@@ -185,24 +166,14 @@ const AuditPlanPage = () => {
     }, [events, currentUser, managedSuppliers, selectedSupplierKeys, selectedCategoryKeys, selectedStatusKey]);
 
     const suppliersToRender = useMemo(() => {
-        if (selectedSupplierKeys.length === 0) {
-            return managedSuppliers;
-        }
+        if (selectedSupplierKeys.length === 0) return managedSuppliers;
         return managedSuppliers.filter(s => selectedSupplierKeys.includes(s.id));
     }, [managedSuppliers, selectedSupplierKeys]);
 
     const planStats = useMemo(() => {
-        const stats = {
-            total: filteredEvents.length,
-            completed: 0,
-            pending: 0,
-        };
+        const stats = { total: filteredEvents.length, completed: 0, pending: 0 };
         for (const event of filteredEvents) {
-            if (event.status === 'completed') {
-                stats.completed += 1;
-            } else {
-                stats.pending += 1;
-            }
+            event.status === 'completed' ? stats.completed += 1 : stats.pending += 1;
         }
         return stats;
     }, [filteredEvents]);
@@ -210,35 +181,24 @@ const AuditPlanPage = () => {
     const matrixData = useMemo(() => {
         const grouped = {};
         filteredEvents.forEach(event => {
-            if (!grouped[event.supplier_name]) {
-                grouped[event.supplier_name] = Array.from({ length: 12 }, () => []);
-            }
-            if (event.planned_month >= 1 && event.planned_month <= 12) {
-                grouped[event.supplier_name][event.planned_month - 1].push(event);
-            } else {
-                console.warn(`Invalid planned_month found: ${event.planned_month} for event ID: ${event.id}`);
-            }
+            if (!grouped[event.supplier_name]) grouped[event.supplier_name] = Array.from({ length: 12 }, () => []);
+            if (event.planned_month >= 1 && event.planned_month <= 12) grouped[event.supplier_name][event.planned_month - 1].push(event);
         });
         return grouped;
     }, [filteredEvents]);
 
-    // --- 核心修改：Mark Complete (PATCH) ---
+    // --- API Operations ---
+
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
         const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
-        
         try {
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    id, 
-                    updates: { status: newStatus, completion_date: completionDate } 
-                })
+                body: JSON.stringify({ id, updates: { status: newStatus, completion_date: completionDate } })
             });
-
             if (!response.ok) throw new Error('Update failed');
-
             messageApi.success('状态更新成功！');
             fetchData();
         } catch (error) {
@@ -246,15 +206,10 @@ const AuditPlanPage = () => {
         }
     };
 
-    // --- 核心修改：Delete (DELETE) ---
     const handleDeleteEvent = async (id) => {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, {
-                method: 'DELETE'
-            });
-
+            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, { method: 'DELETE' });
             if (!response.ok) throw new Error('Delete failed');
-
             messageApi.success('事件已删除！');
             fetchData();
         } catch (error) {
@@ -267,49 +222,28 @@ const AuditPlanPage = () => {
             messageApi.error("无法跳转，计划信息不完整。");
             return;
         }
-        navigate('/notices', {
-            state: {
-                preSelectedSupplierId: plan.supplier_id,
-                preSelectedMonth: plan.planned_month,
-                preSelectedYear: plan.year,
-            }
-        });
+        navigate('/notices', { state: { preSelectedSupplierId: plan.supplier_id, preSelectedMonth: plan.planned_month, preSelectedYear: plan.year } });
     };
 
-    const showAddModal = (type) => {
-        setEventType(type);
-        form.resetFields();
-        form.setFieldsValue({ auditor: currentUser?.username || '' });
-        setIsModalVisible(true);
-    };
-
-    // --- 核心修改：Reschedule (PATCH) ---
     const handleReschedule = async (item) => {
         if (!rescheduleTarget) {
             messageApi.error("请选择一个新的月份！");
             return;
         }
-
         const target = JSON.parse(rescheduleTarget);
         if (target.year === item.year && target.month === item.planned_month) {
             messageApi.info("月份未改变。");
             setRescheduleTarget(null);
             return;
         }
-
         setLoading(true);
         try {
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    id: item.id, 
-                    updates: { planned_month: target.month, year: target.year } 
-                })
+                body: JSON.stringify({ id: item.id, updates: { planned_month: target.month, year: target.year } })
             });
-
             if (!response.ok) throw new Error('Reschedule failed');
-            
             messageApi.success(`计划已成功移动到 ${target.year}年 ${target.month}月！`);
             fetchData(); 
         } catch (error) {
@@ -320,17 +254,35 @@ const AuditPlanPage = () => {
         }
     };
 
+    // --- Modal Logic ---
+
+    // ✅ 支持预填数据 (SupplierId, Month)
+    const showAddModal = (type, prefillData = {}) => {
+        setEventType(type || 'audit');
+        form.resetFields();
+        form.setFieldsValue({
+            auditor: currentUser?.username || '',
+            supplierId: prefillData.supplierId || undefined,
+            plannedMonth: prefillData.plannedMonth || undefined,
+            type: type || 'audit' 
+        });
+        setIsModalVisible(true);
+    };
+
     const handleCancel = () => setIsModalVisible(false);
 
-    // --- 核心修改：Submit (POST) ---
     const handleFormSubmit = async (values) => {
         const selectedSupplier = managedSuppliers.find(s => s.id === values.supplierId);
         if (!selectedSupplier) {
             messageApi.error("未找到供应商信息，无法提交。");
             return;
         }
+        
+        // 使用 Form 中的 type 值
+        const finalType = values.type || eventType;
+
         const newEvent = {
-            type: eventType,
+            type: finalType,
             year: currentYear,
             category: values.category,
             planned_month: values.plannedMonth,
@@ -350,12 +302,7 @@ const AuditPlanPage = () => {
 
             if (!response.ok) throw new Error('Create failed');
 
-            const successMessageMap = {
-                'audit': '审计计划 添加成功！',
-                'qrm': 'QRM会议 添加成功！',
-                'quality_review': '质量评审 添加成功！'
-            };
-            messageApi.success(successMessageMap[eventType] || '事件添加成功！');
+            messageApi.success('事件添加成功！');
             setIsModalVisible(false);
             fetchData();
         } catch (error) {
@@ -363,6 +310,7 @@ const AuditPlanPage = () => {
         }
     };
 
+    // --- Helpers ---
     const prevYear = () => setCurrentYear(currentYear - 1);
     const nextYear = () => setCurrentYear(currentYear + 1);
     const handleYearChange = (year) => setCurrentYear(year);
@@ -411,7 +359,7 @@ const AuditPlanPage = () => {
             { header: "Parma号", key: "parmaId", width: 15 },
             { header: "CMT", key: "cmt", width: 15 },
             { header: "供应商", key: "supplierName", width: 30 },
-            { header: "供应商代码", key: "shortCode", width: 15 }, // 增加 Short Code
+            { header: "供应商代码", key: "shortCode", width: 15 }, 
             ...months.map((m, i) => ({ header: m, key: `month_${i + 1}`, width: 30 }))
         ];
         worksheet.columns = columns;
@@ -470,13 +418,15 @@ const AuditPlanPage = () => {
     };
 
     const getModalTitle = () => {
-        switch (eventType) {
-            case 'audit': return '新建审计计划';
-            case 'qrm': return '添加QRM会议';
-            case 'quality_review': return '添加质量评审';
-            default: return '添加新事件';
-        }
+        const typeLabels = { 'audit': '新建审计计划', 'qrm': '添加QRM会议', 'quality_review': '添加质量评审' };
+        return typeLabels[eventType] || '添加新事件';
     };
+
+    const eventTypeOptions = [
+        { label: '审计计划', value: 'audit' },
+        { label: 'QRM会议', value: 'qrm' },
+        { label: '质量评审', value: 'quality_review' },
+    ];
 
     return (
         <div style={{ padding: '0 24px 24px 24px' }}>
@@ -496,7 +446,7 @@ const AuditPlanPage = () => {
                         <Button icon={<ReconciliationOutlined />} onClick={() => showAddModal('quality_review')} style={{ backgroundColor: '#e6f7ff', borderColor: '#91d5ff' }}>添加质量评审</Button>
                     </Space>
                 </div>
-                <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计、QRM会议与质量评审的整体进度。</Paragraph>
+                <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计、QRM会议与质量评审的整体进度。点击单元格空白处可快速添加。</Paragraph>
                 <Divider style={{ margin: '16px 0' }} />
                 
                 {/* 筛选器区域 (UI 保持不变) */}
@@ -586,7 +536,15 @@ const AuditPlanPage = () => {
                                 {Array.from({ length: 12 }).map((_, monthIndex) => {
                                     const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
                                     return (
-                                        <div key={monthIndex} style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}>
+                                        <div 
+                                            key={monthIndex} 
+                                            style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}
+                                            // ✅ 关键：点击空白处触发添加
+                                            onClick={() => showAddModal('audit', { supplierId: supplier.id, plannedMonth: monthIndex + 1 })}
+                                            // 简单的 hover 效果
+                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fafafa'}
+                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                        >
                                             {itemsInCell.map(item => {
                                                 const typeTagMap = {
                                                     audit: { color: 'blue', text: '审计' },
@@ -596,12 +554,13 @@ const AuditPlanPage = () => {
                                                 const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
 
                                                 const rescheduleTitle = (
-                                                    <div style={{width: 200}}>
+                                                    <div style={{width: 200}} onClick={e => e.stopPropagation()}>
                                                         <Text>调整计划至:</Text>
                                                         <Select 
                                                             placeholder="选择月份" 
                                                             style={{ width: '100%', marginTop: 8 }}
                                                             onChange={(value) => setRescheduleTarget(value)}
+                                                            onClick={e => e.stopPropagation()}
                                                         >
                                                             {rollingMonths.map((opt) => (
                                                                 <Option 
@@ -617,7 +576,23 @@ const AuditPlanPage = () => {
                                                 );
 
                                                 return (
-                                                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '4px', marginBottom: '4px', borderRadius: '4px', background: item.status === 'completed' ? '#f6ffed' : '#fafafa', border: '1px solid #d9d9d9' }}>
+                                                    <div 
+                                                        key={item.id} 
+                                                        style={{ 
+                                                            display: 'flex', 
+                                                            alignItems: 'center', 
+                                                            justifyContent: 'space-between', 
+                                                            width: '100%', 
+                                                            padding: '4px', 
+                                                            marginBottom: '4px', 
+                                                            borderRadius: '4px', 
+                                                            background: item.status === 'completed' ? '#f6ffed' : '#ffffff', 
+                                                            border: '1px solid #d9d9d9',
+                                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                                        }}
+                                                        // ✅ 关键：阻止冒泡，防止点击卡片触发添加
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
                                                         <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div><div><b>备注:</b> {item.comment || '无'}</div></>}>
                                                             <Text style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                 <Tag color={typeInfo.color}>{typeInfo.text}</Tag>
@@ -629,19 +604,19 @@ const AuditPlanPage = () => {
                                                             </Tooltip>
                                                             <Tooltip title="调整计划月份">
                                                                 <Popconfirm title={rescheduleTitle} onConfirm={() => handleReschedule(item)} onCancel={() => setRescheduleTarget(null)} okText="移动" cancelText="取消" disabled={item.status === 'completed'}>
-                                                                    <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={item.status === 'completed'} />
+                                                                    <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={item.status === 'completed'} onClick={e => e.stopPropagation()} />
                                                                 </Popconfirm>
                                                             </Tooltip>
                                                             <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为未完成'}>
                                                                 <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>
-                                                                    <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#7d92a7ff' : '#8c8c8c' }}>
+                                                                    <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#7d92a7ff' : '#8c8c8c' }} onClick={e => e.stopPropagation()}>
                                                                         {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
                                                                     </Button>
                                                                 </Popconfirm>
                                                             </Tooltip>
                                                             <Tooltip title="删除此计划">
                                                                 <Popconfirm title="确定删除此项吗?" onConfirm={() => handleDeleteEvent(item.id)}>
-                                                                    <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} />
+                                                                    <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} onClick={e => e.stopPropagation()} />
                                                                 </Popconfirm>
                                                             </Tooltip>
                                                         </Space>
@@ -659,6 +634,10 @@ const AuditPlanPage = () => {
 
             <Modal title={getModalTitle()} open={isModalVisible} onCancel={handleCancel} footer={null} destroyOnClose>
                 <Form form={form} layout="vertical" onFinish={handleFormSubmit} style={{ marginTop: 24 }}>
+                    <Form.Item name="type" label="计划类型" initialValue={eventType}>
+                        <Radio.Group options={eventTypeOptions} onChange={(e) => setEventType(e.target.value)} buttonStyle="solid" />
+                    </Form.Item>
+
                     <Form.Item name="supplierId" label="供应商" rules={[{ required: true, message: '请选择供应商' }]}>
                         <Select showSearch placeholder="请选择您负责的供应商" filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}>
                             {managedSuppliers.map(s => <Option key={s.id} value={s.id}>{s.short_code}</Option>)}
@@ -678,7 +657,7 @@ const AuditPlanPage = () => {
                     <Form.Item name="auditor" label="负责人" rules={[{ required: true, message: '请输入负责人' }]} style={{ display: 'none' }}>
                         <Input readOnly />
                     </Form.Item>
-                    <Form.Item><Button type="primary" htmlType="submit">提交</Button></Form.Item>
+                    <Form.Item><Button type="primary" htmlType="submit" block>提交计划</Button></Form.Item>
                 </Form>
             </Modal>
         </div>

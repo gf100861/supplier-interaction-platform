@@ -36,7 +36,7 @@ import HelpCenterPage from './Pages/help-center';
 import { FileSender } from './Pages/OfflineSharePage';
 import HistoricalImportPage from './Pages/HistoricalImportPage';
 import UpdatePasswordPage from './Pages/UpdatePasswordPage';
-
+import PrivacySettingsPage from './Pages/PrivacySettingsPage';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -69,6 +69,7 @@ const ThemedApp = () => {
                                             
                                             {/* 移动端上传页面通常也是独立的 */}
                                             <Route path="/mobile-transfer" element={<MobileTransferPage />} />
+                                            <Route path="/privacy-settings" element={<PrivacySettingsPage />} />
 
                                             {/* --- 受保护路由 (有侧边栏 MainLayout) --- */}
                                             <Route element={<ProtectedRoute />}>

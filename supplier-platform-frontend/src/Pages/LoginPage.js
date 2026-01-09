@@ -404,7 +404,7 @@ const LoginPage = () => {
                             <Text type="secondary" style={{ fontSize: '12px' }}>
                                 <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>帮助中心</Link>
                                 <Divider type="vertical" />
-                                <Link href="/privacy-policy" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
+                                <Link href="/privacy-settings" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
                             </Text>
                         </div>
                     </Card>

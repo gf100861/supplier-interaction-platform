@@ -30,6 +30,7 @@ const adminFeedbackHandler = require('./controllers/admin/feedback');
 const adminSystemNoticesHandler = require('./controllers/admin/system-notices');
 const emailController = require('./controllers/email');
 const auditPlansHandler = require('./controllers/audit-plan') // 引入新文件
+const settingsHandler = require('./controllers/settings');
 const app = express();
 const server = http.createServer(app);
 
@@ -96,6 +97,8 @@ app.all('/api/audit-plans', auditPlansHandler);
 // ==========================================
 // --- 启动服务器 (Vercel 关键配置) ---
 // ==========================================
+
+app.all('/api/settings', settingsHandler);
 
 const PORT = process.env.PORT || 3001;
 
