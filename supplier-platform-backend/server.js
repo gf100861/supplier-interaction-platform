@@ -29,6 +29,7 @@ const adminManageAssignmentsHandler = require('./controllers/admin/manage-assign
 const adminFeedbackHandler = require('./controllers/admin/feedback');
 const adminSystemNoticesHandler = require('./controllers/admin/system-notices');
 const emailController = require('./controllers/email');
+const auditPlansHandler = require('./controllers/audit-plan') // 引入新文件
 const app = express();
 const server = http.createServer(app);
 
@@ -89,6 +90,9 @@ app.post('/api/send-alert-email', emailController.sendAlertEmail);
 // 2. 发送普通通知邮件 (对应之前的 /api/send-email)
 // 如果您前端有用这个接口，可以注册它；如果没有，可以不加
 app.post('/api/send-email', emailController.sendGeneralEmail);
+
+
+app.all('/api/audit-plans', auditPlansHandler);
 // ==========================================
 // --- 启动服务器 (Vercel 关键配置) ---
 // ==========================================

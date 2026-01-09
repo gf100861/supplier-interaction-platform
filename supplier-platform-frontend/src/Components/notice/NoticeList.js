@@ -89,6 +89,144 @@ const toPlainText = (val) => {
 };
 
 
+// const SingleNoticeItem = ({
+//     item,
+//     getActionsForItem,
+//     showDetailsModal,
+//     handleReviewToggle,
+//     token,
+//     currentUser,
+//     noticeCategoryDetails,
+//     selectable = false,
+//     selected = false,
+//     onSelectChange = () => { },
+//     searchTerm = '' // --- 2. 接收 searchTerm ---
+// }) => {
+
+//     const getChineseOnly = (text = '') =>
+//         text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
+
+//     // 获取纯文本标题用于高亮
+//     const plainTitle = toPlainText(item.title);
+//     const chineseTitle = getChineseOnly(plainTitle)?.trim();
+
+//     const rawTitle =
+//         item.category === 'Historical 8D' && chineseTitle.length > 0
+//             ? chineseTitle
+//             : plainTitle;
+
+//     // const rawTitle = item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.title)) : toPlainText(item.title);
+
+//     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
+//         ? noticeCategoryDetails[item.category]
+//         : { id: 'N/A', color: 'orange' };
+
+//     const plainDetails = toPlainText(
+//         item.details?.rootCause ||
+//         item.sdNotice?.details?.finding ||
+//         item.sdNotice?.description
+//     );
+
+//     const chineseDetails = getChineseOnly(plainDetails)?.trim();
+
+//     const highlightText =
+//         item.category === 'Historical 8D' && chineseDetails
+//             ? chineseDetails
+//             : plainDetails;
+
+
+    
+//     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
+
+//     // 将原先通过 List.Item 的 actions 渲染的操作按钮移到左侧和标签对齐
+//     const actions = getActionsForItem ? getActionsForItem(item) : [];
+
+//     return (
+//         // note: 不再使用 List.Item 的 actions 属性，而是在 description 区域里统一排版
+//         <List.Item onClick={() => showDetailsModal(item)}>
+//             {selectable && (
+//                 <Checkbox
+//                     checked={selected}
+//                     onChange={(e) => onSelectChange(item.id, e.target.checked)}
+//                     onClick={(e) => e.stopPropagation()}
+//                     style={{ marginRight: 16 }}
+//                 />
+//             )}
+
+//             {isReviewable && (
+//                 <Checkbox
+//                     checked={item.isReviewed}
+//                     onChange={(e) => handleReviewToggle(item, e)}
+//                     onClick={(e) => e.stopPropagation()}
+//                     style={{ marginRight: 16 }}
+//                 />
+//             )}
+
+//             <List.Item.Meta
+//                 style={{ paddingLeft: selectable || isReviewable ? 0 : 24 }}
+//                 avatar={<FileTextOutlined style={{ fontSize: 24, color: token.colorPrimary }} />}
+//                 title={
+//                     <Space>
+//                         <a onClick={(e) => { e.stopPropagation(); showDetailsModal(item); }}>
+//                             <Text strong>
+//                                 <HighlightText text={rawTitle} keyword={searchTerm} />
+//                             </Text>
+//                         </a>
+
+//                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
+
+//                         <Text type="secondary" style={{ fontSize: 12 }}>
+//                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
+//                         </Text>
+//                     </Space>
+//                 }
+//                 description={
+//                     <div>
+//                         {/* 详情行（保留原来的截断表现） */}
+//                         <div style={{ maxHeight: 42, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+//                             <HighlightText text={highlightText} keyword={searchTerm} />
+//                         </div>
+
+//                         {/* 标签 + 状态 + 操作：放在同一行，统一左对齐 */}
+//                         <div
+//                             style={{
+//                                 display: 'flex',
+//                                 alignItems: 'center',
+//                                 gap: 12,
+//                                 marginTop: 8,
+//                                 flexWrap: 'wrap'
+//                             }}
+//                             // 阻止点击穿透到外层 List.Item
+//                             onClick={(e) => e.stopPropagation()}
+//                         >
+//                             <Space size="middle" style={{ alignItems: 'center' }}>
+//                                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
+//                                 {getStatusTag(item.status)}
+//                             </Space>
+
+//                             {/* 把原来的 action 节点渲染在标签右侧并左对齐 */}
+//                             {actions && actions.length > 0 && (
+//                                 <Space size="small" style={{ marginLeft: 0 }}>
+//                                     {actions.map((act, idx) => (
+//                                         // 把每个 action 包装一层，避免点击触发父容器 onClick
+//                                         <span key={idx} onClick={(e) => { e.stopPropagation(); }}>
+//                                             {act}
+//                                         </span>
+//                                     ))}
+//                                 </Space>
+//                             )}
+//                         </div>
+//                     </div>
+//                 }
+//             />
+//             {/* <Space size="middle">
+//                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
+//                 {getStatusTag(item.status)}
+//             </Space> */}
+//         </List.Item>
+//     );
+// };
+
 const SingleNoticeItem = ({
     item,
     getActionsForItem,
@@ -100,94 +238,83 @@ const SingleNoticeItem = ({
     selectable = false,
     selected = false,
     onSelectChange = () => { },
-    searchTerm = '' // --- 2. 接收 searchTerm ---
+    searchTerm = '' 
 }) => {
-
-    const getChineseOnly = (text = '') =>
-        text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
-
-    // 获取纯文本标题用于高亮
+    // ... 原有的逻辑 (getChineseOnly, plainTitle, rawTitle, categoryInfo 等) 保持不变 ...
+    const getChineseOnly = (text = '') => text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
     const plainTitle = toPlainText(item.title);
     const chineseTitle = getChineseOnly(plainTitle)?.trim();
-
-    const rawTitle =
-        item.category === 'Historical 8D' && chineseTitle.length > 0
-            ? chineseTitle
-            : plainTitle;
-
-    // const rawTitle = item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.title)) : toPlainText(item.title);
+    const rawTitle = item.category === 'Historical 8D' && chineseTitle.length > 0 ? chineseTitle : plainTitle;
 
     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
         ? noticeCategoryDetails[item.category]
         : { id: 'N/A', color: 'orange' };
 
-    const plainDetails = toPlainText(
-        item.details?.rootCause ||
-        item.sdNotice?.details?.finding ||
-        item.sdNotice?.description
-    );
-
-    const chineseDetails = getChineseOnly(plainDetails)?.trim();
-
-    const highlightText =
-        item.category === 'Historical 8D' && chineseDetails
-            ? chineseDetails
-            : plainDetails;
-
+    const plainDetails = toPlainText(item.details?.rootCause || item.sdNotice?.details?.finding || item.sdNotice?.description);
+    const highlightText = item.category === 'Historical 8D' && getChineseOnly(plainDetails) ? getChineseOnly(plainDetails) : plainDetails;
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
 
     return (
-        <List.Item actions={getActionsForItem(item)}>
-            {selectable && (
-                <Checkbox
-                    checked={selected}
-                    onChange={(e) => onSelectChange(item.id, e.target.checked)}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ marginRight: '16px' }}
-                />
-            )}
-            {isReviewable && (
-                <Checkbox
-                    checked={item.isReviewed}
-                    onChange={(e) => handleReviewToggle(item, e)}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ marginRight: '16px' }}
-                />
-            )}
-            <List.Item.Meta
-                style={{ paddingLeft: selectable || isReviewable ? '0px' : '24px' }}
-                avatar={<FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary }} />}
-                title={
-                    <Space>
-                        <a onClick={() => showDetailsModal(item)}>
-                            <Text strong>
-                                {/* --- 3. 使用 HighlightText 包裹标题 --- */}
-                                <HighlightText text={rawTitle} keyword={searchTerm} />
-                            </Text>
+        <List.Item 
+            // 关键点 1: actions 依然负责最右侧按钮，AntD 会自动将其固定在右侧
+            actions={getActionsForItem(item)}
+            style={{ 
+                padding: '12px 24px', 
+                alignItems: 'center', // 垂直居中，保证右侧按钮不随左侧内容高度跳动
+                display: 'flex' 
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
+                {/* 选择框 */}
+                {(selectable || isReviewable) && (
+                    <Checkbox
+                        checked={selectable ? selected : item.isReviewed}
+                        onChange={(e) => selectable ? onSelectChange(item.id, e.target.checked) : handleReviewToggle(item, e)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ marginRight: '16px' }}
+                    />
+                )}
+
+                {/* 图标 */}
+                <FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary, marginRight: '16px', flexShrink: 0 }} />
+
+                {/* 内容区域：标题、描述、标签都在这里向左对齐 */}
+                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {/* 第一行：标题 + 已审阅标签 + 编号 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <a onClick={() => showDetailsModal(item)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Text strong><HighlightText text={rawTitle} keyword={searchTerm} /></Text>
                         </a>
-                        {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
-                        {/* 也可以选择高亮显示编号 */}
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                        {item.isReviewed && <Tag color="green" icon={<EyeOutlined />} style={{ margin: 0 }}>已审阅</Tag>}
+                        <Text type="secondary" style={{ fontSize: '12px', flexShrink: 0 }}>
                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
                         </Text>
-                    </Space>
-                }
-                // 也可以选择高亮描述
-                description={
-                    <div style={{ maxHeight: '42px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        <HighlightText
-                            text={highlightText}
-                            keyword={searchTerm}
-                        />
-
                     </div>
-                }
-            />
-            <Space size="middle">
-                <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
-                {getStatusTag(item.status)}
-            </Space>
+
+                    {/* 第二行：描述文字 和 业务标签 在同一行显示 (若空间不足会截断描述) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+                        {/* 描述文字：自动占据剩余空间并显示省略号 */}
+                        <div style={{ 
+                            color: 'rgba(0, 0, 0, 0.45)', 
+                            fontSize: '14px',
+                            whiteSpace: 'nowrap', 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis',
+                            flex: 1 
+                        }}>
+                            <HighlightText text={highlightText} keyword={searchTerm} />
+                        </div>
+
+                        {/* 业务标签组：紧跟在描述后面，保持向左重齐，且不会换行 */}
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                            <Tag color={categoryInfo.color} style={{ margin: 0 }}>{item.category || '未分类'}</Tag>
+                            {getStatusTag(item.status)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {/* getActionsForItem(item) 会被渲染在 List.Item 的 actions 区域，即最右侧 */}
         </List.Item>
     );
 };

@@ -66,11 +66,20 @@ module.exports = async (req, res) => {
         if (action === 'all_users') {
              const { data, error } = await supabaseAdmin
                 .from('users')
-                .select('id, email');
+                .select('id, username');
             
             if (error) throw error;
             return res.json(data);
         }
+
+        // if (action === 'all_users') {
+        //      const { data, error } = await supabaseAdmin
+        //         .from('users')
+        //         .select('id, email, username'); // ✅ 新增 username
+            
+        //     if (error) throw error;
+        //     return res.json(data);
+        // }
 
         return res.status(400).json({ error: 'Missing parameters' });
 

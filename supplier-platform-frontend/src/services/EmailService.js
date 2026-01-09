@@ -1,7 +1,5 @@
 // supplier-platform-frontend/src/services/EmailService.js
 
-// 请替换为您实际的后端地址 (不要带 /api，因为后端路由会处理)
-const API_BASE_URL = 'https://supplier-interaction-platform-backend.vercel.app';
 
  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 

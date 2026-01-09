@@ -1,19 +1,34 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-// 1. 引入 Skeleton
-import { Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, Spin, Tag, Button, Divider, Space, Select, Popconfirm, Tour, Skeleton } from 'antd'; 
-import { ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, FileTextOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { 
+    Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, 
+    Button, Divider, Space, Select, Popconfirm, Tour, Skeleton, Tag, message 
+} from 'antd';
+import { 
+    ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, 
+    CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, 
+    UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, 
+    FileTextOutlined, QuestionCircleOutlined 
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
+import minMax from 'dayjs/plugin/minMax';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
-import { supabase } from '../supabaseClient';
+// ❌ 已移除: import { supabase } from '../supabaseClient';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const { Title, Paragraph, Text } = Typography;
-const { Option } = Select;
+dayjs.extend(minMax);
 
-// ... (省略 getPlanIcon 函数，保持不变) ...
+const { Title, Paragraph, Text } = Typography;
+
+// 🔧 动态配置 API 地址
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-backend.vercel.app'; 
+
+// --- 辅助函数 ---
 const getPlanIcon = (type) => {
     switch (type) {
         case 'audit': return <AuditOutlined style={{ color: '#1890ff' }} />;
@@ -23,9 +38,8 @@ const getPlanIcon = (type) => {
     }
 };
 
-// ... (省略 PlanItem 组件，保持不变) ...
+// --- 子组件: PlanItem (保持在同一文件) ---
 const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
-    // ... (PlanItem 的代码保持完全一致) ...
     const [targetDateStr, setTargetDateStr] = useState(null); 
 
     const handleConfirmReschedule = () => {
@@ -113,8 +127,8 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
     return itemContent;
 };
 
+// --- 主组件: DashboardPage ---
 const DashboardPage = () => {
-    // ... (Hooks, effects, and logic stay exactly the same until the rendering part) ...
     const navigate = useNavigate();
     const { t, language } = useLanguage();
     const { notices, loading: noticesLoading } = useNotices();
@@ -146,38 +160,52 @@ const DashboardPage = () => {
         }
         if (currentUser.role === 'SD') {
             const managed = currentUser.managed_suppliers || [];
-            return managed.map(assignment => assignment.supplier).filter(Boolean);
+            // 兼容可能的数据结构差异
+            const managedIds = managed.map(m => m.supplier_id || m.supplier?.id || m);
+            return suppliers.filter(s => managedIds.includes(s.id));
         }
         return [];
     }, [currentUser, suppliers]);
 
+    // --- API Handlers (替换 Supabase) ---
+
+    // 1. 标记完成
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
         const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
-        const { error } = await supabase
-            .from('audit_plans')
-            .update({ status: newStatus, completion_date: completionDate })
-            .eq('id', id);
+        
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    id, 
+                    updates: { status: newStatus, completion_date: completionDate } 
+                })
+            });
 
-        if (error) {
-            messageApi.error(`更新状态失败: ${error.message}`);
-        } else {
+            if (!response.ok) throw new Error('Update failed');
+
             messageApi.success('状态更新成功！');
             setAllPendingPlans(prevPlans => prevPlans.filter(p => p.id !== id));
+        } catch (error) {
+            messageApi.error(`更新状态失败: ${error.message}`);
         }
     };
 
+    // 2. 删除计划
     const handleDeleteEvent = async (id) => {
-        const { error } = await supabase
-            .from('audit_plans')
-            .delete()
-            .eq('id', id);
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, {
+                method: 'DELETE'
+            });
 
-        if (error) {
-            messageApi.error(`删除失败: ${error.message}`);
-        } else {
+            if (!response.ok) throw new Error('Delete failed');
+
             messageApi.success('事件已删除！');
             setAllPendingPlans(prevPlans => prevPlans.filter(p => p.id !== id));
+        } catch (error) {
+            messageApi.error(`删除失败: ${error.message}`);
         }
     };
 
@@ -195,48 +223,60 @@ const DashboardPage = () => {
         });
     };
 
-     const handleReschedule = async (item, newMonth, newYear) => {
-          if (!newMonth || !newYear) {
-              messageApi.error("请选择一个新的月份！");
-              return;
-          }
-          if (newMonth === item.planned_month && newYear === item.year) return;
-  
-          const oldMonth = item.planned_month;
-          const oldYear = item.year;
-          const key = `reschedule-${item.id}`;
-  
-          setAllPendingPlans(prevPlans =>
-              prevPlans.map(p =>
-                  p.id === item.id ? { ...p, planned_month: newMonth, year: newYear } : p
-              )
-          );
-          messageApi.loading({ content: '正在移动计划...', key });
-  
-          try {
-              const { error } = await supabase
-                  .from('audit_plans')
-                  .update({ planned_month: newMonth, year: newYear })
-                  .eq('id', item.id);
-  
-              if (error) throw error;
-              messageApi.success({ content: `计划已成功移动到 ${newYear}年${newMonth}月！`, key });
-          } catch (error) {
-              messageApi.error({ content: `计划调整失败: ${error.message}`, key });
-              setAllPendingPlans(prevPlans =>
-                  prevPlans.map(p =>
-                      p.id === item.id ? { ...p, planned_month: oldMonth, year: oldYear } : p
-                  )
-              );
-          }
-      };
+    // 3. 调整计划 (PATCH)
+    const handleReschedule = async (item, newMonth, newYear) => {
+        if (!newMonth || !newYear) {
+            messageApi.error("请选择一个新的月份！");
+            return;
+        }
+        if (newMonth === item.planned_month && newYear === item.year) return;
 
+        const oldMonth = item.planned_month;
+        const oldYear = item.year;
+        const key = `reschedule-${item.id}`;
+
+        setAllPendingPlans(prevPlans =>
+            prevPlans.map(p =>
+                p.id === item.id ? { ...p, planned_month: newMonth, year: newYear } : p
+            )
+        );
+        messageApi.loading({ content: '正在移动计划...', key });
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    id: item.id, 
+                    updates: { planned_month: newMonth, year: newYear } 
+                })
+            });
+
+            if (!response.ok) throw new Error('Reschedule failed');
+
+            messageApi.success({ content: `计划已成功移动到 ${newYear}年${newMonth}月！`, key });
+        } catch (error) {
+            messageApi.error({ content: `计划调整失败: ${error.message}`, key });
+            // 回滚
+            setAllPendingPlans(prevPlans =>
+                prevPlans.map(p =>
+                    p.id === item.id ? { ...p, planned_month: oldMonth, year: oldYear } : p
+                )
+            );
+        }
+    };
+
+    // --- API Fetching Effects ---
+
+    // 1. Fetch Users
     useEffect(() => {
         const fetchUsers = async () => {
             setUsersLoading(true);
             try {
-                const { data, error } = await supabase.from('users').select('id, username');
-                if (error) throw error;
+                // 使用新增的 API 参数 action=all_users
+                const response = await fetch(`${BACKEND_URL}/api/users?action=all_users`);
+                if (!response.ok) throw new Error('Fetch users failed');
+                const data = await response.json();
                 setAllUsers(data || []);
             } catch (error) {
                 console.error("仪表盘获取用户列表失败:", error);
@@ -247,19 +287,23 @@ const DashboardPage = () => {
         fetchUsers();
     }, []);
 
+    // 2. Fetch Categories
     useEffect(() => {
         const fetchCategories = async () => {
             setCategoriesLoading(true);
             try {
-                const { data, error } = await supabase.from('notice_categories').select('id, name');
-                if (error) throw error;
-                const sortedCategories = (data || []).sort((a, b) => {
+                // 复用 config 接口
+                const response = await fetch(`${BACKEND_URL}/api/config`);
+                if (!response.ok) throw new Error('Fetch config failed');
+                const data = await response.json();
+                const categoriesData = Array.isArray(data) ? data : (data.categories || []);
+
+                setPlanCategories((categoriesData || []).sort((a, b) => {
                     const order = { "Process Audit": 1, "SEM": 2 };
                     const aOrder = order[a.name] || Infinity;
                     const bOrder = order[b.name] || Infinity;
                     return aOrder - bOrder;
-                });
-                setPlanCategories(sortedCategories);
+                }));
             } catch (error) {
                 console.error("获取问题类型列表失败:", error);
             } finally {
@@ -269,6 +313,7 @@ const DashboardPage = () => {
         fetchCategories();
     }, []);
 
+    // 3. Fetch Plans
     useEffect(() => {
         if (!currentUser || !['SD', 'Manager', 'Admin'].includes(currentUser.role)) {
             setAllPlansLoading(false);
@@ -279,20 +324,16 @@ const DashboardPage = () => {
             setAllPlansLoading(true);
             try {
                 const currentYear = dayjs().year();
-                let query = supabase
-                    .from('audit_plans')
-                    .select('*')
-                    .gte('year', currentYear)
-                    .neq('status', 'completed');
-
-                const { data, error } = await query;
-                if (error) throw error;
+                // 使用新增的 min_year 和 status_neq 参数
+                const response = await fetch(`${BACKEND_URL}/api/audit-plans?min_year=${currentYear}&status_neq=completed`);
+                
+                if (!response.ok) throw new Error('Fetch plans failed');
+                const data = await response.json();
 
                 if (currentUser.role === 'SD') {
                     if (!suppliersLoading) {
                         const managedSupplierIds = new Set(managedSuppliers.map(s => s.id));
-                        const filteredData = (data || []).filter(plan => managedSupplierIds.has(plan.supplier_id));
-                        setAllPendingPlans(filteredData);
+                        setAllPendingPlans((data || []).filter(plan => managedSupplierIds.has(plan.supplier_id)));
                     } else {
                         setAllPendingPlans([]);
                     }
@@ -307,15 +348,14 @@ const DashboardPage = () => {
             }
         };
 
-        if (currentUser.role === 'SD' && suppliersLoading) {
-            // Wait
-        } else {
+        if (!(currentUser.role === 'SD' && suppliersLoading)) {
             fetchAllPendingPlans();
         }
 
     }, [currentUser, suppliers, suppliersLoading, managedSuppliers]);
 
 
+    // --- 逻辑计算 (保持不变) ---
     const userLookup = useMemo(() => {
         return allUsers.reduce((acc, user) => {
             acc[user.id] = user;
@@ -323,53 +363,53 @@ const DashboardPage = () => {
         }, {});
     }, [allUsers]);
 
-   const planStatistics = useMemo(() => {
-          const now = dayjs();
-          const currentMonthStart = now.startOf('month');
-          const nextMonthStart = now.add(1, 'month').startOf('month');
-          
-          let overduePastPlansCount = 0;
-          let pendingCurrentMonthPlansCount = 0;
-  
-          const currentAndPastPlansList = [];
-          const pendingNextMonthPlansList = [];
-  
-          allPendingPlans.forEach(plan => {
-              const supplier = suppliers.find(s => s.id === plan.supplier_id);
-              const enrichedPlan = {
-                  ...plan,
-                  supplier_display_name: supplier?.short_code || plan.supplier_name
-              };
-  
-              const planDate = dayjs(`${plan.year}-${plan.planned_month}-01`);
-  
-              if (planDate.isBefore(currentMonthStart)) {
-                  overduePastPlansCount++;
-                  currentAndPastPlansList.push(enrichedPlan);
-              }
-              else if (planDate.isSame(currentMonthStart, 'month')) {
-                  pendingCurrentMonthPlansCount++;
-                  currentAndPastPlansList.push(enrichedPlan);
-              }
-              else if (planDate.isSame(nextMonthStart, 'month')) {
-                  pendingNextMonthPlansList.push(enrichedPlan);
-              }
-          });
-  
-          const filterPlans = (plan) => {
-              if (selectedPlanCategory !== 'all' && plan.category !== selectedPlanCategory) return false;
-              if (selectedPlanSupplier !== 'all' && plan.supplier_id !== selectedPlanSupplier) return false;
-              return true;
-          };
-  
-          return {
-              overduePastPlans: overduePastPlansCount,
-              pendingCurrentMonthPlans: pendingCurrentMonthPlansCount,
-              pendingNextMonthPlans: pendingNextMonthPlansList.length,
-              filteredCurrentAndPastPlansForList: currentAndPastPlansList.filter(filterPlans),
-              filteredNextMonthPlansForList: pendingNextMonthPlansList.filter(filterPlans)
-          };
-      }, [allPendingPlans, selectedPlanCategory, selectedPlanSupplier, suppliers]);
+    const planStatistics = useMemo(() => {
+        const now = dayjs();
+        const currentMonthStart = now.startOf('month');
+        const nextMonthStart = now.add(1, 'month').startOf('month');
+        
+        let overduePastPlansCount = 0;
+        let pendingCurrentMonthPlansCount = 0;
+
+        const currentAndPastPlansList = [];
+        const pendingNextMonthPlansList = [];
+
+        allPendingPlans.forEach(plan => {
+            const supplier = suppliers.find(s => s.id === plan.supplier_id);
+            const enrichedPlan = {
+                ...plan,
+                supplier_display_name: supplier?.short_code || plan.supplier_name
+            };
+
+            const planDate = dayjs(`${plan.year}-${plan.planned_month}-01`);
+
+            if (planDate.isBefore(currentMonthStart)) {
+                overduePastPlansCount++;
+                currentAndPastPlansList.push(enrichedPlan);
+            }
+            else if (planDate.isSame(currentMonthStart, 'month')) {
+                pendingCurrentMonthPlansCount++;
+                currentAndPastPlansList.push(enrichedPlan);
+            }
+            else if (planDate.isSame(nextMonthStart, 'month')) {
+                pendingNextMonthPlansList.push(enrichedPlan);
+            }
+        });
+
+        const filterPlans = (plan) => {
+            if (selectedPlanCategory !== 'all' && plan.category !== selectedPlanCategory) return false;
+            if (selectedPlanSupplier !== 'all' && plan.supplier_id !== selectedPlanSupplier) return false;
+            return true;
+        };
+
+        return {
+            overduePastPlans: overduePastPlansCount,
+            pendingCurrentMonthPlans: pendingCurrentMonthPlansCount,
+            pendingNextMonthPlans: pendingNextMonthPlansList.length,
+            filteredCurrentAndPastPlansForList: currentAndPastPlansList.filter(filterPlans),
+            filteredNextMonthPlansForList: pendingNextMonthPlansList.filter(filterPlans)
+        };
+    }, [allPendingPlans, selectedPlanCategory, selectedPlanSupplier, suppliers]);
 
 
     const dashboardData = useMemo(() => {
@@ -395,26 +435,22 @@ const DashboardPage = () => {
         const thirtyDaysAgo = now.subtract(30, 'day');
         const thirtyDaysFromNow = now.add(30, 'day');
 
-        const getSummaryFromHistory = (history) => {
-            const latestPlanSubmission = [...(history || [])].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
-            let latestDeadline = 'N/A';
-            if (latestPlanSubmission) {
-                const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
-                if (deadlines.length > 0) {
-                    latestDeadline = dayjs.max(deadlines).format('YYYY-MM-DD');
-                }
-            }
-            return { deadline: latestDeadline };
-        };
-
-        const baseDataWithDeadline = baseData.map(notice => ({
-            ...notice,
-            ...getSummaryFromHistory(notice.history || [])
-        }));
+        const baseDataWithDeadline = baseData.map(notice => {
+             const history = Array.isArray(notice.history) ? notice.history : [];
+             const latestPlanSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
+             let latestDeadline = 'N/A';
+             if (latestPlanSubmission) {
+                 const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
+                 if (deadlines.length > 0) {
+                     latestDeadline = dayjs.max(deadlines).format('YYYY-MM-DD');
+                 }
+             }
+             return { ...notice, deadline: latestDeadline };
+        });
 
         const closedThisMonth = baseDataWithDeadline.filter(n => {
             if (n.status !== '已完成') return false;
-            const history = n.history || [];
+            const history = Array.isArray(n.history) ? n.history : [];
             const closingEvent = [...history].reverse().find(h => h.type === 'sd_closure_approve');
             return closingEvent && dayjs(closingEvent.time).isAfter(startOfMonth);
         }).length;
@@ -456,8 +492,6 @@ const DashboardPage = () => {
             .map(n => ({ ...n, supplier: suppliers.find(s => s.id === n.assignedSupplierId) }))
             .sort((a, b) => (b.likes?.length || 0) - (a.likes?.length || 0))[0];
 
-            
-
         return {
             closedThisMonth,
             allOpenIssues,
@@ -471,13 +505,9 @@ const DashboardPage = () => {
 
 
     const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
+    const nextMonthTitle = t('dashboard.list.nextMonthPending');
 
-    const mainPageLoading = noticesLoading || usersLoading || suppliersLoading;
-
-       const nextMonthNum = dayjs().add(1, 'month').format('M');
-       const nextMonthTitle = t('dashboard.list.nextMonthPending');
-
-  const tourSteps = [
+    const tourSteps = [
         {
             title: t('tour.step1.title'),
             description: t('tour.step1.desc'),
@@ -502,7 +532,7 @@ const DashboardPage = () => {
     
     const pageIsLoading = noticesLoading || usersLoading || suppliersLoading || allPlansLoading;
 
-    // --- 核心修改：使用 Skeleton 替换 Loading Spin ---
+    // --- Loading UI (内联 Skeleton) ---
     if (pageIsLoading && !dashboardData) {
         return (
             <div>
@@ -690,10 +720,6 @@ const DashboardPage = () => {
         filteredNextMonthPlansForList
     } = planStatistics;
 
-        const nextMonthLabel = language === 'en' 
-            ? dayjs().add(1, 'month').format('MMMM') 
-            : dayjs().add(1, 'month').format('M');
-
   return (
          <div>
              <Card style={{ marginBottom: 24 }} bordered={false}>
@@ -824,7 +850,7 @@ const DashboardPage = () => {
              <Row gutter={[24, 24]} style={{ marginTop: 24 }} align="stretch">
                  <Col xs={24} lg={12}>
                      <div ref={refWarnings} style={{ height: '100%' }}>
-                         <Card title={t('dashboard.actionAlert')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                         <Card title={t('dashboard.actionAlert')} bordered={false} loading={pageIsLoading} style={{ height: '100%' }}>
                              <List
                                  itemLayout="horizontal"
                                  dataSource={supplierActionRequired}
@@ -851,7 +877,7 @@ const DashboardPage = () => {
                  <Col xs={24} lg={12}>
                      <div ref={refHighlights} style={{ height: '100%' }}>
                          {/* 以下是点赞最多的case显示（未来根据算法计算） */}
-                         <Card title={t('dashboard.highlights')} bordered={false} loading={mainPageLoading} style={{ height: '100%' }}>
+                         <Card title={t('dashboard.highlights')} bordered={false} loading={pageIsLoading} style={{ height: '100%' }}>
                              {topImprovement ? (
                                  <div>
                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
