@@ -8,7 +8,7 @@ import {
     DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, 
     RightOutlined, CheckCircleOutlined, DownloadOutlined, 
     UndoOutlined, ReconciliationOutlined, FileTextOutlined, 
-    CalendarOutlined 
+    CalendarOutlined, FullscreenOutlined 
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
@@ -24,7 +24,7 @@ const { Option } = Select;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-backend.vercel.app'; 
 
 const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
 
@@ -40,8 +40,9 @@ const matrixStyles = {
         display: 'flex',
         position: 'sticky',
         top: 0,
-        zIndex: 2,
-        backgroundColor: '#fafafa'
+        zIndex: 10, 
+        backgroundColor: '#fafafa',
+        borderBottom: '1px solid #f0f0f0'
     },
     bodyRow: { display: 'flex' },
     stickyCell: {
@@ -49,19 +50,18 @@ const matrixStyles = {
         borderRight: '1px solid #f0f0f0',
         backgroundColor: '#fff',
         position: 'sticky',
-        zIndex: 1
+        zIndex: 5
     },
     headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
-    // ✅ 修改：单元格样式，支持点击手势和 flex 布局
     cell: { 
         padding: '8px', 
         borderRight: '1px solid #f0f0f0', 
         borderTop: '1px solid #f0f0f0', 
-        minHeight: '100px', // 稍微加高一点保证有点击区域
+        minHeight: '100px', 
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
-        cursor: 'pointer', // 鼠标移上去显示手型
+        cursor: 'pointer', 
         transition: 'background-color 0.2s'
     },
 };
@@ -87,6 +87,8 @@ const AuditPlanPage = () => {
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
     const navigate = useNavigate();
+
+    const [isFullScreen, setIsFullScreen] = useState(false);
 
     // --- 筛选器 State ---
     const [selectedSupplierKeys, setSelectedSupplierKeys] = useState([]);
@@ -256,7 +258,6 @@ const AuditPlanPage = () => {
 
     // --- Modal Logic ---
 
-    // ✅ 支持预填数据 (SupplierId, Month)
     const showAddModal = (type, prefillData = {}) => {
         setEventType(type || 'audit');
         form.resetFields();
@@ -278,7 +279,6 @@ const AuditPlanPage = () => {
             return;
         }
         
-        // 使用 Form 中的 type 值
         const finalType = values.type || eventType;
 
         const newEvent = {
@@ -346,6 +346,7 @@ const AuditPlanPage = () => {
     };
 
     const handleExportExcel = async () => {
+        // ... (Export logic unchanged) ...
         if (suppliersToRender.length === 0) {
             messageApi.warning('没有可供导出的数据。');
             return;
@@ -428,6 +429,175 @@ const AuditPlanPage = () => {
         { label: '质量评审', value: 'quality_review' },
     ];
 
+    // ✅ 4. 封装筛选栏：提取成组件以便复用
+    const renderFilterBar = () => (
+        <Row gutter={[16, 20]} align="middle" style={{ marginBottom: 16 }}> 
+            <Col xs={24} sm={12} md={8} lg={6}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选供应商:</span>
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        placeholder="选择供应商 (默认全部)"
+                        value={selectedSupplierKeys}
+                        onChange={setSelectedSupplierKeys}
+                        style={{ flex: 1, width: 0 }}
+                        options={managedSuppliers.map(s => ({ label: s.short_code, value: s.id }))}
+                        filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                        maxTagCount="responsive"
+                    />
+                </div>
+            </Col>
+            <Col xs={24} sm={12} md={8} lg={6}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>计划类型:</span>
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        placeholder="选择类型 (默认全部)"
+                        value={selectedCategoryKeys}
+                        onChange={setSelectedCategoryKeys}
+                        style={{ flex: 1, width: 0 }}
+                        options={categories.map(c => ({ label: c.name, value: c.name }))}
+                        maxTagCount="responsive"
+                    />
+                </div>
+            </Col>
+            <Col xs={24} sm={12} md={8} lg={8}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选状态:</span>
+                    <Radio.Group value={selectedStatusKey} onChange={(e) => setSelectedStatusKey(e.target.value)} buttonStyle="solid" style={{ flexShrink: 0 }}>
+                        <Radio.Button value="all">全部</Radio.Button>
+                        <Radio.Button value="pending">待办</Radio.Button>
+                        <Radio.Button value="completed">已完成</Radio.Button>
+                    </Radio.Group>
+                </div>
+            </Col>
+        </Row>
+    );
+
+    // 5. 封装渲染函数：用于复用矩阵渲染逻辑
+    const renderMatrixTable = () => (
+        <div style={matrixStyles.table}>
+            <div style={matrixStyles.headerRow}>
+                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>
+                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma, fontWeight: 'bold' }}>CMT</div>
+                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>供应商</div>
+                {months.map((month, index) => (
+                    <div key={month} style={{ ...matrixStyles.headerCell, flex: `0 0 ${monthColumnWidths[index]}px` }}>
+                        {month}
+                        <div onMouseDown={handleResizeMouseDown(index)} style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '10px', cursor: 'col-resize', userSelect: 'none' }} />
+                    </div>
+                ))}
+            </div>
+
+            {suppliersToRender.map(supplier => (
+                <div key={supplier.id} style={matrixStyles.bodyRow}>
+                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
+                        <Text type="secondary">{supplier.parma_id}</Text>
+                    </div>
+                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma }}>
+                        <Tag>{supplier.cmt}</Tag>
+                    </div>
+                    <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>
+                        {supplier.short_code}
+                    </div>
+
+                    {Array.from({ length: 12 }).map((_, monthIndex) => {
+                        const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
+                        return (
+                            <div 
+                                key={monthIndex} 
+                                style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}
+                                onClick={() => showAddModal('audit', { supplierId: supplier.id, plannedMonth: monthIndex + 1 })}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fafafa'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                            >
+                                {itemsInCell.map(item => {
+                                    const typeTagMap = {
+                                        audit: { color: 'blue', text: '审计' },
+                                        qrm: { color: 'orange', text: 'QRM' },
+                                        quality_review: { color: 'cyan', text: '评审' }
+                                    };
+                                    const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
+
+                                    const rescheduleTitle = (
+                                        <div style={{width: 200}} onClick={e => e.stopPropagation()}>
+                                            <Text>调整计划至:</Text>
+                                            <Select 
+                                                placeholder="选择月份" 
+                                                style={{ width: '100%', marginTop: 8 }}
+                                                onChange={(value) => setRescheduleTarget(value)}
+                                                onClick={e => e.stopPropagation()}
+                                            >
+                                                {rollingMonths.map((opt) => (
+                                                    <Option 
+                                                        key={opt.value} 
+                                                        value={opt.value} 
+                                                        disabled={item.year === opt.year && item.planned_month === opt.month}
+                                                    >
+                                                        {opt.label}
+                                                    </Option>
+                                                ))}
+                                            </Select>
+                                        </div>
+                                    );
+
+                                    return (
+                                        <div 
+                                            key={item.id} 
+                                            style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'space-between', 
+                                                width: '100%', 
+                                                padding: '4px', 
+                                                marginBottom: '4px', 
+                                                borderRadius: '4px', 
+                                                background: item.status === 'completed' ? '#f6ffed' : '#ffffff', 
+                                                border: '1px solid #d9d9d9',
+                                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div><div><b>备注:</b> {item.comment || '无'}</div></>}>
+                                                <Text style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    <Tag color={typeInfo.color}>{typeInfo.text}</Tag>
+                                                </Text>
+                                            </Tooltip>
+                                            <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
+                                                <Tooltip title="查找相关通知单">
+                                                    <Button type="text" size="small" icon={<FileTextOutlined />} style={{ color: '#595959' }} onClick={(e) => { e.stopPropagation(); handleNavigateToNotices(item); }} />
+                                                </Tooltip>
+                                                <Tooltip title="调整计划月份">
+                                                    <Popconfirm title={rescheduleTitle} onConfirm={() => handleReschedule(item)} onCancel={() => setRescheduleTarget(null)} okText="移动" cancelText="取消" disabled={item.status === 'completed'}>
+                                                        <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={item.status === 'completed'} onClick={e => e.stopPropagation()} />
+                                                    </Popconfirm>
+                                                </Tooltip>
+                                                <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为未完成'}>
+                                                    <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>
+                                                        <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#7d92a7ff' : '#8c8c8c' }} onClick={e => e.stopPropagation()}>
+                                                            {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
+                                                        </Button>
+                                                    </Popconfirm>
+                                                </Tooltip>
+                                                <Tooltip title="删除此计划">
+                                                    <Popconfirm title="确定删除此项吗?" onConfirm={() => handleDeleteEvent(item.id)}>
+                                                        <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} onClick={e => e.stopPropagation()} />
+                                                    </Popconfirm>
+                                                </Tooltip>
+                                            </Space>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+    );
+
     return (
         <div style={{ padding: '0 24px 24px 24px' }}>
             <Card style={{ marginBottom: '16px' }}>
@@ -449,50 +619,8 @@ const AuditPlanPage = () => {
                 <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计、QRM会议与质量评审的整体进度。点击单元格空白处可快速添加。</Paragraph>
                 <Divider style={{ margin: '16px 0' }} />
                 
-                {/* 筛选器区域 (UI 保持不变) */}
-                <Row gutter={[16, 20]} align="middle"> 
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选供应商:</span>
-                            <Select
-                                mode="multiple"
-                                allowClear
-                                placeholder="选择供应商 (默认全部)"
-                                value={selectedSupplierKeys}
-                                onChange={setSelectedSupplierKeys}
-                                style={{ flex: 1, width: 0 }}
-                                options={managedSuppliers.map(s => ({ label: s.short_code, value: s.id }))}
-                                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                                maxTagCount="responsive"
-                            />
-                        </div>
-                    </Col>
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>计划类型:</span>
-                            <Select
-                                mode="multiple"
-                                allowClear
-                                placeholder="选择类型 (默认全部)"
-                                value={selectedCategoryKeys}
-                                onChange={setSelectedCategoryKeys}
-                                style={{ flex: 1, width: 0 }}
-                                options={categories.map(c => ({ label: c.name, value: c.name }))}
-                                maxTagCount="responsive"
-                            />
-                        </div>
-                    </Col>
-                    <Col xs={24} sm={12} md={8} lg={8}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选状态:</span>
-                            <Radio.Group value={selectedStatusKey} onChange={(e) => setSelectedStatusKey(e.target.value)} buttonStyle="solid" style={{ flexShrink: 0 }}>
-                                <Radio.Button value="all">全部</Radio.Button>
-                                <Radio.Button value="pending">待办</Radio.Button>
-                                <Radio.Button value="completed">已完成</Radio.Button>
-                            </Radio.Group>
-                        </div>
-                    </Col>
-                </Row>
+                {/* 6. 在主页面调用 Filter Bar */}
+                {renderFilterBar()}
 
                 <Divider style={{ margin: '16px 0' }} />
                 <Row gutter={16}>
@@ -504,133 +632,39 @@ const AuditPlanPage = () => {
 
             <Card
                 title={`${currentYear} 年度规划矩阵`}
-                extra={<Button icon={<DownloadOutlined />} onClick={handleExportExcel}>导出为Excel</Button>}
+                extra={
+                    <Space>
+                        <Button icon={<FullscreenOutlined />} onClick={() => setIsFullScreen(true)}>全屏视图</Button>
+                        <Button icon={<DownloadOutlined />} onClick={handleExportExcel}>导出为Excel</Button>
+                    </Space>
+                }
                 bodyStyle={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 400px)' }}
             >
                 {loading || suppliersLoading ? <div style={{ textAlign: 'center', padding: '50px' }}><Spin size="large" /></div> : (
-                    <div style={matrixStyles.table}>
-                        <div style={matrixStyles.headerRow}>
-                            <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>
-                            <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma, fontWeight: 'bold' }}>CMT</div>
-                            <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>供应商</div>
-                            {months.map((month, index) => (
-                                <div key={month} style={{ ...matrixStyles.headerCell, flex: `0 0 ${monthColumnWidths[index]}px` }}>
-                                    {month}
-                                    <div onMouseDown={handleResizeMouseDown(index)} style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '10px', cursor: 'col-resize', userSelect: 'none' }} />
-                                </div>
-                            ))}
-                        </div>
-
-                        {suppliersToRender.map(supplier => (
-                            <div key={supplier.id} style={matrixStyles.bodyRow}>
-                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0 }}>
-                                    <Text type="secondary">{supplier.parma_id}</Text>
-                                </div>
-                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma }}>
-                                    <Tag>{supplier.cmt}</Tag>
-                                </div>
-                                <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.supplier}px`, left: stickyColumnWidths.parma + stickyColumnWidths.cmt, fontWeight: 'bold' }}>
-                                    {supplier.short_code}
-                                </div>
-
-                                {Array.from({ length: 12 }).map((_, monthIndex) => {
-                                    const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
-                                    return (
-                                        <div 
-                                            key={monthIndex} 
-                                            style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}
-                                            // ✅ 关键：点击空白处触发添加
-                                            onClick={() => showAddModal('audit', { supplierId: supplier.id, plannedMonth: monthIndex + 1 })}
-                                            // 简单的 hover 效果
-                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fafafa'}
-                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
-                                        >
-                                            {itemsInCell.map(item => {
-                                                const typeTagMap = {
-                                                    audit: { color: 'blue', text: '审计' },
-                                                    qrm: { color: 'orange', text: 'QRM' },
-                                                    quality_review: { color: 'cyan', text: '评审' }
-                                                };
-                                                const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
-
-                                                const rescheduleTitle = (
-                                                    <div style={{width: 200}} onClick={e => e.stopPropagation()}>
-                                                        <Text>调整计划至:</Text>
-                                                        <Select 
-                                                            placeholder="选择月份" 
-                                                            style={{ width: '100%', marginTop: 8 }}
-                                                            onChange={(value) => setRescheduleTarget(value)}
-                                                            onClick={e => e.stopPropagation()}
-                                                        >
-                                                            {rollingMonths.map((opt) => (
-                                                                <Option 
-                                                                    key={opt.value} 
-                                                                    value={opt.value} 
-                                                                    disabled={item.year === opt.year && item.planned_month === opt.month}
-                                                                >
-                                                                    {opt.label}
-                                                                </Option>
-                                                            ))}
-                                                        </Select>
-                                                    </div>
-                                                );
-
-                                                return (
-                                                    <div 
-                                                        key={item.id} 
-                                                        style={{ 
-                                                            display: 'flex', 
-                                                            alignItems: 'center', 
-                                                            justifyContent: 'space-between', 
-                                                            width: '100%', 
-                                                            padding: '4px', 
-                                                            marginBottom: '4px', 
-                                                            borderRadius: '4px', 
-                                                            background: item.status === 'completed' ? '#f6ffed' : '#ffffff', 
-                                                            border: '1px solid #d9d9d9',
-                                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                                                        }}
-                                                        // ✅ 关键：阻止冒泡，防止点击卡片触发添加
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <Tooltip key={`tooltip-${item.id}`} title={<><div><b>类型:</b> {item.category}</div><div><b>负责人:</b> {item.auditor}</div><div><b>备注:</b> {item.comment || '无'}</div></>}>
-                                                            <Text style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                <Tag color={typeInfo.color}>{typeInfo.text}</Tag>
-                                                            </Text>
-                                                        </Tooltip>
-                                                        <Space size={0} style={{ flexShrink: 0, marginLeft: '8px' }}>
-                                                            <Tooltip title="查找相关通知单">
-                                                                <Button type="text" size="small" icon={<FileTextOutlined />} style={{ color: '#595959' }} onClick={(e) => { e.stopPropagation(); handleNavigateToNotices(item); }} />
-                                                            </Tooltip>
-                                                            <Tooltip title="调整计划月份">
-                                                                <Popconfirm title={rescheduleTitle} onConfirm={() => handleReschedule(item)} onCancel={() => setRescheduleTarget(null)} okText="移动" cancelText="取消" disabled={item.status === 'completed'}>
-                                                                    <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={item.status === 'completed'} onClick={e => e.stopPropagation()} />
-                                                                </Popconfirm>
-                                                            </Tooltip>
-                                                            <Tooltip title={item.status === 'pending' ? '标记为已完成' : '标记为未完成'}>
-                                                                <Popconfirm title={`确定要将状态变更为“${item.status === 'pending' ? '已完成' : '待办'}”吗?`} onConfirm={() => handleMarkAsComplete(item.id, item.status)}>
-                                                                    <Button type="text" size="small" style={{ padding: '0 5px', color: item.status === 'pending' ? '#7d92a7ff' : '#8c8c8c' }} onClick={e => e.stopPropagation()}>
-                                                                        {item.status === 'pending' ? <CheckCircleOutlined /> : <UndoOutlined />}
-                                                                    </Button>
-                                                                </Popconfirm>
-                                                            </Tooltip>
-                                                            <Tooltip title="删除此计划">
-                                                                <Popconfirm title="确定删除此项吗?" onConfirm={() => handleDeleteEvent(item.id)}>
-                                                                    <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ padding: '0 4px' }} onClick={e => e.stopPropagation()} />
-                                                                </Popconfirm>
-                                                            </Tooltip>
-                                                        </Space>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ))}
-                    </div>
+                    renderMatrixTable() // 使用封装后的渲染函数
                 )}
             </Card>
+
+            {/* 7. 全屏 Modal：顶部放 Filter Bar，下面放 Table */}
+            <Modal
+                title={`${currentYear} 年度规划矩阵 (全景视图)`}
+                open={isFullScreen}
+                onCancel={() => setIsFullScreen(false)}
+                footer={null}
+                width="100%"
+                style={{ top: 0, padding: 0, maxWidth: '100vw', height: '100vh', margin: 0 }}
+                bodyStyle={{ height: 'calc(100vh - 55px)', display: 'flex', flexDirection: 'column', padding: 0 }}
+                maskStyle={{ backgroundColor: '#fff' }}
+            >
+                {/* 筛选栏容器 */}
+                <div style={{ padding: '16px 24px', background: '#f5f5f5', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+                    {renderFilterBar()}
+                </div>
+                {/* 表格容器 */}
+                <div style={{ flex: 1, overflow: 'auto', padding: 0 }}>
+                    {renderMatrixTable()}
+                </div>
+            </Modal>
 
             <Modal title={getModalTitle()} open={isModalVisible} onCancel={handleCancel} footer={null} destroyOnClose>
                 <Form form={form} layout="vertical" onFinish={handleFormSubmit} style={{ marginTop: 24 }}>

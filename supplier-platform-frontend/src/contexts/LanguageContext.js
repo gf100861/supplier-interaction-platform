@@ -32,6 +32,7 @@ const translations = {
         'header.switchLang': 'English',
         'common.success': '操作成功',
         'common.logoutSuccess': '您已成功登出！',
+        'menu.helpCenter': '帮助中心',
 
         // --- 新增：Dashboard 专用翻译 ---
         'dashboard.myDashboard': '我的仪表盘',
@@ -102,6 +103,7 @@ const translations = {
         'menu.settings': 'Settings & Suggestions',
         'menu.admin': 'System Admin',
         'menu.historicalImport': 'Historical Data Import',
+         'menu.helpCenter': 'Help Center',
 
         // Header & Common
         'header.welcome': 'Welcome',

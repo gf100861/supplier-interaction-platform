@@ -869,7 +869,7 @@ const NoticePage = () => {
         return actions;
     };
 
-    const renderTabs = () => {
+const renderTabs = () => {
         if (!currentUser) return <p>请先登录</p>;
         if (configLoading || noticesLoading) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}><Spin size="large" /></div>; }
 
@@ -889,6 +889,7 @@ const NoticePage = () => {
                 { key: 'review', label: '待SD确认actions', statuses: ['待SD确认actions', '待SD确认actions计划'] },
                 { key: 'review_evidence', label: '待SD确认evidence', statuses: ['待SD关闭evidence'] },
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] },
+                { key: 'historical_8d', label: '历史8D', statuses: [] }, // 这里的statuses可以为空，因为我们会单独处理逻辑
                 { key: 'all', label: '所有单据', statuses: allPossibleStatuses }
             ],
             Manager: [
@@ -896,6 +897,7 @@ const NoticePage = () => {
                 { key: 'review', label: '待SD审核', statuses: ['待SD确认actions', '待SD确认actions计划', '待SD关闭evidence'] },
                 { key: 'pending_close', label: '待供应商关闭', statuses: ['待供应商关闭'] },
                 { key: 'pending', label: '待提交Action Plan', statuses: ['待提交Action Plan'] },
+                { key: 'historical_8d', label: '历史8D', statuses: [] }, // 这里的statuses可以为空，因为我们会单独处理逻辑
                 { key: 'completed', label: '已完成', statuses: ['已完成', '已作废'] }
             ]
         };
@@ -903,13 +905,44 @@ const NoticePage = () => {
         return (
             <Tabs defaultActiveKey={userTabs[0].key} type="card">
                 {userTabs.map(tab => {
-                    const filteredData = searchedNotices.filter(n => tab.statuses.includes(n.status));
-                    const tabGroupedData = groupedNotices.filter(g => g.isBatch ? g.notices.some(n => tab.statuses.includes(n.status)) : tab.statuses.includes(g.status));
+                    // --- 核心修改开始 ---
+                    let filteredData;
+                    let tabGroupedData;
+
+                    if (tab.key === 'historical_8d') {
+                        // 如果是“历史8D”标签，筛选 category 为 'Historical 8D' 的通知单
+                        filteredData = searchedNotices.filter(n => n.category === 'Historical 8D');
+                        
+                        // 对分组数据的筛选逻辑也需要同步修改
+                        // 假设 groupedNotices 中的每个 group 要么自身有属性标识 category，
+                        // 要么我们需要检查其包含的 notices 是否符合条件
+                        tabGroupedData = groupedNotices.filter(g => {
+                            if (g.isBatch) {
+                                // 如果是批量单据，检查是否有任意一个子单据符合条件
+                                return g.notices.some(n => n.category === 'Historical 8D');
+                            } else {
+                                // 如果是单个单据，直接检查 category
+                                return g.category === 'Historical 8D';
+                            }
+                        });
+                    } else {
+                        // 原有的基于 status 的筛选逻辑
+                        filteredData = searchedNotices.filter(n => tab.statuses.includes(n.status));
+                        tabGroupedData = groupedNotices.filter(g => {
+                            if (g.isBatch) {
+                                return g.notices.some(n => tab.statuses.includes(n.status));
+                            } else {
+                                return tab.statuses.includes(g.status);
+                            }
+                        });
+                    }
+                    // --- 核心修改结束 ---
+
                     return (
                         <TabPane tab={`${tab.label} (${filteredData.length})`} key={tab.key}>
                             <NoticeList
                                 data={tabGroupedData}
-                                searchTerm={searchTerm} // --- 核心修改：在这里传递 searchTerm ---
+                                searchTerm={searchTerm} 
                                 getActionsForItem={getActionsForItem}
                                 showDetailsModal={showDetailsModal}
                                 handleReviewToggle={handleReviewToggle}
@@ -919,7 +952,6 @@ const NoticePage = () => {
                                 activeCollapseKeys={activeCollapseKeys}
                                 setActiveCollapseKeys={setActiveCollapseKeys}
                                 pagination={viewMode === 'flat' ? {
-                                  
                                     position: 'bottom',
                                     align: 'center',
                                     defaultPageSize: 8,

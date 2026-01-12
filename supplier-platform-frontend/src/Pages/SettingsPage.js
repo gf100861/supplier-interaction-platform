@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Card, Avatar, Typography, Button, Upload, Form, Input, List, Switch, Divider, Col, Row, Select, Spin, Modal } from 'antd'; // 1. 引入 Upload, Spin, Modal
-import { UserOutlined, UploadOutlined, LockOutlined, MessageOutlined, InboxOutlined } from '@ant-design/icons'; // 2. 引入 InboxOutlined
+import { Card, Avatar, Typography, Button, Upload, Form, Input, List, Switch, Divider, Col, Row, Select, Spin, Modal, Image } from 'antd'; // 引入 Image 组件
+import { UserOutlined, UploadOutlined, LockOutlined, MessageOutlined, InboxOutlined, QrcodeOutlined, MobileOutlined } from '@ant-design/icons'; // 引入新图标
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
@@ -13,7 +13,7 @@ const { Dragger } = Upload; // 4. 引入 Dragger
 // 5. 引入文件处理的辅助函数
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 const getBase64 = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = (error) => reject(error); });
-
+const MINI_PROGRAM_IMAGE_URL = '/images/mini-program.jpg'; // 替换为你的图片地址
 
 const SettingsPage = () => {
     const [passwordForm] = Form.useForm();
@@ -102,21 +102,59 @@ const SettingsPage = () => {
         }
     };
 
-    return (
+   return (
         <div style={{ padding: '24px' }}>
             <Row gutter={[24, 24]}>
+                {/* --- 左侧栏 --- */}
                 <Col xs={24} md={8}>
-                    <Card>
+                    {/* 1. 个人信息卡片 */}
+                    <Card style={{ marginBottom: 24 }}>
                         <div style={{ textAlign: 'center' }}>
                             <Avatar size={128} icon={<UserOutlined />} />
                             <Title level={4} style={{ marginTop: 16 }}>{currentUser.name || currentUser.username}</Title>
                             <Text type="secondary">{currentUser.role}</Text>
                         </div>
-                        <Divider />
+                    </Card>
+
+                    {/* 2. [新增] 小程序访问卡片 */}
+                    <Card style={{ marginBottom: 24 }} bodyStyle={{ padding: '12px 24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div>
+                                <Title level={5} style={{ margin: 0, fontSize: 16 }}>
+                                    <MobileOutlined /> 移动端访问
+                                </Title>
+                                <Paragraph type="secondary" style={{ margin: '4px 0 0 0', fontSize: 12 }}>
+                                    扫一扫，小程序立刻上岗！
+                                </Paragraph>
+                            </div>
+                            {/* 图片展示区域 */}
+                            <div style={{ 
+                                width: 80, 
+                                height: 80, 
+                                overflow: 'hidden', 
+                                borderRadius: 8, 
+                                border: '1px solid #f0f0f0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}>
+                                <Image 
+                                    width={80}
+                                    src={MINI_PROGRAM_IMAGE_URL} 
+                                    alt="小程序码"
+                                    fallback="https://via.placeholder.com/80?text=QR" // 占位图
+                                />
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* 3. 反馈表单卡片 */}
+                    <Card>
                         <Title level={5}><MessageOutlined /> 反馈与建议</Title>
                         <Paragraph type="secondary">我们非常重视您的意见。</Paragraph>
                         <Form form={feedbackForm} layout="vertical" onFinish={handleFeedbackSubmit}>
-                            <Form.Item name="category" label="反馈类型" rules={[{ required: true, message: '请选择一个反馈类型' }]}>
+                            {/* ... (表单内容保持不变) ... */}
+                             <Form.Item name="category" label="反馈类型" rules={[{ required: true, message: '请选择一个反馈类型' }]}>
                                 <Select placeholder="请选择反馈类型">
                                     <Option value="feature_request">功能建议</Option>
                                     <Option value="bug_report">问题报告</Option>
@@ -127,7 +165,6 @@ const SettingsPage = () => {
                                 <TextArea rows={4} placeholder="请详细描述..." />
                             </Form.Item>
 
-                            {/* --- 9. 添加图片上传 --- */}
                             <Form.Item label="相关图片 (可选)">
                                 <Form.Item name="images" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
                                     <Dragger 
@@ -136,31 +173,34 @@ const SettingsPage = () => {
                                         beforeUpload={() => false} 
                                         onPreview={handlePreview} 
                                         accept="image/*"
+                                        height={100} // 稍微调小一点高度，节省空间
                                     >
-                                        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                                        <p className="ant-upload-text">点击或拖拽图片到此区域</p>
+                                        <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}><InboxOutlined style={{ fontSize: 24 }} /></p>
+                                        <p className="ant-upload-text" style={{ fontSize: 12 }}>点击或拖拽上传</p>
                                     </Dragger>
                                 </Form.Item>
                             </Form.Item>
 
-                            {/* --- 10. 添加附件上传 --- */}
                             <Form.Item label="相关附件 (可选)">
                                 <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
                                     <Upload beforeUpload={() => false} multiple>
-                                        <Button icon={<UploadOutlined />}>点击上传附件</Button>
+                                        <Button icon={<UploadOutlined />} block>点击上传附件</Button> {/* block 让按钮撑满 */}
                                     </Upload>
                                 </Form.Item>
                             </Form.Item>
                             
                             <Form.Item>
-                                <Button type="primary" htmlType="submit" loading={feedbackLoading}>提交反馈</Button>
+                                <Button type="primary" htmlType="submit" loading={feedbackLoading} block>提交反馈</Button>
                             </Form.Item>
                         </Form>
                     </Card>
                 </Col>
+
+                {/* --- 右侧栏 --- */}
                 <Col xs={24} md={16}>
                     <Card>
-                        <Title level={5}><LockOutlined /> 安全设置</Title>
+                        {/* ... (安全设置和通用设置保持不变) ... */}
+                         <Title level={5}><LockOutlined /> 安全设置</Title>
                         <Form
                             form={passwordForm}
                             layout="vertical"
@@ -210,12 +250,12 @@ const SettingsPage = () => {
                 </Col>
             </Row>
 
-            {/* 11. 添加图片预览 Modal */}
             <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancelPreview}>
                 <img alt="预览" style={{ width: '100%' }} src={previewImage} />
             </Modal>
         </div>
     );
 };
+
 
 export default SettingsPage;

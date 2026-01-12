@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag } from 'antd';
+import { Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag, Tooltip } from 'antd'; // 引入 Tooltip 用于 Header 按钮
 import {
     HomeOutlined,
     UserOutlined,
@@ -12,19 +12,19 @@ import {
     GlobalOutlined,
     CrownOutlined,
     RobotOutlined,
-    // 图标
     InfoCircleOutlined,
     ExclamationOutlined,
     CloseCircleOutlined,
     WarningOutlined,
-    SoundOutlined
+    SoundOutlined,
+    QuestionCircleOutlined // 1. 引入帮助图标
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AlertBell } from './notice/AlertBell';
 import { FileReceiver } from '../Pages/FileReceiver';
 import { useLanguage } from '../contexts/LanguageContext';
-import { supabase } from '../supabaseClient'; // --- 引入 Supabase 客户端 ---
+import { supabase } from '../supabaseClient';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
@@ -279,10 +279,20 @@ const MainLayout = () => {
                     }}
                 >
                     <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>{t('app.title')}</h2>
+
                     <Space size="large">
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
                         <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>
 
+                        <Tooltip title={t('menu.helpCenter') || '帮助中心'}>
+                            <Button
+                                type="text"
+                                icon={<QuestionCircleOutlined style={{ fontSize: '16px' }} />}
+                                // ❌ 删除: onClick={() => navigate('/help-center')}
+                                // ✅ 修改: 使用 window.open 打开新标签页
+                                onClick={() => window.open('/help-center', '_blank')}
+                            />
+                        </Tooltip>
                         <Button
                             type="text"
                             icon={<GlobalOutlined />}

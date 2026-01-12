@@ -7,6 +7,7 @@ import { useSuppliers } from '../contexts/SupplierContext';
 // --- 第三方库 CDN 导入 ---
 import Tesseract from 'https://esm.sh/tesseract.js@5.0.3';
 import * as pdfjsLibProxy from 'https://esm.sh/pdfjs-dist@3.11.174';
+import mammoth from 'https://esm.sh/mammoth@1.6.0';
 import { supabase } from '../supabaseClient';
 const pdfjsLib = pdfjsLibProxy.default?.GlobalWorkerOptions ? pdfjsLibProxy.default : pdfjsLibProxy;
 
@@ -114,7 +115,7 @@ const HistoricalImportPage = () => {
             messageApi.info('不再记住 API Key');
         }
     };
-  // 辅助函数：将 File 对象转换为 Base64 字符串
+    // 辅助函数：将 File 对象转换为 Base64 字符串
     const fileToBase64 = (file) => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -154,7 +155,7 @@ const HistoricalImportPage = () => {
         }
     };
     // --- 核心：统一 AI 调用入口 ---
-    const callUnifiedAI = async (base64Images) => {
+    const callUnifiedAI = async (inputData, inputType = 'image') => {
         const apiKey = apiKeys[provider];
         if (!apiKey) throw new Error(`请先输入 ${PROVIDERS[Object.keys(PROVIDERS).find(k => PROVIDERS[k].value === provider)].label} 的 API Key`);
 
@@ -218,19 +219,30 @@ const HistoricalImportPage = () => {
   - interimAction: Interim & Potential Corrective Action (D5/D6).
         `;
 
+        // 如果是文本模式，将文档内容拼接到 Prompt 后面
+        let finalPrompt = systemPrompt;
+        if (inputType === 'text') {
+            finalPrompt += `\n\n[DOCUMENT CONTENT START]\n${inputData}\n[DOCUMENT CONTENT END]\nAnalyze the text above.`;
+        }
+
         if (provider === 'gemini') {
-            return await callGeminiAPI(apiKey, currentModel, systemPrompt, base64Images);
+            return await callGeminiAPI(apiKey, currentModel, finalPrompt, inputData, inputType);
         } else if (provider === 'qwen') {
-            return await callQwenAPI(apiKey, currentModel, systemPrompt, base64Images);
+            return await callQwenAPI(apiKey, currentModel, finalPrompt, inputData, inputType);
         } else if (provider === 'openai') {
-            return await callOpenAIAPI(apiKey, currentModel, systemPrompt, base64Images);
+            return await callOpenAIAPI(apiKey, currentModel, finalPrompt, inputData, inputType);
         }
     };
 
-    // 1. Google Gemini 实现
-    const callGeminiAPI = async (key, model, prompt, images) => {
+    // 1. Google Gemini 实现 (修改版)
+    const callGeminiAPI = async (key, model, prompt, inputData, inputType) => {
         const parts = [{ text: prompt }];
-        images.forEach(img => parts.push({ inline_data: { mime_type: "image/jpeg", data: img } }));
+
+        if (inputType === 'image') {
+            // 图片模式：添加图片数据
+            inputData.forEach(img => parts.push({ inline_data: { mime_type: "image/jpeg", data: img } }));
+        }
+        // 文本模式：inputData 已经是拼接在 prompt 里的文本了，不需要额外处理 part
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
             method: 'POST',
@@ -247,22 +259,15 @@ const HistoricalImportPage = () => {
         return parseJSON(text);
     };
 
-    // 2. 阿里云 Qwen (通义千问 VL) 实现
-    const callQwenAPI = async (key, model, prompt, images) => {
-        // Qwen VL 目前通过 DashScope API 调用，通常需要图片 URL，或者 Base64
-        // 注意：DashScope 的 Base64 格式通常需要 data:image/jpeg;base64, 前缀
+    // 2. 阿里云 Qwen 实现 (修改版)
+    const callQwenAPI = async (key, model, prompt, inputData, inputType) => {
+        const content = [{ type: "text", text: prompt }];
 
-        // 构造 Qwen VL 的消息体 (OpenAI 兼容格式或 DashScope 原生格式)
-        // 这里使用 DashScope 的多模态兼容接口
-        const messages = [
-            {
-                role: "user",
-                content: [
-                    { type: "text", text: prompt },
-                    ...images.map(img => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img}` } }))
-                ]
-            }
-        ];
+        if (inputType === 'image') {
+            inputData.forEach(img => content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img}` } }));
+        }
+
+        const messages = [{ role: "user", content: content }];
 
         const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
             method: 'POST',
@@ -271,7 +276,7 @@ const HistoricalImportPage = () => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: model, // e.g., qwen-vl-max
+                model: model,
                 messages: messages,
                 max_tokens: 2000
             })
@@ -285,17 +290,15 @@ const HistoricalImportPage = () => {
         return parseJSON(data.choices[0].message.content);
     };
 
-    // 3. OpenAI (GPT-4o) 实现
-    const callOpenAIAPI = async (key, model, prompt, images) => {
-        const messages = [
-            {
-                role: "user",
-                content: [
-                    { type: "text", text: prompt },
-                    ...images.map(img => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img}` } }))
-                ]
-            }
-        ];
+    // 3. OpenAI 实现 (修改版)
+    const callOpenAIAPI = async (key, model, prompt, inputData, inputType) => {
+        const content = [{ type: "text", text: prompt }];
+
+        if (inputType === 'image') {
+            inputData.forEach(img => content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img}` } }));
+        }
+
+        const messages = [{ role: "user", content: content }];
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -308,7 +311,7 @@ const HistoricalImportPage = () => {
                 messages: messages,
                 max_tokens: 4096,
                 temperature: 0.2,
-                response_format: { type: "json_object" } // 强制 JSON
+                response_format: { type: "json_object" }
             })
         });
 
@@ -316,6 +319,7 @@ const HistoricalImportPage = () => {
         const data = await response.json();
         return parseJSON(data.choices[0].message.content);
     };
+
 
     const parseJSON = (text) => {
         if (!text) throw new Error("API 返回空内容");
@@ -350,6 +354,20 @@ const HistoricalImportPage = () => {
             images.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
         }
         return images;
+    };
+
+    // --- 辅助：提取 Docx 文本 ---
+    const extractTextFromDocx = async (file) => {
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+            messageApi.success("Word 文件解析成功");
+            return result.value; // 纯文本内容
+        } catch (error) {
+            console.error("Docx parse error:", error);
+            messageApi.error("Word 文件解析失败，请确认文件未损坏且为 .docx 格式");
+            throw new Error("Word 解析失败，请确认文件未损坏且为 .docx 格式");
+        }
     };
 
 
@@ -445,6 +463,10 @@ const HistoricalImportPage = () => {
             const fileItem = fileList[i];
             const file = fileItem.originFileObj;
 
+            // 简单的文件类型判断
+            const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+            const isWord = file.name.toLowerCase().endsWith('.docx') || file.name.toLowerCase().endsWith('.doc');
+
             setBatchProgress({ current: i + 1, total: fileList.length, percent: Math.round(((i) / fileList.length) * 100) });
             setParseProgress(`正在处理 (${i + 1}/${fileList.length}): ${file.name}...`);
 
@@ -452,30 +474,63 @@ const HistoricalImportPage = () => {
                 let data = {};
 
                 if (useAI) {
-                    if (!apiKeys[provider]){
+                    if (!apiKeys[provider]) {
 
                         messageApi.error(`缺少 ${PROVIDERS[provider.toUpperCase()].label} API Key`);
                         throw new Error(`缺少 ${PROVIDERS[provider.toUpperCase()].label} API Key`);
 
-                    } 
+                    }
 
-                    const base64Images = await convertPdfToImages(file);
-                    setParseProgress(`正在请求 ${currentModel} 分析...`);
+                    let aiResult;
+
+                    if (isPdf) {
+                        // PDF 流程：转图片 -> 视觉模型
+                        setParseProgress(`正在渲染 PDF 页面...`);
+                        const base64Images = await convertPdfToImages(file);
+                        setParseProgress(`正在请求 ${currentModel} (视觉分析)...`);
+                        aiResult = await callUnifiedAI(base64Images, 'image');
+                    } else if (isWord) {
+                        // Word 流程：提文本 -> 文本模型
+                        if (file.name.toLowerCase().endsWith('.doc')) {
+                            messageApi.error("暂不支持旧版 .doc 格式，请另存为 .docx 后上传");
+                            throw new Error("暂不支持旧版 .doc 格式，请另存为 .docx 后上传");
+                        }
+                        setParseProgress(`正在提取文档文本...`);
+                        const textContent = await extractTextFromDocx(file);
+                        if (!textContent || textContent.length < 10) {
+                            messageApi.error("文档内容为空或无法识别");
+                            throw new Error("文档内容为空或无法识别");
+                        }
+                        setParseProgress(`正在请求 ${currentModel} (文本分析)...`);
+                        aiResult = await callUnifiedAI(textContent, 'text');
+                    } else {
+                        messageApi.error("不支持的文件格式，仅支持 PDF 和 DOCX");
+                        throw new Error("不支持的文件格式");
+                    }
+
+                    // const base64Images = await convertPdfToImages(file);
+                    // setParseProgress(`正在请求 ${currentModel} 分析...`);
 
                     // *** 切换为通用调用函数 ***
-                    const result = await callUnifiedAI(base64Images);
+                    // const result = await callUnifiedAI(base64Images);
 
                     data = {
-                        ...result,
-                        date: result.date ? dayjs(result.date) : dayjs(),
-                        title: result.subject ? result.subject : `${result.partNo || ''} - ${result.partName || ''}`
+                        ...aiResult,
+                        date: aiResult.date ? dayjs(aiResult.date) : dayjs(),
+                        title: aiResult.subject ? aiResult.subject : `${aiResult.partNo || ''} - ${aiResult.partName || ''}`
                     };
                 } else {
                     // 本地 OCR
-                    setParseProgress(`正在 OCR 识别...`);
-                    // ... 调用本地 OCR 逻辑 ...
-                    const rawText = await extractTextLocal(file); // 需确保此函数存在
-                    data = parse8DReportTextLocal(rawText);
+                    if (isPdf) {
+                        setParseProgress(`正在 OCR 识别...`);
+                        const rawText = await extractTextLocal(file);
+                        data = parse8DReportTextLocal(rawText);
+                    } else if (isWord && file.name.toLowerCase().endsWith('.docx')) {
+                        // 如果不使用 AI，Word 直接提取文本后用正则解析
+                        setParseProgress(`正在提取文本...`);
+                        const rawText = await extractTextFromDocx(file);
+                        data = parse8DReportTextLocal(rawText);
+                    }
                 }
 
                 // 自动匹配供应商 (保持不变)
@@ -782,8 +837,12 @@ const HistoricalImportPage = () => {
                                 <Form form={form} layout="vertical" onFinish={handleSingleFileArchive}>
                                     <Form.Item label="文件上传" style={{ marginBottom: 12 }}>
                                         <Form.Item name="file" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e && e.fileList} noStyle>
-                                            <Upload multiple beforeUpload={() => false} accept=".pdf">
-                                                <Button icon={<UploadOutlined />} block>选择 PDF 文件 (支持多选)</Button>
+                                            <Upload
+                                                multiple
+                                                beforeUpload={() => false}
+                                                accept=".pdf,.docx,.doc" // 修改这里
+                                            >
+                                                <Button icon={<UploadOutlined />} block>选择文件 (PDF/Word)</Button>
                                             </Upload>
                                         </Form.Item>
                                     </Form.Item>
