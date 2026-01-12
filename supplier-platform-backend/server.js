@@ -30,7 +30,7 @@ const adminFeedbackHandler = require('./controllers/admin/feedback');
 const adminSystemNoticesHandler = require('./controllers/admin/system-notices');
 const emailController = require('./controllers/email');
 const auditPlansHandler = require('./controllers/audit-plan') // 引入新文件
-const settingsHandler = require('./controllers/settings');
+const settingsHandler = require('./controllers/setting');
 const app = express();
 const server = http.createServer(app);
 
