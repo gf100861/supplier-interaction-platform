@@ -11,7 +11,7 @@ import {
     ApiOutlined, BugOutlined, CodeOutlined, StopOutlined, SwapOutlined, FileExcelOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient'; // 假设您有这个文件导出
+// import { supabase } from '../supabaseClient'; // 假设您有这个文件导出
 import './HelpCenterPage.css';
 import SystemIntroVideo from './SystemIntroVideo';
 import { useNotification } from '../contexts/NotificationContext';
@@ -20,6 +20,12 @@ const { Content, Sider } = Layout;
 const { Step } = Steps;
 
 const { Dragger } = Upload;
+
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'  // 本地开发环境
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 
 // --- 日志系统工具函数 (复用逻辑) ---
 // 如果没有 session id，生成一个
@@ -60,26 +66,52 @@ const logSystemEvent = async (params) => {
     try {
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
 
-        // Fire-and-forget
-        supabase.from('system_logs').insert([{
-            category,
-            event_type: eventType,
-            severity,
-            message,
-            user_id: userId,
-            metadata: {
-                ip_address: clientIp,
-                session_id: sessionId,
-                userAgent: navigator.userAgent,
-                url: window.location.href,
-                page: 'HelpCenterPage',
-                ...meta,
-                timestamp_client: new Date().toISOString()
-            }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
+        await fetch(`${targetUrl}`, {
+
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                category,
+                event_type: eventType,
+                severity,
+                message,
+                user_id: userId,
+                metadata: {
+                    ip_address: clientIp,
+                    session_id: sessionId,
+                    userAgent: navigator.userAgent,
+                    url: window.location.href,
+                    page: 'HelpCenterPage',
+                    ...meta,
+                    timestamp_client: new Date().toISOString()
+                }
+
+            })
+
         });
+
+        // // Fire-and-forget
+        // supabase.from('system_logs').insert([{
+        //     category,
+        //     event_type: eventType,
+        //     severity,
+        //     message,
+        //     user_id: userId,
+        //     metadata: {
+        //         ip_address: clientIp,
+        //         session_id: sessionId,
+        //         userAgent: navigator.userAgent,
+        //         url: window.location.href,
+        //         page: 'HelpCenterPage',
+        //         ...meta,
+        //         timestamp_client: new Date().toISOString()
+        //     }
+        // }]).then(({ error }) => {
+        //     if (error) console.warn("Log upload failed:", error);
+        // });
     } catch (e) {
         console.error("Logger exception:", e);
     }
