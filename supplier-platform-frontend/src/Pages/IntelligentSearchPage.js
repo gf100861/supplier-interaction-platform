@@ -491,7 +491,7 @@ const TypewriterText = ({ content, onComplete }) => {
         await supabase.from('chat_messages').insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery });
 
         // 3. 路由判断 (根据环境决定是否加 .js)
-        const apiPath = isDev ? '/api/smart-search' : '/api/smart-search.js';
+        const apiPath = isDev ? '/api/smart-search' : '/api/smart-search';
         const targetUrl = `${BACKEND_URL}${apiPath}`;
 
         console.log(`[Environment] isDev=${isDev}, Requesting: ${targetUrl}`);
