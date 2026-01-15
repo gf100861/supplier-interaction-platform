@@ -12,7 +12,6 @@ import { useCategories } from '../contexts/CategoryContext';
 import Tesseract from 'tesseract.js'; // 假设已安装 tesseract.js
 // 引入 pdfjs-dist 用于 PDF 转图片
 
-import { supabase } from '../supabaseClient'; // 确保导入 supabase
 
 // 设置 PDF.js worker
 // pdfjsLibProxy.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -24,6 +23,13 @@ const { Option } = Select;
 const { TextArea } = Input;
 const { Dragger } = Upload;
 const { Panel } = Collapse;
+
+
+// 🔧 环境配置
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-platform-backend.vercel.app'; 
 
 // --- 日志系统工具函数 (复用逻辑) ---
 // 如果没有 session id，生成一个
@@ -62,11 +68,15 @@ const logSystemEvent = async (params) => {
     } = params;
 
     try {
+
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
-
-        // Fire-and-forget
-        supabase.from('system_logs').insert([{
+            await fetch(`${targetUrl}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
             category,
             event_type: eventType,
             severity,
@@ -81,9 +91,9 @@ const logSystemEvent = async (params) => {
                 ...meta,
                 timestamp_client: new Date().toISOString()
             }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
+            })
         });
+
     } catch (e) {
         console.error("Logger exception:", e);
     }

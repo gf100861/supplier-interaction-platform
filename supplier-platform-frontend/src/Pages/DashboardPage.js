@@ -13,7 +13,7 @@ import dayjs from 'dayjs';
 import minMax from 'dayjs/plugin/minMax';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
-// ❌ 已移除: import { supabase } from '../supabaseClient';
+
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';

@@ -31,6 +31,7 @@ const adminSystemNoticesHandler = require('./controllers/admin/system-notices');
 const emailController = require('./controllers/email');
 const auditPlansHandler = require('./controllers/audit-plan') // 引入新文件
 const settingsHandler = require('./controllers/setting');
+const knowledgeBaseHandler = require('./controllers/knowledge-base'); // 引入知识库处理器
 const app = express();
 const server = http.createServer(app);
 
@@ -39,6 +40,34 @@ const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// ==========================================
+// 新增：鉴权中间件函数
+// ==========================================
+function checkAuth(req) {
+    // 1. 获取环境变量中设置的密钥 (请在 .env 或 Vercel 后台设置 EXTERNAL_API_SECRET)
+    const validSecret = process.env.EXTERNAL_API_SECRET; 
+    
+    // 如果没设置环境变量，默认不开启鉴权（方便调试，但生产环境建议开启）
+    if (!validSecret) return true;
+
+    // 2. 检查 Authorization Header (格式: Bearer sk-xxxxx)
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader === `Bearer ${validSecret}`) {
+        return true;
+    }
+
+    // 3. (可选) 兼容你自己的前端：如果是来自允许的 Origin (CORS)，也放行
+    // 这样你不需要改前端代码，只限制外部调用必须带 Key
+    const origin = req.headers['origin'];
+    const allowedOrigins = ['http://localhost:3000', 'https://your-frontend-domain.vercel.app'];
+    if (origin && allowedOrigins.includes(origin)) {
+        return true;
+    }
+
+    return false;
+}
+
 
 // 允许跨域 (包含 PATCH)
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS', 'DELETE', 'PATCH'] }));
@@ -99,6 +128,8 @@ app.all('/api/audit-plans', auditPlansHandler);
 // ==========================================
 
 app.all('/api/settings', settingsHandler);
+
+app.all('/api/knowledge-base', knowledgeBaseHandler);
 
 const PORT = process.env.PORT || 3001;
 

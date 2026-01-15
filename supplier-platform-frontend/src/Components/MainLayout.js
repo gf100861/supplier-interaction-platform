@@ -172,6 +172,7 @@ const MainLayout = () => {
                 { key: '/upload', label: t('menu.manualUpload'), roles: ['SD', 'Manager'] },
                 { key: '/batch-create', label: t('menu.batchCreate'), roles: ['SD', 'Manager'] },
                 { key: '/historical-import', label: t('menu.historicalImport'), roles: ['SD', 'Manager'] },
+                { key: '/secret-decrypt', label: t('menu.secretDecrypt'), roles: ['SD', 'Manager'] },
             ]
         },
         {

@@ -830,7 +830,7 @@ const HistoricalImportPage = () => {
             </Paragraph>
 
             <Tabs defaultActiveKey="file" type="card" size="large">
-                <Tabs.TabPane tab={<span><FilePdfOutlined /> PDF 文档归档 (OCR/AI)</span>} key="file">
+                <Tabs.TabPane tab={<span><FilePdfOutlined /> PDF和World文档归档 (OCR/AI)</span>} key="file">
                     <Row gutter={24}>
                         <Col span={14}>
                             <Card title="PDF 批量智能解析" style={{ marginBottom: 24 }}>

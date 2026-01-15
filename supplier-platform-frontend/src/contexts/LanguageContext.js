@@ -25,6 +25,7 @@ const translations = {
         'menu.settings': '系统设置和建议',
         'menu.admin': '系统管理',
         'menu.historicalImport': '历史数据导入',
+        'menu.secretDecrypt': '加密数据解密',
 
         // Header & Common
         'header.welcome': '欢迎您',
@@ -103,7 +104,8 @@ const translations = {
         'menu.settings': 'Settings & Suggestions',
         'menu.admin': 'System Admin',
         'menu.historicalImport': 'Historical Data Import',
-         'menu.helpCenter': 'Help Center',
+        'menu.helpCenter': 'Help Center',
+        'menu.secretDecrypt': 'Encrypted Data Decrypt',
 
         // Header & Common
         'header.welcome': 'Welcome',

@@ -7,12 +7,19 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import { useCategories } from '../contexts/CategoryContext';
-import { supabase } from '../supabaseClient';
+// ❌ 移除 Supabase 客户端引用
+// import { supabase } from '../supabaseClient';
 
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const { Dragger } = Upload;
+
+// 🔧 环境配置
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-backend.vercel.app'; 
 
 // Helper functions
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
@@ -48,7 +55,6 @@ const EditNoticePage = () => {
     const sortedCategories = useMemo(() => {
         if (!categories || categories.length === 0) return [];
         const desiredOrder = ['Process Audit', 'SEM'];
-        // Ensure categories is treated as an array of strings if that's what useCategories returns
         const categoryNames = Array.isArray(categories) ? categories : [];
         return [...categoryNames].sort((a, b) => {
           const indexA = desiredOrder.indexOf(a);
@@ -56,7 +62,6 @@ const EditNoticePage = () => {
           if (indexA !== -1 && indexB !== -1) return indexA - indexB;
           if (indexA !== -1) return -1;
           if (indexB !== -1) return 1;
-          // Ensure localeCompare is called on strings
           return String(a).localeCompare(String(b));
         });
       }, [categories]);
@@ -66,24 +71,21 @@ const EditNoticePage = () => {
             form.setFieldsValue({
                 category: editingNotice.category,
                 supplierId: editingNotice.assignedSupplierId,
-                date: dayjs(editingNotice.sdNotice?.createTime), // Add safe navigation
-                problem_source: editingNotice.sdNotice?.problem_source, // Add safe navigation
-                cause: editingNotice.sdNotice?.cause, // Add safe navigation
-                details: editingNotice.sdNotice?.details, // Add safe navigation
-                images: editingNotice.sdNotice?.images || [], // Default to empty array
-                attachments: editingNotice.sdNotice?.attachments || [], // Default to empty array
+                date: dayjs(editingNotice.sdNotice?.createTime),
+                problem_source: editingNotice.sdNotice?.problem_source,
+                cause: editingNotice.sdNotice?.cause,
+                details: editingNotice.sdNotice?.details,
+                images: editingNotice.sdNotice?.images || [],
+                attachments: editingNotice.sdNotice?.attachments || [],
             });
             setSelectedCategory(editingNotice.category);
-            // Pass potentially undefined details safely
             handleSupplierChange(editingNotice.assignedSupplierId, editingNotice.sdNotice?.problem_source, editingNotice.sdNotice?.cause);
             setPageLoading(false);
         } else if (!editingNotice && notices.length > 0) {
-            // Handle case where notice ID is invalid but notices have loaded
              messageApi.error("未找到指定的通知单。");
-             setPageLoading(false); // Stop loading indicator
+             setPageLoading(false);
         }
-        // If notices are still loading, pageLoading remains true
-    }, [editingNotice, form, notices.length]); // Added notices.length dependency
+    }, [editingNotice, form, notices.length]);
 
 
     const managedSuppliers = useMemo(() => {
@@ -96,6 +98,7 @@ const EditNoticePage = () => {
         return [];
     }, [currentUser, suppliers]);
 
+    // ✅ 修改：改为调用后端 API
     const handleSupplierChange = async (supplierId, initialSource, initialCause) => {
         if (!initialSource) {
             form.setFieldsValue({ problem_source: undefined, cause: undefined });
@@ -112,15 +115,18 @@ const EditNoticePage = () => {
             const selectedSupplier = suppliers.find(s => s.id === supplierId);
             if (!selectedSupplier) return;
 
-            const { data, error } = await supabase
-                .from('knowledge_base')
-                .select('problem_source, cause')
-                .eq('supplier_parma_id', selectedSupplier.parma_id);
-
-            if (error) throw error;
+            // --- 调用后端 API ---
+            const response = await fetch(`${BACKEND_URL}/api/knowledge-base?supplierParmaId=${selectedSupplier.parma_id}`);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Fetch tags failed');
+            }
+            
+            const data = await response.json();
 
             const tags = data.reduce((acc, { problem_source, cause }) => {
-                if (problem_source){ // Ensure source exists before adding
+                if (problem_source){
                     if (!acc[problem_source]) acc[problem_source] = new Set();
                     if (cause) acc[problem_source].add(cause);
                 }
@@ -136,7 +142,6 @@ const EditNoticePage = () => {
         }
     };
 
-    // --- ✨ CORE FIX: Modify renderDynamicFields ---
     const renderDynamicFields = () => {
         if (!selectedCategory || !editingNotice?.sdNotice?.details) return null;
 
@@ -162,22 +167,19 @@ const EditNoticePage = () => {
         }
 
         if (selectedCategory === 'Process Audit') {
-            // Determine the correct field name for PROCESS/QUESTIONS
-            // Check if 'title' exists in details, otherwise check for 'process', finally check for 'finding' as per user description
             const processFieldName = details.hasOwnProperty('title') ? 'title'
                                    : details.hasOwnProperty('process') ? 'process'
-                                   : details.hasOwnProperty('finding') ? 'finding' // Use finding if title/process don't exist
-                                   : 'title'; // Default fallback if none exist (less likely)
+                                   : details.hasOwnProperty('finding') ? 'finding'
+                                   : 'title';
 
-            // The FINDINGS/DEVIATIONS field seems consistently mapped to 'description'
             const findingFieldName = details.hasOwnProperty('description') ? 'description'
                                     : 'finding'
 
             return (
                 <>
                     <Form.Item
-                        key={processFieldName} // Use determined field name for key
-                        name={['details', processFieldName]} // Use determined field name
+                        key={processFieldName}
+                        name={['details', processFieldName]}
                         label="PROCESS/QUESTIONS"
                         rules={[{ required: true, message: '请输入Process/Questions' }]}
                     >
@@ -237,21 +239,19 @@ const EditNoticePage = () => {
         const currentHistory = editingNotice.history || [];
         const updatedHistory = [...currentHistory, newHistoryEntry];
 
-         // Determine title based on category and available fields
-         let noticeTitle = editingNotice.title; // Default to original
+         let noticeTitle = editingNotice.title;
          if (values.category === 'Process Audit') {
             noticeTitle = values.details?.title || values.details?.process || values.details?.finding || noticeTitle;
          } else if (values.category === 'SEM') {
             noticeTitle = values.details?.parameter || values.details?.criteria || noticeTitle;
          } else {
-             // Fallback for other categories if they have a 'title' in details
              noticeTitle = values.details?.title || noticeTitle;
          }
 
 
         const noticeUpdates = {
             category: values.category,
-            title: noticeTitle, // Use determined title
+            title: noticeTitle,
             assigned_supplier_id: values.supplierId,
             assigned_supplier_name: selectedSupplierInfo?.name || '',
             sd_notice: {
@@ -428,4 +428,3 @@ const EditNoticePage = () => {
 };
 
 export default EditNoticePage;
-
