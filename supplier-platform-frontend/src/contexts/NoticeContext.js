@@ -123,12 +123,12 @@ export const NoticeProvider = ({ children }) => {
 
             // --- 逻辑块：SD 通知 ---
             if (newStatus === '待SD确认actions') {
-                if (sdEmail) EmailService.notifySDPlanSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
+                // if (sdEmail) EmailService.notifySDPlanSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
                 if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交行动计划: ${data.title}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
             }
 
             if (newStatus === '待SD关闭evidence') {
-                if (sdEmail) EmailService.notifySDEvidenceSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
+                // if (sdEmail) EmailService.notifySDEvidenceSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
                 if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交完成证据: ${data.title}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
             }
 
@@ -141,16 +141,16 @@ export const NoticeProvider = ({ children }) => {
                 const oldEmails = oldSupUsers.map(u => u.email).filter(Boolean);
                 const newEmails = newSupUsers.map(u => u.email).filter(Boolean);
 
-                await EmailService.notifyReassignment({
-                    oldSupplierEmail: oldEmails,
-                    newSupplierEmail: newEmails,
-                    sdEmail: sdEmail,
-                    noticeTitle: data.title,
-                    noticeCode: data.notice_code,
-                    oldSupplierName: '旧供应商',
-                    newSupplierName: data.assigned_supplier_name,
-                    reason: comment
-                });
+                // await EmailService.notifyReassignment({
+                //     oldSupplierEmail: oldEmails,
+                //     newSupplierEmail: newEmails,
+                //     sdEmail: sdEmail,
+                //     noticeTitle: data.title,
+                //     noticeCode: data.notice_code,
+                //     oldSupplierName: '旧供应商',
+                //     newSupplierName: data.assigned_supplier_name,
+                //     reason: comment
+                // });
 
                 // 构造 Alerts
                 oldSupUsers.forEach(u => alertsToCreate.push({ target_user_id: u.id, message: `通知单 ${data.notice_code} 已被移出您的列表 (重分配)`, link: `/notices`, created_at: new Date().toISOString() }));
@@ -170,12 +170,12 @@ export const NoticeProvider = ({ children }) => {
                     
                     if (isPlanReview) {
                         const resultText = (newStatus === '待供应商关闭') ? '计划已批准，请上传证据' : '计划被驳回，请修改';
-                        EmailService.notifySupplierAuditResult(emails, data.title, resultText, comment, sdName, data.notice_code);
+                        // EmailService.notifySupplierAuditResult(emails, data.title, resultText, comment, sdName, data.notice_code);
                     } else if (isEvidenceReview) {
                         const resultText = (newStatus === '已完成') ? '所有证据已通过，通知单已关闭' : '部分证据被驳回，请补充提交';
                         EmailService.notifySupplierEvidenceResult(emails, data.title, resultText, comment, sdName, data.notice_code);
                     } else if (isAborted) {
-                        EmailService.notifyNoticeAbortion(emails, data.title, data.notice_code, comment, '管理员');
+                        //EmailService.notifyNoticeAbortion(emails, data.title, data.notice_code, comment, '管理员');
                     }
 
                     supUsers.forEach(u => {
@@ -189,7 +189,7 @@ export const NoticeProvider = ({ children }) => {
             }
 
             if (isAborted && sdEmail) {
-                EmailService.notifyNoticeAbortion(sdEmail, data.title, data.notice_code, comment, '管理员');
+                // EmailService.notifyNoticeAbortion(sdEmail, data.title, data.notice_code, comment, '管理员');
                 if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `通知单已作废: ${data.title}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
             }
 
@@ -220,7 +220,7 @@ export const NoticeProvider = ({ children }) => {
             if (emails.length === 0) return false;
 
             // B. 发邮件 (前端服务)
-            await EmailService.notifySystemAnnouncement(emails, title, content, priority);
+            // await EmailService.notifySystemAnnouncement(emails, title, content, priority);
             
             // C. 发站内信 (后端 API)
             const alertsData = users.map(u => ({
@@ -272,7 +272,7 @@ export const NoticeProvider = ({ children }) => {
                         const usernames = validUsers.map(u => u.username || '合作伙伴');
 
                         // 发邮件
-                        await EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code, usernames, targetSdid);
+                        // await EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code, usernames, targetSdid);
                         
                         // 准备 Alerts
                         supplierUsers.forEach(u => {

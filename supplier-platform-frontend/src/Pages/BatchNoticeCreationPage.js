@@ -29,7 +29,7 @@ const { Panel } = Collapse;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 // --- 日志系统工具函数 (复用逻辑) ---
 // 如果没有 session id，生成一个
@@ -58,13 +58,13 @@ const getClientIp = async () => {
 
 // 简单的日志上报
 const logSystemEvent = async (params) => {
-    const { 
-        category = 'SYSTEM', 
-        eventType, 
-        severity = 'INFO', 
-        message, 
-        userId = null, 
-        meta = {} 
+    const {
+        category = 'SYSTEM',
+        eventType,
+        severity = 'INFO',
+        message,
+        userId = null,
+        meta = {}
     } = params;
 
     try {
@@ -73,24 +73,24 @@ const logSystemEvent = async (params) => {
         const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
-            await fetch(`${targetUrl}`, {
+        await fetch(`${targetUrl}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-            category,
-            event_type: eventType,
-            severity,
-            message,
-            user_id: userId,
-            metadata: {
-                ip_address: clientIp,
-                session_id: sessionId,
-                userAgent: navigator.userAgent,
-                url: window.location.href,
-                page: 'BatchNoticeCreationPage',
-                ...meta,
-                timestamp_client: new Date().toISOString()
-            }
+                category,
+                event_type: eventType,
+                severity,
+                message,
+                user_id: userId,
+                metadata: {
+                    ip_address: clientIp,
+                    session_id: sessionId,
+                    userAgent: navigator.userAgent,
+                    url: window.location.href,
+                    page: 'BatchNoticeCreationPage',
+                    ...meta,
+                    timestamp_client: new Date().toISOString()
+                }
             })
         });
 
@@ -224,7 +224,7 @@ const BatchNoticeCreationPage = () => {
             setApiKey(savedKey);
             setRememberApiKey(true);
         }
-        
+
         // 记录页面访问
         if (currentUser) {
             logSystemEvent({
@@ -261,17 +261,11 @@ const BatchNoticeCreationPage = () => {
         const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 8000);
 
         try {
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: "models/text-embedding-004",
-                        content: { parts: [{ text: cleanText }] }
-                    })
-                }
-            );
+            const response = await fetch(`${BACKEND_URL}/api/ai/embedding`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: cleanText })
+            });
 
             if (!response.ok) throw new Error("Embedding API request failed");
             const result = await response.json();
@@ -594,7 +588,7 @@ const BatchNoticeCreationPage = () => {
             // 提交到 Supabase
             await addNotices(batchNoticesToInsert);
             messageApi.success({ content: `成功提交 ${batchNoticesToInsert.length} 条通知单！`, key: 'submitting', duration: 3 });
-            
+
             // 记录成功日志
             logSystemEvent({
                 category: 'DATA',
@@ -612,7 +606,7 @@ const BatchNoticeCreationPage = () => {
         } catch (error) {
             console.error(error);
             messageApi.error({ content: `提交失败: ${error.message}`, key: 'submitting', duration: 3 });
-            
+
             // 记录失败日志
             logSystemEvent({
                 category: 'DATA',
@@ -674,7 +668,7 @@ const BatchNoticeCreationPage = () => {
 
             if (JSON.stringify(expectedHeaders) !== JSON.stringify(actualHeaders)) {
                 messageApi.error({ content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。`, key: 'excelParse', duration: 5 });
-                
+
                 // 记录模板错误日志
                 logSystemEvent({
                     category: 'DATA',
@@ -743,9 +737,9 @@ const BatchNoticeCreationPage = () => {
         } catch (error) {
             console.error("Excel 解析失败:", error);
             messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelParse', duration: 4 });
-            
-             // 记录解析异常日志
-             logSystemEvent({
+
+            // 记录解析异常日志
+            logSystemEvent({
                 category: 'DATA',
                 eventType: 'EXCEL_PARSE_EXCEPTION',
                 severity: 'ERROR',

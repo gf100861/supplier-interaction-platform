@@ -7,18 +7,14 @@ const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 
 // --- 引入 API 处理逻辑 ---
-// ⚠️ 注意：请确保您的文件夹名确实是 'controllers' (复数)
 const createUserHandler = require('./controllers/create-user');
 const deleteUserHandler = require('./controllers/delete-user');
-const smartSearchHandler = require('./controllers/smart-search');
+const smartSearchHandler = require('./controllers/smart-search'); // 确认文件名是否正确 (可能是 search.js ?)
 const systemLogHandler = require('./controllers/system-log');
-// ⚠️ 请确认 controllers 目录下是否有 admin 文件夹
 const getSystemLogsHandler = require('./controllers/admin/system-logs'); 
-// ⚠️ 请确认 controllers 目录下是否有 auth 文件夹
 const loginHandler = require('./controllers/auth/login'); 
 
 const categoriesHandler = require('./controllers/categories');
-// 🔴 修正：统一改为 controllers (复数)
 const configHandler = require('./controllers/config'); 
 const alertsHandler = require('./controllers/alerts'); 
 const usersHandler = require('./controllers/users'); 
@@ -29,28 +25,29 @@ const adminManageAssignmentsHandler = require('./controllers/admin/manage-assign
 const adminFeedbackHandler = require('./controllers/admin/feedback');
 const adminSystemNoticesHandler = require('./controllers/admin/system-notices');
 const emailController = require('./controllers/email');
-const auditPlansHandler = require('./controllers/audit-plan') // 引入新文件
+const auditPlansHandler = require('./controllers/audit-plan');
 const settingsHandler = require('./controllers/setting');
-const knowledgeBaseHandler = require('./controllers/knowledge-base'); // 引入知识库处理器
+const knowledgeBaseHandler = require('./controllers/knowledge-base');
 const fileSyncHandler = require('./controllers/file-sync');
 const aiHandler = require('./controllers/ai');
+
 const app = express();
 const server = http.createServer(app);
 
-// 初始化 Supabase Admin
+// 初始化 Supabase Admin (如果其他地方需要用)
 const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // ==========================================
-// 新增：鉴权中间件函数
+// 鉴权中间件函数
 // ==========================================
 function checkAuth(req) {
-    // 1. 获取环境变量中设置的密钥 (请在 .env 或 Vercel 后台设置 EXTERNAL_API_SECRET)
+    // 1. 获取环境变量中设置的密钥
     const validSecret = process.env.EXTERNAL_API_SECRET; 
     
-    // 如果没设置环境变量，默认不开启鉴权（方便调试，但生产环境建议开启）
+    // 如果没设置环境变量，默认不开启鉴权（方便调试，生产环境强烈建议开启）
     if (!validSecret) return true;
 
     // 2. 检查 Authorization Header (格式: Bearer sk-xxxxx)
@@ -59,11 +56,17 @@ function checkAuth(req) {
         return true;
     }
 
-    // 3. (可选) 兼容你自己的前端：如果是来自允许的 Origin (CORS)，也放行
-    // 这样你不需要改前端代码，只限制外部调用必须带 Key
+    // 3. 兼容前端：如果是来自允许的 Origin (CORS)，也放行
+    // 这样前端不需要改代码，只有 Dify/Postman 等外部调用才需要 Key
     const origin = req.headers['origin'];
-    const allowedOrigins = ['http://localhost:3000', 'https://your-frontend-domain.vercel.app'];
-    if (origin && allowedOrigins.includes(origin)) {
+    // 请根据实际前端域名修改这里
+    const allowedOrigins = [
+        'http://localhost:3000', 
+        'https://supplier-interaction-platform.vercel.app', // 假设这是你的前端域名
+        'https://your-frontend-domain.vercel.app'
+    ];
+    
+    if (origin && allowedOrigins.some(o => origin.startsWith(o))) {
         return true;
     }
 
@@ -73,7 +76,9 @@ function checkAuth(req) {
 
 // 允许跨域 (包含 PATCH)
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS', 'DELETE', 'PATCH'] }));
-app.use(express.json());
+// 关键修改：增加 body-parser 限制，防止大文件上传报错
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // --- Socket.IO (仅本地有效) ---
 const io = new Server(server, {
@@ -86,7 +91,6 @@ io.on('connection', (socket) => {
 // ==========================================
 // --- 注册 API 路由 ---
 // ==========================================
-// 💡 优化：直接传入 Handler 函数，代码更干净
 
 // Auth
 app.post('/api/auth/login', loginHandler);
@@ -98,55 +102,53 @@ app.get('/api/admin/system-logs', getSystemLogsHandler);
 // Users
 app.all('/api/create-user', createUserHandler);
 app.all('/api/delete-user', deleteUserHandler);
-app.all('/api/users', usersHandler); // 获取用户列表
+app.all('/api/users', usersHandler); 
 
-// Core Business
-app.post('/api/smart-search', smartSearchHandler);
+// Core Business - Search (✅ 应用鉴权)
+app.post('/api/smart-search', (req, res, next) => {
+    // 排除 OPTIONS 请求，防止 CORS 预检失败
+    if (req.method === 'OPTIONS') return next();
+    
+    if (!checkAuth(req)) {
+        return res.status(401).json({ 
+            error: "Unauthorized: Invalid API Key. Please provide 'Authorization: Bearer <YOUR_SECRET>'." 
+        });
+    }
+    next();
+}, smartSearchHandler);
+
 app.get('/api/config', configHandler);
 app.get('/api/categories', categoriesHandler);
 app.get('/api/suppliers', suppliersHandler);
 
-// Alerts & Notices (支持 GET/POST/PATCH/DELETE)
+// Alerts & Notices
 app.all('/api/alerts', alertsHandler);
 app.all('/api/notices', noticesHandler);
 
-// Admin 特定功能
+// Admin
 app.patch('/api/admin/update-user', adminUpdateUserHandler);
 app.post('/api/admin/manage-assignments', adminManageAssignmentsHandler);
 app.all('/api/admin/feedback', adminFeedbackHandler);
 app.all('/api/admin/system-notices', adminSystemNoticesHandler);
-// Email (保留简单逻辑)
-// 1. 发送安全警报邮件 (对应之前的 /api/send-alert-email)
-app.post('/api/send-alert-email', emailController.sendAlertEmail);
 
-// 2. 发送普通通知邮件 (对应之前的 /api/send-email)
-// 如果您前端有用这个接口，可以注册它；如果没有，可以不加
+// Email
+app.post('/api/send-alert-email', emailController.sendAlertEmail);
 app.post('/api/send-email', emailController.sendGeneralEmail);
 
-
+// Other Features
 app.all('/api/audit-plans', auditPlansHandler);
-// ==========================================
-// --- 启动服务器 (Vercel 关键配置) ---
-// ==========================================
-
 app.all('/api/settings', settingsHandler);
-
 app.all('/api/knowledge-base', knowledgeBaseHandler);
-
 app.all('/api/file-sync/download', fileSyncHandler);
-
 app.all('/api/ai/embedding', aiHandler);
 
 const PORT = process.env.PORT || 3001;
 
-// 🔴 关键修改：只有在本地直接运行 (node server.js) 时才监听端口
-// Vercel 环境下不运行这一段，防止端口冲突
+// Vercel 环境下不运行监听，仅导出 app
 if (require.main === module) {
     server.listen(PORT, () => {
         console.log(`✅ Local Backend running on http://localhost:${PORT}`);
-        console.log(`Routes loaded: Login, Logs, Users, Alerts, Notices, Suppliers...`);
     });
 }
 
-// 🔴 关键修改：必须导出 app，供 Vercel 的 api/index.js 使用
 module.exports = app;

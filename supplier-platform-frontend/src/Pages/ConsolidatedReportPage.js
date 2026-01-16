@@ -167,6 +167,8 @@ const ConsolidatedReportPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const { noticeCategories } = useConfig();
 
+    // console.log('Supplier for notice', suppliers.find(s => s.id === notice.assignedSupplierId));
+
     const filteredNotices = useMemo(() => {
         let accessibleData = [];
         if (currentUser?.role === 'Supplier') {
@@ -186,6 +188,7 @@ const ConsolidatedReportPage = () => {
             const lowerCaseSearchTerm = searchTerm.toLowerCase().trim();
             if (lowerCaseSearchTerm) {
                 const supplier = suppliers.find(s => s.id === notice.assignedSupplierId);
+                
                 const parmaId = supplier ? (supplier.parma_id || '').toLowerCase() : '';
                 const searchMatch = notice.noticeCode.toLowerCase().includes(lowerCaseSearchTerm) ||
                     notice.title.toLowerCase().includes(lowerCaseSearchTerm) ||
