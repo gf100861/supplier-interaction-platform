@@ -6,7 +6,6 @@ import { useSuppliers } from '../contexts/SupplierContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNotices } from '../contexts/NoticeContext';
-import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 
 const { Dragger } = Upload;
@@ -14,6 +13,13 @@ const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
 const { Panel } = Collapse;
+
+
+// 🔧 环境配置
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 // 辅助函数
 const normFile = (e) => {
@@ -64,10 +70,17 @@ const logSystemEvent = async (params) => {
     } = params;
 
     try {
+
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
 
-        supabase.from('system_logs').insert([{
+
+        await fetch(`${targetUrl}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
             category,
             event_type: eventType,
             severity,
@@ -82,9 +95,9 @@ const logSystemEvent = async (params) => {
                 ...meta,
                 timestamp_client: new Date().toISOString()
             }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
+            })
         });
+
     } catch (e) {
         console.error("Logger exception:", e);
     }
@@ -143,41 +156,34 @@ const FileUploadPage = () => {
     }
   };
 
-  // --- 新增：调用 Gemini 生成向量 ---
-  const getGeminiEmbedding = async (text) => {
-    if (!text || !text.trim() || !apiKey) return null;
+
+
+  const getBackendEmbedding = async (text) => {
+    if (!text || !text.trim()) return null;
     const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 8000);
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: "models/text-embedding-004",
-            content: { parts: [{ text: cleanText }] }
-          })
-        }
-      );
+      const response = await fetch(`${BACKEND_URL}/api/ai/embedding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText })
+      });
 
-      if (!response.ok) throw new Error("Embedding API request failed");
+      if (!response.ok) throw new Error("Backend Embedding API request failed");
       const result = await response.json();
-      return result.embedding.values;
+      return result.embedding;
     } catch (error) {
       console.error("生成向量失败:", error);
       
-      // 记录向量生成失败日志
       logSystemEvent({
           category: 'AI',
           eventType: 'EMBEDDING_FAILED',
           severity: 'WARN',
-          message: `Embedding generation failed: ${error.message}`,
+          message: `Backend Embedding generation failed: ${error.message}`,
           userId: currentUser?.id,
           meta: { text_length: cleanText.length }
       });
       
-      messageApi.warning("AI 向量生成失败，搜索功能可能受限，但记录仍将保存。");
       return null;
     }
   };
@@ -229,6 +235,7 @@ const FileUploadPage = () => {
   };
 
 
+// ✅ 修改：调用后端获取历史标签
   const handleSupplierChange = async (supplierId) => {
     setSelectedSupplierId(supplierId);
 
@@ -244,16 +251,13 @@ const FileUploadPage = () => {
       const selectedSupplier = suppliers.find(s => s.id === supplierId);
       if (!selectedSupplier) return;
 
-      const { data, error } = await supabase
-        .from('knowledge_base')
-        .select('problem_source, cause')
-        .eq('supplier_parma_id', selectedSupplier.parma_id);
-
-      if (error) throw error;
+      const response = await fetch(`${BACKEND_URL}/api/knowledge-base?supplierParmaId=${selectedSupplier.parma_id}`);
+      if (!response.ok) throw new Error('Fetch tags failed');
+      const data = await response.json();
 
       const tags = data.reduce((acc, { problem_source, cause }) => {
         if (!acc[problem_source]) acc[problem_source] = new Set();
-        acc[problem_source].add(cause);
+        if (cause) acc[problem_source].add(cause);
         return acc;
       }, {});
 
@@ -273,7 +277,6 @@ const FileUploadPage = () => {
       setLoadingHistory(false);
     }
   };
-
 
 
 
@@ -415,11 +418,15 @@ const FileUploadPage = () => {
 `.trim();
 
         // --- 2. 生成向量 (如果填了 Key) ---
-        let embeddingVector = null;
-        if (apiKey) {
-            messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
-            embeddingVector = await getGeminiEmbedding(textToEmbed);
-        }
+        // let embeddingVector = null;
+        // if (apiKey) {
+        //     messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
+        //     embeddingVector = await getGeminiEmbedding(textToEmbed);
+        // }
+
+        // 2. ✅ 调用后端生成向量 (后端会自动使用环境变量中的 Key)
+        messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
+        const embeddingVector = await getBackendEmbedding(textToEmbed);
     
         const newNoticeToInsert = {
           notice_code: noticeCode,

@@ -11,7 +11,7 @@ import {
     ApiOutlined, BugOutlined, CodeOutlined, StopOutlined, SwapOutlined, FileExcelOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-// import { supabase } from '../supabaseClient'; // 假设您有这个文件导出
+
 import './HelpCenterPage.css';
 import SystemIntroVideo from './SystemIntroVideo';
 import { useNotification } from '../contexts/NotificationContext';
@@ -92,26 +92,6 @@ const logSystemEvent = async (params) => {
             })
 
         });
-
-        // // Fire-and-forget
-        // supabase.from('system_logs').insert([{
-        //     category,
-        //     event_type: eventType,
-        //     severity,
-        //     message,
-        //     user_id: userId,
-        //     metadata: {
-        //         ip_address: clientIp,
-        //         session_id: sessionId,
-        //         userAgent: navigator.userAgent,
-        //         url: window.location.href,
-        //         page: 'HelpCenterPage',
-        //         ...meta,
-        //         timestamp_client: new Date().toISOString()
-        //     }
-        // }]).then(({ error }) => {
-        //     if (error) console.warn("Log upload failed:", error);
-        // });
     } catch (e) {
         console.error("Logger exception:", e);
     }

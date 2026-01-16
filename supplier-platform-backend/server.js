@@ -32,6 +32,8 @@ const emailController = require('./controllers/email');
 const auditPlansHandler = require('./controllers/audit-plan') // 引入新文件
 const settingsHandler = require('./controllers/setting');
 const knowledgeBaseHandler = require('./controllers/knowledge-base'); // 引入知识库处理器
+const fileSyncHandler = require('./controllers/file-sync');
+const aiHandler = require('./controllers/ai');
 const app = express();
 const server = http.createServer(app);
 
@@ -130,6 +132,10 @@ app.all('/api/audit-plans', auditPlansHandler);
 app.all('/api/settings', settingsHandler);
 
 app.all('/api/knowledge-base', knowledgeBaseHandler);
+
+app.all('/api/file-sync/download', fileSyncHandler);
+
+app.all('/api/ai/embedding', aiHandler);
 
 const PORT = process.env.PORT || 3001;
 

@@ -7,8 +7,6 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import { useCategories } from '../contexts/CategoryContext';
-// ❌ 移除 Supabase 客户端引用
-// import { supabase } from '../supabaseClient';
 
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
@@ -19,7 +17,7 @@ const { Dragger } = Upload;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app'; 
 
 // Helper functions
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };

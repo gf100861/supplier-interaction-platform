@@ -7,8 +7,6 @@ import {
     EditOutlined, UserSwitchOutlined, FileTextOutlined, AppstoreAddOutlined, DeleteOutlined, SwapOutlined, MessageOutlined, BookOutlined, PaperClipOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, StopOutlined, ExclamationCircleOutlined, SaveOutlined, FilterOutlined,
     UserAddOutlined, SoundOutlined, PlusOutlined
 } from '@ant-design/icons';
-// ❌ 移除 Supabase
-// import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNotices } from '../contexts/NoticeContext';
