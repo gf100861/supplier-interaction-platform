@@ -42,6 +42,11 @@ const getClientIp = async () => {
         return 'unknown';
     }
 };
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'  // 本地开发环境
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+
 
 const logSystemEvent = async (params) => {
     const { category = 'SYSTEM', eventType, severity = 'INFO', message, email = null, userId = null, meta = {} } = params;
@@ -55,11 +60,26 @@ const logSystemEvent = async (params) => {
             url: window.location.href,
             page: 'IntelligentSearchPage'
         };
-        supabase.from('system_logs').insert([{
-            category, event_type: eventType, severity, message, user_email: email, user_id: userId,
-            metadata: { ...environmentInfo, ...meta, timestamp_client: new Date().toISOString() }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
+
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
+
+        await fetch(`${targetUrl}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                category,
+                event_type: eventType,
+                severity,
+                message,
+                user_email: email,
+                user_id: userId,
+                metadata: {
+                    ...environmentInfo,
+                    ...meta,
+                    timestamp_client: new Date().toISOString()
+                }
+            })
         });
     } catch (e) {
         console.error("Logger exception:", e);
@@ -73,14 +93,14 @@ const IntelligentSearchPage = () => {
     const [sessions, setSessions] = useState([]);
     const [activeSessionId, setActiveSessionId] = useState(null);
     const [collapsed, setCollapsed] = useState(false);
-    
+
     // 状态
     const [isLoading, setIsLoading] = useState(false);
     const [isHistoryLoading, setIsHistoryLoading] = useState(true);
-    
+
     // 计时器状态
     const [liveTimer, setLiveTimer] = useState(0.0);
-    const timerRef = useRef(null); 
+    const timerRef = useRef(null);
 
 
     const { notices } = useNotices();
@@ -101,9 +121,9 @@ const IntelligentSearchPage = () => {
 
     const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-    const BACKEND_URL = isDev
-        ? 'http://localhost:3001'  // 本地开发环境
-        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+    // const BACKEND_URL = isDev
+    //     ? 'http://localhost:3001'  // 本地开发环境
+    //     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 
     const MODEL_OPTIONS = [
         { label: 'Google Gemini', value: 'gemini' },
@@ -159,13 +179,19 @@ const IntelligentSearchPage = () => {
     const fetchSessions = async () => {
         if (!currentUser?.id) { setIsHistoryLoading(false); return; }
         setIsHistoryLoading(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
         try {
-            const { data, error } = await supabase
-                .from('chat_sessions')
-                .select('*')
-                .eq('user_id', currentUser.id)
-                .order('created_at', { ascending: false });
-            if (error) throw error;
+            // ✅ 改为调用后端 GET
+            const response = await fetch(`${BACKEND_URL}/api/chat/sessions?userId=${currentUser.id}`,{
+
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json',  'Authorization': `Bearer ${accessToken}` }
+                
+            });
+            if (!response.ok) throw new Error('Fetch sessions failed');
+
+            const data = await response.json();
             setSessions(data || []);
             if (data && data.length > 0) setActiveSessionId(data[0].id);
             else handleNewChat(false);
@@ -175,49 +201,49 @@ const IntelligentSearchPage = () => {
             setIsHistoryLoading(false);
         }
     };
-    
+
     // --- TypewriterText 组件 (放在文件顶部 imports 下面) ---
-const TypewriterText = ({ content, onComplete }) => {
-    const [displayedText, setDisplayedText] = useState('');
-    const [isTyping, setIsTyping] = useState(true);
+    const TypewriterText = ({ content, onComplete }) => {
+        const [displayedText, setDisplayedText] = useState('');
+        const [isTyping, setIsTyping] = useState(true);
 
-    useEffect(() => {
-        // 如果内容为空，直接结束
-        if (!content) {
-            setDisplayedText('');
-            setIsTyping(false);
-            return;
-        }
-
-        let currentIndex = 0;
-        const totalLength = content.length;
-        
-        // 动态计算打字速度：字数越多越快，避免长文等太久
-        // 基础速度 30ms，最快 10ms
-        const speed = Math.max(10, 30 - Math.floor(totalLength / 100));
-
-        const timer = setInterval(() => {
-            if (currentIndex < totalLength) {
-                // 每次增加一个字
-                setDisplayedText(content.slice(0, currentIndex + 1));
-                currentIndex++;
-            } else {
-                clearInterval(timer);
+        useEffect(() => {
+            // 如果内容为空，直接结束
+            if (!content) {
+                setDisplayedText('');
                 setIsTyping(false);
-                if (onComplete) onComplete();
+                return;
             }
-        }, speed);
 
-        return () => clearInterval(timer);
-    }, [content]);
+            let currentIndex = 0;
+            const totalLength = content.length;
 
-    return (
-        <span style={{ whiteSpace: 'pre-wrap' }}>
-            {displayedText}
-            {isTyping && <span className="typing-cursor"></span>}
-        </span>
-    );
-};
+            // 动态计算打字速度：字数越多越快，避免长文等太久
+            // 基础速度 30ms，最快 10ms
+            const speed = Math.max(10, 30 - Math.floor(totalLength / 100));
+
+            const timer = setInterval(() => {
+                if (currentIndex < totalLength) {
+                    // 每次增加一个字
+                    setDisplayedText(content.slice(0, currentIndex + 1));
+                    currentIndex++;
+                } else {
+                    clearInterval(timer);
+                    setIsTyping(false);
+                    if (onComplete) onComplete();
+                }
+            }, speed);
+
+            return () => clearInterval(timer);
+        }, [content]);
+
+        return (
+            <span style={{ whiteSpace: 'pre-wrap' }}>
+                {displayedText}
+                {isTyping && <span className="typing-cursor"></span>}
+            </span>
+        );
+    };
     // --- 处理消息反馈 ---
     const handleFeedback = async (messageId, type) => {
         setMessages(prev => prev.map(msg =>
@@ -230,12 +256,15 @@ const TypewriterText = ({ content, onComplete }) => {
         const newFeedback = currentMsg.feedback === type ? null : type;
 
         try {
-            const { error } = await supabase
-                .from('chat_messages')
-                .update({ feedback: newFeedback })
-                .eq('id', messageId);
+            await fetch(`${BACKEND_URL}/api/chat/messages`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messageId: messageId,
+                    feedback: newFeedback // 'like', 'dislike', or null
+                })
+            });
 
-            if (error) throw error;
 
             logSystemEvent({
                 category: 'INTERACTION', eventType: 'MESSAGE_FEEDBACK', message: `User ${newFeedback || 'removed feedback'} for message`,
@@ -259,23 +288,23 @@ const TypewriterText = ({ content, onComplete }) => {
                 <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     {/* 注入 CSS 动画 */}
                     <style>{spinAnimationStyles}</style>
-                    
+
                     {/* 自定义 Spinner */}
                     <div className="spinner" style={{
-                        width: '16px', 
+                        width: '16px',
                         height: '16px',
-                        border: '2px solid #ccc', 
+                        border: '2px solid #ccc',
                         borderTopColor: '#1890ff',
-                        borderRadius: '50%', 
+                        borderRadius: '50%',
                         animation: 'spin 1s linear infinite'
                     }} />
-                    
+
                     <div style={{ fontSize: '14px', color: '#666' }}>
                         AI 正在阅读文档并思考...
-                        <span style={{ 
-                            fontFamily: 'monospace', 
-                            fontWeight: 'bold', 
-                            color: '#1890ff', 
+                        <span style={{
+                            fontFamily: 'monospace',
+                            fontWeight: 'bold',
+                            color: '#1890ff',
                             marginLeft: '8px',
                             display: 'inline-block',
                             minWidth: '40px'
@@ -317,7 +346,7 @@ const TypewriterText = ({ content, onComplete }) => {
                                 <RobotOutlined style={{ marginRight: 8, color: '#1890ff' }} />
                                 <span style={{ whiteSpace: 'pre-wrap' }}>{parsedContent.answer}</span>
                             </Paragraph>
-                            
+
                             {/* 显示最终耗时 */}
                             <div style={{ fontSize: '10px', color: '#888', marginTop: '5px', textAlign: 'right' }}>
                                 ⚡ 耗时: {parsedContent.meta?.duration || parsedContent.thinkingTime || 0}s
@@ -383,17 +412,39 @@ const TypewriterText = ({ content, onComplete }) => {
         );
     };
 
+    // --- 修改后：调用后端 API 获取消息 ---
     const fetchMessages = async (sessionId) => {
         if (!sessionId) {
             setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是接入了 Node.js 大脑的智能助手，请问有什么可以帮您？', feedback: null }]);
             return;
         }
+
         setIsHistoryLoading(true);
+
         try {
-            const { data, error } = await supabase.from('chat_messages').select('*').eq('session_id', sessionId).order('created_at', { ascending: true });
-            if (error) throw error;
+            // 使用定义的 BACKEND_URL
+            const url = `${BACKEND_URL}/api/chat/messages?sessionId=${sessionId}`;
+            const { data: { session } } = await supabase.auth.getSession();
+            const accessToken = session?.access_token;
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 如果您的后端开启了 checkAuth，这里可能需要加上 Authorization header
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch messages');
+            }
+
+            const data = await response.json();
             setMessages(data);
+
         } catch (error) {
+            console.error("Fetch messages error:", error);
             messageApi.error("加载消息失败");
         } finally {
             setIsHistoryLoading(false);
@@ -412,10 +463,19 @@ const TypewriterText = ({ content, onComplete }) => {
         setMessages([{ id: Date.now(), sender: 'system', content: '您好！我是接入了 Node.js 大脑的智能助手，请问有什么可以帮您？', feedback: null }]);
     };
 
+    // 替换原来的 handleDeleteSession 函数
     const handleDeleteSession = async (e, sessionId) => {
         e.stopPropagation();
         try {
-            await supabase.from('chat_sessions').delete().eq('id', sessionId);
+            // ✅ 改为调用后端 DELETE
+            const response = await fetch(`${BACKEND_URL}/api/chat/sessions`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId })
+            });
+
+            if (!response.ok) throw new Error('Delete failed');
+
             const newSessions = sessions.filter(s => s.id !== sessionId);
             setSessions(newSessions);
             if (activeSessionId === sessionId) {
@@ -467,17 +527,36 @@ const TypewriterText = ({ content, onComplete }) => {
         const startTime = Date.now();
 
         // 1. Session 管理
+        // 在 handleSendMessage 内部
         let currentSessionId = activeSessionId;
         if (!currentSessionId) {
             const firstTitle = userQuery.length > 8 ? `${userQuery.substring(0, 8)}...` : userQuery;
-            const { data: newSession, error } = await supabase.from('chat_sessions').insert({ user_id: currentUser.id, title: firstTitle }).select().single();
-            if (error) { messageApi.error('创建会话失败'); setIsLoading(false); if(timerRef.current) clearInterval(timerRef.current); return; }
-            currentSessionId = newSession.id;
-            setActiveSessionId(currentSessionId);
-            setSessions(prev => [newSession, ...prev]);
-            setMessages([]);
-        }
 
+            // ✅ 改为调用后端 POST 创建会话
+            try {
+                const sessionRes = await fetch(`${BACKEND_URL}/api/chat/sessions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: currentUser.id,
+                        title: firstTitle
+                    })
+                });
+
+                if (!sessionRes.ok) throw new Error('Create session failed');
+                const newSession = await sessionRes.json(); // 后端返回创建的 session 对象
+
+                currentSessionId = newSession.id;
+                setActiveSessionId(currentSessionId);
+                setSessions(prev => [newSession, ...prev]);
+                setMessages([]);
+            } catch (err) {
+                messageApi.error('创建会话失败');
+                setIsLoading(false);
+                if (timerRef.current) clearInterval(timerRef.current);
+                return;
+            }
+        }
         // 2. 乐观 UI 更新
         const tempSystemMsgId = `temp-sys-${Date.now()}`;
         setMessages(prev => [
@@ -488,7 +567,16 @@ const TypewriterText = ({ content, onComplete }) => {
         ]);
         setInputValue('');
 
-        await supabase.from('chat_messages').insert({ user_id: currentUser.id, session_id: currentSessionId, sender: 'user', content: userQuery });
+        await fetch(`${BACKEND_URL}/api/chat/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: currentUser.id,
+                sessionId: currentSessionId,
+                sender: 'user',
+                content: userQuery
+            })
+        });
 
         // 3. 路由判断 (根据环境决定是否加 .js)
         const apiPath = isDev ? '/api/smart-search' : '/api/smart-search';
@@ -522,7 +610,7 @@ const TypewriterText = ({ content, onComplete }) => {
                 answer: data.answer,
                 sources: data.sources.map(doc => doc.id),
                 // 优先使用后端返回的精确耗时，如果没有则计算总耗时
-                thinkingTime: data.thinkingTime, 
+                thinkingTime: data.thinkingTime,
                 meta: {
                     method: 'node-hybrid',
                     model: 'qwen-plus',
@@ -533,13 +621,19 @@ const TypewriterText = ({ content, onComplete }) => {
 
             const resultString = JSON.stringify(resultPayload);
 
-            const { data: savedSystemMsg } = await supabase.from('chat_messages').insert({
-                user_id: currentUser.id,
-                session_id: currentSessionId,
-                sender: 'system',
-                content: resultString,
-                duration: data.thinkingTime || ((Date.now() - startTime) / 1000).toFixed(2)
-            }).select().single();
+            const saveResponse = await fetch(`${BACKEND_URL}/api/chat/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: currentUser.id,
+                    sessionId: currentSessionId,
+                    sender: 'system',
+                    content: resultString,
+                    duration: data.thinkingTime // 传递耗时
+                })
+            });
+
+            const savedSystemMsg = await saveResponse.json();
 
             // 更新 UI：将 isThinking 设为 false，替换为真实内容
             setMessages(prev => prev.map(msg =>
@@ -549,10 +643,10 @@ const TypewriterText = ({ content, onComplete }) => {
         } catch (error) {
             console.error(error);
             messageApi.error(`处理失败: ${error.message}`);
-            
+
             // 出错也要停止计时
             if (timerRef.current) clearInterval(timerRef.current);
-            
+
             setMessages(prev => prev.map(msg =>
                 msg.id === tempSystemMsgId ? { ...msg, content: `服务出错: ${error.message}`, isThinking: false } : msg
             ));
@@ -561,11 +655,30 @@ const TypewriterText = ({ content, onComplete }) => {
         }
     };
 
+    // 替换原来的 handleRatingSubmit 函数
     const handleRatingSubmit = async () => {
         if (!activeSessionId) return;
-        await supabase.from('chat_ratings').insert({ user_id: currentUser.id, session_id: activeSessionId, rating: currentRating, comment: ratingComment });
-        messageApi.success('感谢反馈');
-        setShowRatingModal(false);
+
+        try {
+            // ✅ 改为调用后端 POST
+            const response = await fetch(`${BACKEND_URL}/api/chat/ratings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: currentUser.id,
+                    sessionId: activeSessionId,
+                    rating: currentRating,
+                    comment: ratingComment
+                })
+            });
+
+            if (!response.ok) throw new Error('Submit rating failed');
+
+            messageApi.success('感谢反馈');
+            setShowRatingModal(false);
+        } catch (error) {
+            messageApi.error('提交反馈失败，请稍后重试');
+        }
     };
 
     const handleEndSession = () => setShowRatingModal(true);

@@ -3,17 +3,18 @@ import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carous
 import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
+import { supabase } from '../supabaseClient';
 import './LoginPage.css';
 
 const { Title, Paragraph, Text, Link } = Typography;
 
 // --- 🔧 新增：定义后端 API 基础地址 ---
 
- const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 const BACKEND_URL = isDev
-        ? 'http://localhost:3001'  // 本地开发环境
-        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+    ? 'http://localhost:3001'  // 本地开发环境
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 // --- 错误翻译函数 (保持不变) ---
 const translateError = (errorMsg) => {
     const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
@@ -50,14 +51,14 @@ const getClientIp = async () => {
 
 // --- [API] 通用系统日志上报函数 ---
 const logSystemEvent = async (params) => {
-    const { 
-        category = 'SYSTEM', 
-        eventType, 
-        severity = 'INFO', 
-        message, 
-        email = null, 
+    const {
+        category = 'SYSTEM',
+        eventType,
+        severity = 'INFO',
+        message,
+        email = null,
         userId = null,
-        meta = {} 
+        meta = {}
     } = params;
 
     try {
@@ -128,17 +129,17 @@ const useTypingEffect = (textToType, speed = 50) => {
 // --- LoginCarousel (保持不变) ---
 const LoginCarousel = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
-    
+
     const carouselItems = useMemo(() => [
         {
-            src: '/images/Carousel1.jpg', 
+            src: '/images/Carousel1.jpg',
             title: '协同 · 无界',
             description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
             bgColor: '#e0f2fe',
             cardBgColor: 'rgba(240, 249, 255, 0.7)',
         },
         {
-            src: '/images/Carousel2.jpg', 
+            src: '/images/Carousel2.jpg',
             title: '数据 · 驱动',
             description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
             bgColor: '#f0fdf4',
@@ -177,17 +178,17 @@ const LoginCarousel = () => {
             >
                 {carouselItems.map((item, index) => (
                     <div key={index}>
-                        <Image 
-                            src={item.src} 
-                            preview={false} 
+                        <Image
+                            src={item.src}
+                            preview={false}
                             placeholder={<div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5' }}><Spin /></div>}
-                            style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }} 
+                            style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }}
                         />
                     </div>
                 ))}
             </Carousel>
-            
-            <Card 
+
+            <Card
                 style={{ marginTop: '-60px', width: '90%', maxWidth: '450px', zIndex: 10, backdropFilter: 'blur(10px)', backgroundColor: currentItem.cardBgColor, border: '1px solid rgba(255, 255, 255, 0.2)', transition: 'background-color 0.5s ease-in-out' }}
             >
                 <Title level={3}>{currentItem.title}</Title>
@@ -207,7 +208,7 @@ const LoginPage = () => {
     const navigate = useNavigate();
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
-    
+
     // 记录页面初始化时间
     const pageInitTime = useRef(Date.now());
     // 记录表单交互
@@ -276,8 +277,8 @@ const LoginPage = () => {
         try {
             // ✅ 修改点 2: 使用 API_BASE_URL 拼接完整路径
             // 后端对应 server.js 中的 app.post('/api/auth/login', ...)
-             const apiPath = isDev ? '/api/auth/login' : '/api/auth/login';
-             const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const apiPath = isDev ? '/api/auth/login' : '/api/auth/login';
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -296,6 +297,22 @@ const LoginPage = () => {
 
             // result 应该包含 { user: ..., session: ... }
             const userData = result.user;
+            const sessionData = result.session; // 👈 获取后端返回的 session
+
+            if (sessionData) {
+                const { error: setSessionError } = await supabase.auth.setSession({
+                    access_token: sessionData.access_token,
+                    refresh_token: sessionData.refresh_token,
+                });
+
+                if (setSessionError) {
+                    console.error("前端设置 Session 失败:", setSessionError);
+                    // 可以选择抛出错误，或者继续（但刷新后会掉登录）
+                } else {
+                    console.log("前端 Session 同步成功！");
+                }
+            }
+
             const apiDuration = Date.now() - submitTime;
 
             // 2. 记录成功
@@ -314,8 +331,9 @@ const LoginPage = () => {
             });
 
             messageApi.success('登录成功!');
+            console.log('Logged in user data:', userData);
             localStorage.setItem('user', JSON.stringify(userData));
-            
+
             navigate('/');
 
         } catch (error) {
@@ -365,11 +383,11 @@ const LoginPage = () => {
                             <Text type="secondary">请登录您的账户</Text>
                         </div>
 
-                        <Form 
-                            name="login_form" 
-                            onFinish={onFinish} 
+                        <Form
+                            name="login_form"
+                            onFinish={onFinish}
                             onValuesChange={handleFormChange}
-                            layout="vertical" 
+                            layout="vertical"
                             autoComplete="off"
                         >
                             <Form.Item label="登录邮箱" name="email" rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}>
@@ -379,7 +397,7 @@ const LoginPage = () => {
                             <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码!' }]}>
                                 <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
                             </Form.Item>
-                            
+
                             <Form.Item>
                                 <div style={{ textAlign: 'right' }}>
                                     <Link href="/forgot-password" target="_blank">忘记密码？</Link>
@@ -389,7 +407,7 @@ const LoginPage = () => {
                             <Form.Item>
                                 <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">登 录</Button>
                             </Form.Item>
-                            
+
                             <div style={{ textAlign: 'center' }}>
                                 <Text type="secondary" style={{ fontSize: '12px' }}>
                                     如遇登录问题，请联系：

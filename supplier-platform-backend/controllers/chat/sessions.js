@@ -1,8 +1,10 @@
+// supplier-platform-backend/controllers/chat/sessions.js
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
+
 const corsMiddleware = cors({
     origin: true,
-    methods: ['GET', 'POST', 'OPTIONS'], // 确保包含 POST
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     credentials: true,
 });
 
@@ -14,80 +16,65 @@ function runMiddleware(req, res, fn) {
         });
     });
 }
+
 module.exports = async (req, res) => {
-
-
     const requestOrigin = req.headers.origin || '*';
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     if (req.method === 'OPTIONS') return res.status(200).end();
+
     try {
-
         await runMiddleware(req, res, corsMiddleware);
-
 
         const supabaseAdmin = createClient(
             process.env.SUPABASE_URL,
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
-
-        if (req.method === 'POST') {
-            const { user_id, content, category, images, attachments } = req.body;
-
-            const { error } = await supabaseAdmin.from('feedback').insert([{
-                user_id,
-                content,
-                category,
-                images,
-                attachments
-            }]);
-
-            if (error) throw error;
-            return res.json({ success: true });
-        }
-        // --- GET: 获取反馈列表 ---
+        // --- GET: 获取用户的会话列表 ---
         if (req.method === 'GET') {
+            const { userId } = req.query;
+            if (!userId) return res.status(400).json({ error: 'Missing userId' });
+
             const { data, error } = await supabaseAdmin
-                .from('feedback')
-                .select('*, user:users ( username )')
+                .from('chat_sessions')
+                .select('*')
+                .eq('user_id', userId)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
             return res.json(data);
         }
 
-        // --- PATCH: 更新状态或回复 ---
-        if (req.method === 'PATCH') {
-            const { id, status, admin_response } = req.body;
-
-            // 构建更新对象（只更新传过来的字段）
-            const updates = {};
-            if (status) updates.status = status;
-            if (admin_response !== undefined) updates.admin_response = admin_response;
+        // --- POST: 创建新会话 ---
+        if (req.method === 'POST') {
+            const { userId, title } = req.body;
+            if (!userId) return res.status(400).json({ error: 'Missing userId' });
 
             const { data, error } = await supabaseAdmin
-                .from('feedback')
-                .update(updates)
-                .eq('id', id)
-                .select();
+                .from('chat_sessions')
+                .insert([{ user_id: userId, title: title || 'New Chat' }])
+                .select()
+                .single();
 
             if (error) throw error;
             return res.json(data);
         }
 
-        // --- DELETE: 删除反馈 ---
+        // --- DELETE: 删除会话 ---
         if (req.method === 'DELETE') {
-            const { id } = req.query; // 从 URL 参数获取 ID
-            if (!id) return res.status(400).json({ error: 'Missing id' });
+            const { sessionId } = req.body; // 或者 req.query.sessionId
+            if (!sessionId) return res.status(400).json({ error: 'Missing sessionId' });
 
+            // 级联删除通常由数据库外键处理，或者手动删除 messages
+            // 这里假设数据库已设置 ON DELETE CASCADE，或者只删 session
             const { error } = await supabaseAdmin
-                .from('feedback')
+                .from('chat_sessions')
                 .delete()
-                .eq('id', id);
+                .eq('id', sessionId);
 
             if (error) throw error;
             return res.json({ success: true });
@@ -96,7 +83,7 @@ module.exports = async (req, res) => {
         return res.status(405).json({ error: 'Method not allowed' });
 
     } catch (error) {
-        console.error('[Feedback API] Error:', error);
+        console.error('[Chat Sessions API] Error:', error);
         res.status(500).json({ error: error.message });
     }
 };

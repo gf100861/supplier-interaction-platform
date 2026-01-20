@@ -3,7 +3,7 @@ const cors = require('cors');
 
 // 初始化 CORS 中间件
 const corsMiddleware = cors({
-    origin: true, // 允许所有 Origin，并返回正确的 Access-Control-Allow-Origin
+    origin: true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
     credentials: true,
@@ -22,38 +22,34 @@ function runMiddleware(req, res, fn) {
 }
 
 module.exports = async (req, res) => {
-    // 1. 手动设置 CORS 头（双重保险）
-    // 必须写在函数内部！
+    // 1. 手动设置 CORS 头
     const requestOrigin = req.headers.origin || '*';
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    // 2. 处理 OPTIONS 预检请求（直接返回成功，不再往下走）
+    // 2. 处理 OPTIONS
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
     try {
-        // 3. 运行 CORS 中间件
         await runMiddleware(req, res, corsMiddleware);
     } catch (e) {
         console.error("CORS Middleware Error:", e);
         return res.status(500).json({ error: 'Internal Server Error (CORS)' });
     }
 
-    // 4. 检查请求方法
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
     // --- 业务逻辑 ---
     
-    // 初始化 Supabase
     const supabaseAdmin = createClient(
         process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY, // 确保 .env 里有这个 Key
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
         {
             auth: {
                 autoRefreshToken: false,
@@ -69,7 +65,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // 创建 Auth 用户
+        // 1. 在 Supabase Auth 系统中创建用户（这里会安全地存储哈希后的密码）
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: password,
@@ -102,13 +98,14 @@ module.exports = async (req, res) => {
             }
         }
 
-        // 创建 public.users 记录
+        // 2. 创建 public.users 记录
+        // ⚠️【安全修改】：已移除 password 字段
         const { error: profileError } = await supabaseAdmin
             .from('users')
             .insert({
                 id: newUserId,
                 username: username,
-                password: password,
+                // password: password, // <--- 已删除此行，永远不要保存明文密码！
                 email: email,
                 role: role,
                 supplier_id: supplierId,

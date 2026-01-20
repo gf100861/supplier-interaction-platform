@@ -30,6 +30,12 @@ const settingsHandler = require('./controllers/setting');
 const knowledgeBaseHandler = require('./controllers/knowledge-base');
 const fileSyncHandler = require('./controllers/file-sync');
 const aiHandler = require('./controllers/ai');
+const resetPasswordHandler = require('./controllers/auth/reset-password');
+const updatePasswordHandler = require('./controllers/auth/update-password');
+const chatMessagesHandler = require('./controllers/chat/messages');
+
+const chatSessionsHandler = require('./controllers/chat/sessions');
+const chatRatingsHandler = require('./controllers/chat/ratings');
 
 const app = express();
 const server = http.createServer(app);
@@ -142,6 +148,12 @@ app.all('/api/knowledge-base', knowledgeBaseHandler);
 app.all('/api/file-sync/download', fileSyncHandler);
 app.all('/api/ai/embedding', aiHandler);
 
+app.post('/api/auth/reset-password', resetPasswordHandler);
+app.post('/api/auth/update-password', updatePasswordHandler);
+
+app.all('/api/chat/messages', chatMessagesHandler);
+app.all('/api/chat/sessions', chatSessionsHandler);
+app.post('/api/chat/ratings', chatRatingsHandler);
 const PORT = process.env.PORT || 3001;
 
 // Vercel 环境下不运行监听，仅导出 app

@@ -20,7 +20,7 @@ const { Search, TextArea } = Input;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix', 'alarm'];
 const feedbackStatusConfig = {
@@ -36,11 +36,11 @@ const AdminPage = () => {
     const [systemNotices, setSystemNotices] = useState([]);
     const [isNoticeModalVisible, setIsNoticeModalVisible] = useState(false);
     const [noticeForm] = Form.useForm();
-    
+
     const [users, setUsers] = useState([]);
     const [allSuppliers, setAllSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
-    
+
     const { messageApi } = useNotification();
     const { notices, updateNotice, loading: noticesLoading } = useNotices(); // NoticeContext 已经改过 fetch 了
 
@@ -63,7 +63,7 @@ const AdminPage = () => {
     const [isManageModalVisible, setIsManageModalVisible] = useState(false);
     const [managingUser, setManagingUser] = useState(null);
     const [targetSupplierKeys, setTargetSupplierKeys] = useState([]);
-    
+
     const [correctionModal, setCorrectionModal] = useState({ visible: false, type: null, notice: null });
     const [correctionForm] = Form.useForm();
 
@@ -79,6 +79,20 @@ const AdminPage = () => {
             navigate('/');
         }
     }, [currentUser, navigate]);
+
+
+    // --- Filter Logic ---
+    const filteredUsers = useMemo(() => {
+        return users.filter(user => {
+            // const statusMatch = statusFilter === '全部' || user.status === statusFilter || (statusFilter === '待处理' && user.status.includes('待'));
+            
+            const searchMatch = searchTerm === '' ||
+                (user.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (user.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (user.role || '').toLowerCase().includes(searchTerm.toLowerCase());
+            return searchMatch;
+        });
+    }, [users, searchTerm, statusFilter]);
 
     // --- Filter Logic ---
     const filteredNotices = useMemo(() => {
@@ -113,7 +127,7 @@ const AdminPage = () => {
             // B. 获取供应商
             const suppliersRes = await fetch(`${BACKEND_URL}/api/suppliers`);
             // C. 获取反馈 (需要新增 API)
-            const feedbackRes = await fetch(`${BACKEND_URL}/api/admin/feedback`); 
+            const feedbackRes = await fetch(`${BACKEND_URL}/api/admin/feedback`);
             // D. 获取系统公告 (需要新增 API)
             const systemNoticesRes = await fetch(`${BACKEND_URL}/api/admin/system-notices`);
 
@@ -313,7 +327,7 @@ const AdminPage = () => {
 
     const showEditModal = (user) => { setEditingUser(user); editForm.setFieldsValue({ username: user.username, phone: user.phone, password: '' }); setIsEditModalVisible(true); };
     const handleCancel = () => { setIsEditModalVisible(false); setEditingUser(null); setIsManageModalVisible(false); setManagingUser(null); };
-    
+
     // 6. 编辑用户 (需要新增 API: /api/admin/update-user)
     const handleEditUser = async (values) => {
         try {
@@ -340,7 +354,7 @@ const AdminPage = () => {
     };
 
     const showManageModal = (user) => { setManagingUser(user); setTargetSupplierKeys(user.managed_suppliers.map(ms => ms.supplier_id)); setIsManageModalVisible(true); };
-    
+
     // 7. 管理供应商分配 (需要新增 API: /api/admin/manage-assignments)
     const handleManageSuppliers = async () => {
         try {
@@ -365,7 +379,7 @@ const AdminPage = () => {
     };
 
     const onTransferChange = (nextTargetKeys) => { setTargetSupplierKeys(nextTargetKeys); };
-    
+
     // 8. 更新反馈状态 (需要新增 API: /api/admin/feedback)
     const handleFeedbackStatusChange = async (id, status) => {
         messageApi.loading({ content: '正在更新状态...', key: `feedback-${id}` });
@@ -446,12 +460,12 @@ const AdminPage = () => {
                     is_active: true
                 })
             });
-            
+
             if (!response.ok) throw new Error('Publish failed');
 
             messageApi.success('系统公告发布成功！');
             setIsNoticeModalVisible(false);
-            fetchData(); 
+            fetchData();
         } catch (error) {
             messageApi.error(`发布失败: ${error.message}`);
         } finally {
@@ -581,7 +595,21 @@ const AdminPage = () => {
         {
             key: '1',
             label: <Space><UserSwitchOutlined />用户与供应商管理</Space>,
-            children: <Table columns={userColumns} dataSource={users} rowKey="id" />
+            children: (
+                <>
+                    <Space style={{ marginBottom: 16 }}>
+                        <Search
+                            placeholder="搜索人员..."
+                            onSearch={value => setSearchTerm(value)}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            style={{ width: 300 }}
+                            allowClear
+                        />
+                    </Space>
+                    <Table columns={userColumns} dataSource={filteredUsers} rowKey="id" />
+                </>
+            )
+
         },
         {
             key: '2',
@@ -741,9 +769,9 @@ const AdminPage = () => {
                             发布新公告
                         </Button>
                     </div>
-                    <Table 
-                        columns={systemNoticeColumns} 
-                        dataSource={systemNotices} 
+                    <Table
+                        columns={systemNoticeColumns}
+                        dataSource={systemNotices}
                         rowKey="id"
                         pagination={{ pageSize: 5 }}
                         locale={{ emptyText: <Empty description="暂无历史公告" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
@@ -794,7 +822,15 @@ const AdminPage = () => {
                 <Form form={editForm} layout="vertical" onFinish={handleEditUser}>
                     <Form.Item name="username" label="姓名" rules={[{ required: true }]}><Input /></Form.Item>
                     <Form.Item name="phone" label="电话"><Input /></Form.Item>
-                    <Form.Item name="password" label="新密码 (留空则不修改)"><Input.Password /></Form.Item>
+                    <Form.Item
+                        name="password"
+                        label="新密码 (留空则不修改)"
+                        rules={[
+                            { min: 6, message: '密码长度不能少于6位' } // ✅ 添加这一行
+                        ]}
+                    >
+                        <Input.Password />
+                    </Form.Item>
                     <Button type="primary" htmlType="submit">保存更改</Button>
                 </Form>
             </Modal>

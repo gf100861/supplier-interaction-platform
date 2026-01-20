@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-    Button, Modal, Form, Input, Select, Tag, Typography, Card, 
-    Popconfirm, Space, Tooltip, Divider, Spin, 
-    Statistic, Row, Col, Radio 
+import {
+    Button, Modal, Form, Input, Select, Tag, Typography, Card,
+    Popconfirm, Space, Tooltip, Divider, Spin,
+    Statistic, Row, Col, Radio
 } from 'antd';
-import { 
-    DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined, 
-    RightOutlined, CheckCircleOutlined, DownloadOutlined, 
-    UndoOutlined, ReconciliationOutlined, FileTextOutlined, 
-    CalendarOutlined, FullscreenOutlined 
+import {
+    DeleteOutlined, AuditOutlined, TeamOutlined, LeftOutlined,
+    RightOutlined, CheckCircleOutlined, DownloadOutlined,
+    UndoOutlined, ReconciliationOutlined, FileTextOutlined,
+    CalendarOutlined, FullscreenOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
@@ -24,7 +24,7 @@ const { Option } = Select;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
 
@@ -40,7 +40,7 @@ const matrixStyles = {
         display: 'flex',
         position: 'sticky',
         top: 0,
-        zIndex: 10, 
+        zIndex: 10,
         backgroundColor: '#fafafa',
         borderBottom: '1px solid #f0f0f0'
     },
@@ -53,15 +53,15 @@ const matrixStyles = {
         zIndex: 5
     },
     headerCell: { padding: '16px', fontWeight: 'bold', borderRight: '1px solid #f0f0f0', textAlign: 'center', position: 'relative' },
-    cell: { 
-        padding: '8px', 
-        borderRight: '1px solid #f0f0f0', 
-        borderTop: '1px solid #f0f0f0', 
-        minHeight: '100px', 
+    cell: {
+        padding: '8px',
+        borderRight: '1px solid #f0f0f0',
+        borderTop: '1px solid #f0f0f0',
+        minHeight: '100px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
-        cursor: 'pointer', 
+        cursor: 'pointer',
         transition: 'background-color 0.2s'
     },
 };
@@ -71,13 +71,13 @@ const translateError = (error) => {
     if (msg.includes('Invalid login credentials')) return '登录凭证无效或已过期，请尝试重新登录';
     if (msg.includes('User not found')) return '用户不存在';
     if (msg.includes('duplicate key value')) return '该记录已存在，请勿重复添加';
-    return msg; 
+    return msg;
 };
 
 const AuditPlanPage = () => {
     const [events, setEvents] = useState([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
-    const [eventType, setEventType] = useState('audit'); 
+    const [eventType, setEventType] = useState('audit');
     const [form] = Form.useForm();
     const [currentYear, setCurrentYear] = useState(dayjs().year());
     const [loading, setLoading] = useState(true);
@@ -93,13 +93,13 @@ const AuditPlanPage = () => {
     // --- 筛选器 State ---
     const [selectedSupplierKeys, setSelectedSupplierKeys] = useState([]);
     const [selectedCategoryKeys, setSelectedCategoryKeys] = useState([]);
-    const [selectedStatusKey, setSelectedStatusKey] = useState('all'); 
+    const [selectedStatusKey, setSelectedStatusKey] = useState('all');
 
     const [rescheduleTarget, setRescheduleTarget] = useState(null);
 
     const rollingMonths = useMemo(() => {
         const options = [];
-        const start = dayjs().startOf('month'); 
+        const start = dayjs().startOf('month');
         for (let i = 0; i < 12; i++) {
             const d = start.add(i, 'month');
             options.push({
@@ -123,7 +123,7 @@ const AuditPlanPage = () => {
             const configRes = await fetch(`${BACKEND_URL}/api/config`);
             if (!configRes.ok) throw new Error('Fetch config failed');
             const configData = await configRes.json();
-            const categoriesData = Array.isArray(configData) ? configData : (configData.categories || []); 
+            const categoriesData = Array.isArray(configData) ? configData : (configData.categories || []);
 
             const sortedCategories = categoriesData.sort((a, b) => {
                 const order = { "Process Audit": 1, "SEM": 2 };
@@ -145,7 +145,7 @@ const AuditPlanPage = () => {
         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') return suppliers;
         if (currentUser.role === 'SD') {
             const managed = currentUser.managed_suppliers || [];
-            const managedIds = managed.map(m => m.supplier_id || m.supplier?.id || m); 
+            const managedIds = managed.map(m => m.supplier_id || m.supplier?.id || m);
             return suppliers.filter(s => managedIds.includes(s.id));
         }
         return [];
@@ -247,7 +247,7 @@ const AuditPlanPage = () => {
             });
             if (!response.ok) throw new Error('Reschedule failed');
             messageApi.success(`计划已成功移动到 ${target.year}年 ${target.month}月！`);
-            fetchData(); 
+            fetchData();
         } catch (error) {
             messageApi.error(`计划调整失败: ${translateError(error.message)}`);
         } finally {
@@ -265,7 +265,7 @@ const AuditPlanPage = () => {
             auditor: currentUser?.username || '',
             supplierId: prefillData.supplierId || undefined,
             plannedMonth: prefillData.plannedMonth || undefined,
-            type: type || 'audit' 
+            type: type || 'audit'
         });
         setIsModalVisible(true);
     };
@@ -278,7 +278,7 @@ const AuditPlanPage = () => {
             messageApi.error("未找到供应商信息，无法提交。");
             return;
         }
-        
+
         const finalType = values.type || eventType;
 
         const newEvent = {
@@ -360,7 +360,7 @@ const AuditPlanPage = () => {
             { header: "Parma号", key: "parmaId", width: 15 },
             { header: "CMT", key: "cmt", width: 15 },
             { header: "供应商", key: "supplierName", width: 30 },
-            { header: "供应商代码", key: "shortCode", width: 15 }, 
+            { header: "供应商代码", key: "shortCode", width: 15 },
             ...months.map((m, i) => ({ header: m, key: `month_${i + 1}`, width: 30 }))
         ];
         worksheet.columns = columns;
@@ -431,7 +431,7 @@ const AuditPlanPage = () => {
 
     // ✅ 4. 封装筛选栏：提取成组件以便复用
     const renderFilterBar = () => (
-        <Row gutter={[16, 20]} align="middle" style={{ marginBottom: 16 }}> 
+        <Row gutter={[16, 20]} align="middle" style={{ marginBottom: 16 }}>
             <Col xs={24} sm={12} md={8} lg={6}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span style={{ whiteSpace: 'nowrap', marginRight: 12, color: '#000000d9' }}>筛选供应商:</span>
@@ -506,8 +506,8 @@ const AuditPlanPage = () => {
                     {Array.from({ length: 12 }).map((_, monthIndex) => {
                         const itemsInCell = matrixData[supplier.name]?.[monthIndex] || [];
                         return (
-                            <div 
-                                key={monthIndex} 
+                            <div
+                                key={monthIndex}
                                 style={{ ...matrixStyles.cell, flex: `0 0 ${monthColumnWidths[monthIndex]}px` }}
                                 onClick={() => showAddModal('audit', { supplierId: supplier.id, plannedMonth: monthIndex + 1 })}
                                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fafafa'}
@@ -522,18 +522,18 @@ const AuditPlanPage = () => {
                                     const typeInfo = typeTagMap[item.type] || { color: 'default', text: item.type };
 
                                     const rescheduleTitle = (
-                                        <div style={{width: 200}} onClick={e => e.stopPropagation()}>
+                                        <div style={{ width: 200 }} onClick={e => e.stopPropagation()}>
                                             <Text>调整计划至:</Text>
-                                            <Select 
-                                                placeholder="选择月份" 
+                                            <Select
+                                                placeholder="选择月份"
                                                 style={{ width: '100%', marginTop: 8 }}
                                                 onChange={(value) => setRescheduleTarget(value)}
                                                 onClick={e => e.stopPropagation()}
                                             >
                                                 {rollingMonths.map((opt) => (
-                                                    <Option 
-                                                        key={opt.value} 
-                                                        value={opt.value} 
+                                                    <Option
+                                                        key={opt.value}
+                                                        value={opt.value}
                                                         disabled={item.year === opt.year && item.planned_month === opt.month}
                                                     >
                                                         {opt.label}
@@ -544,17 +544,17 @@ const AuditPlanPage = () => {
                                     );
 
                                     return (
-                                        <div 
-                                            key={item.id} 
-                                            style={{ 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'space-between', 
-                                                width: '100%', 
-                                                padding: '4px', 
-                                                marginBottom: '4px', 
-                                                borderRadius: '4px', 
-                                                background: item.status === 'completed' ? '#f6ffed' : '#ffffff', 
+                                        <div
+                                            key={item.id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                width: '100%',
+                                                padding: '4px',
+                                                marginBottom: '4px',
+                                                borderRadius: '4px',
+                                                background: item.status === 'completed' ? '#f6ffed' : '#ffffff',
                                                 border: '1px solid #d9d9d9',
                                                 boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                                             }}
@@ -618,7 +618,7 @@ const AuditPlanPage = () => {
                 </div>
                 <Paragraph type="secondary" style={{ margin: '0' }}>规划和跟踪本年度供应商审计、QRM会议与质量评审的整体进度。点击单元格空白处可快速添加。</Paragraph>
                 <Divider style={{ margin: '16px 0' }} />
-                
+
                 {/* 6. 在主页面调用 Filter Bar */}
                 {renderFilterBar()}
 
@@ -652,7 +652,7 @@ const AuditPlanPage = () => {
                 onCancel={() => setIsFullScreen(false)}
                 footer={null}
                 width="100%"
-                style={{ top: 0, padding: 0, maxWidth: '100vw', height: '100vh', margin: 0 }}
+                style={{ top: 0, padding: 0, maxWidth: '120vw', height: '100vh', margin: 0 }}
                 bodyStyle={{ height: 'calc(100vh - 55px)', display: 'flex', flexDirection: 'column', padding: 0 }}
                 maskStyle={{ backgroundColor: '#fff' }}
             >
@@ -661,7 +661,18 @@ const AuditPlanPage = () => {
                     {renderFilterBar()}
                 </div>
                 {/* 表格容器 */}
-                <div style={{ flex: 1, overflow: 'auto', padding: 0 }}>
+                <div style={{
+                    padding: '8px',
+                    borderRight: '1px solid #f0f0f0',
+                    borderTop: '1px solid #f0f0f0',
+                    minHeight: '100px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'flex-start',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s'
+
+                }}>
                     {renderMatrixTable()}
                 </div>
             </Modal>

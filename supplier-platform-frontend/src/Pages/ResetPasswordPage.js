@@ -1,61 +1,83 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, Typography, Layout, Alert } from 'antd';
-import { LockOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Card, Typography, Layout } from 'antd';
+import { MailOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
-import { supabase } from '../supabaseClient';
+// ❌ 移除直接的 supabase 引用
+// import { supabase } from '../supabaseClient'; 
 
 const { Title, Paragraph } = Typography;
 
-const ResetPasswordPage = () => {
+// 🔧 环境配置 (确保指向你的后端地址)
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+
+const ForgotPasswordPage = () => {
     const navigate = useNavigate();
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
 
-    // --- 核心：处理密码更新 ---
     const onFinish = async (values) => {
-        if (values.password !== values.confirm) {
-            setError('两次输入的密码不一致！');
-            return;
-        }
         setLoading(true);
-        setError(null);
-
         try {
-            // Supabase 会自动从 URL 中处理 token
-            const { error } = await supabase.auth.updateUser({ password: values.password });
+            // 1. 获取重定向地址 (密码重置后跳转回前端的哪个页面)
+            const redirectUrl = `${window.location.origin}/update-password`;
             
-            if (error) throw error;
+            console.log("正在请求后端重置，重定向地址为:", redirectUrl);
+
+            // 2. ✅ 调用后端 API
+            const response = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    email: values.email, 
+                    redirectTo: redirectUrl 
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || '请求失败');
+            }
             
-            messageApi.success('密码重置成功！现在您可以使用新密码登录了。');
-            navigate('/login'); // 重置成功后，跳转到登录页
+            messageApi.success('密码重置邮件已发送！请检查您的收件箱...');
+            
+            // 稍微延迟跳转，让用户看清提示
+            setTimeout(() => {
+                navigate('/login');
+            }, 1500);
 
         } catch (error) {
-            setError(error.message || '密码重置失败，链接可能已过期。');
+            console.error(error);
+            messageApi.error(error.message || '发送邮件失败，请稍后重试。');
         } finally {
             setLoading(false);
         }
     };
-    
+
     return (
         <Layout style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f2f5' }}>
             <Card style={{ width: 400 }}>
                 <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                    <Title level={3}>设置新密码</Title>
-                    <Paragraph type="secondary">请输入您的新密码。</Paragraph>
+                    <Title level={3}>重置密码</Title>
+                    <Paragraph type="secondary">请输入您的注册邮箱，我们将向您发送一封包含密码重置链接的邮件。</Paragraph>
                 </div>
-                <Form name="reset_password_form" onFinish={onFinish} layout="vertical">
-                    <Form.Item name="password" label="新密码" rules={[{ required: true, message: '请输入新密码' }]}>
-                        <Input.Password prefix={<LockOutlined />} placeholder="请输入新密码" size="large" />
+                <Form name="forgot_password_form" onFinish={onFinish} layout="vertical">
+                    <Form.Item
+                        name="email"
+                        label="注册邮箱"
+                        rules={[{ required: true, message: '请输入邮箱地址' }, { type: 'email', message: '请输入有效的邮箱格式' }]}
+                    >
+                        <Input prefix={<MailOutlined />} placeholder="请输入您的注册邮箱" size="large" />
                     </Form.Item>
-                    <Form.Item name="confirm" label="确认新密码" dependencies={['password']} rules={[{ required: true, message: '请再次输入新密码' }, ({ getFieldValue }) => ({ validator(_, value) { if (!value || getFieldValue('password') === value) { return Promise.resolve(); } return Promise.reject(new Error('两次输入的密码不一致！')); } })]}>
-                        <Input.Password prefix={<LockOutlined />} placeholder="请再次输入新密码" size="large" />
-                    </Form.Item>
-                    {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 24 }} />}
                     <Form.Item>
                         <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">
-                            确认并更新密码
+                            发送重置邮件
                         </Button>
                     </Form.Item>
                 </Form>
@@ -64,4 +86,4 @@ const ResetPasswordPage = () => {
     );
 };
 
-export default ResetPasswordPage;
+export default ForgotPasswordPage;
