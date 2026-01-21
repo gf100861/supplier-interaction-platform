@@ -36,7 +36,10 @@ const chatMessagesHandler = require('./controllers/chat/messages');
 
 const chatSessionsHandler = require('./controllers/chat/sessions');
 const chatRatingsHandler = require('./controllers/chat/ratings');
+const analyzeDocumentHandler = require('./controllers/ai/analyze-document');
+const archiveHistoricalHandler = require('./controllers/notices/archive-historical');
 
+const fileUploadHandler = require('./controllers/file-sync/upload');
 const app = express();
 const server = http.createServer(app);
 
@@ -154,6 +157,13 @@ app.post('/api/auth/update-password', updatePasswordHandler);
 app.all('/api/chat/messages', chatMessagesHandler);
 app.all('/api/chat/sessions', chatSessionsHandler);
 app.post('/api/chat/ratings', chatRatingsHandler);
+
+app.post('/api/ai/analyze-document', analyzeDocumentHandler);
+
+// Historical Archive
+app.post('/api/notices/archive-historical', archiveHistoricalHandler);
+
+app.post('/api/file-sync/upload', fileUploadHandler);
 const PORT = process.env.PORT || 3001;
 
 // Vercel 环境下不运行监听，仅导出 app

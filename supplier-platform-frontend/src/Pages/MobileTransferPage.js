@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Upload, Button, Typography, message, Card, Spin, Result } from 'antd';
+import { Layout, Upload, Button, Typography, message, Card, Spin } from 'antd';
 import { CloudUploadOutlined, CheckCircleFilled, LoadingOutlined } from '@ant-design/icons';
-import { supabase } from '../supabaseClient';
 import { useSearchParams } from 'react-router-dom';
+
+// ❌ 移除 Supabase
+// import { supabase } from '../supabaseClient';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
+
+// 🔧 环境配置 (确保后端地址正确)
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 const MobileTransferPage = () => {
     const [searchParams] = useSearchParams();
@@ -14,7 +22,6 @@ const MobileTransferPage = () => {
     const [successKey, setSuccessKey] = useState(0);
 
     useEffect(() => {
-        // 从 URL 参数中获取目标用户 ID (?uid=...)
         const uid = searchParams.get('uid');
         if (uid) {
             setTargetUserId(uid);
@@ -23,39 +30,32 @@ const MobileTransferPage = () => {
         }
     }, [searchParams]);
 
+    // ✅ 修改后的上传逻辑
     const customRequest = async ({ file, onSuccess, onError }) => {
         if (!targetUserId) return;
 
         setUploading(true);
         try {
-            const fileExt = file.name.split('.').pop();
-            // 生成唯一文件名
-            const safeFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}${fileExt ? '.' + fileExt : ''}`;
-            // 关键：上传到目标用户的文件夹路径，这样 PC 端能监听到
-            const filePath = `${targetUserId}/${safeFileName}`;
+            // 1. 构建 FormData
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('targetUserId', targetUserId);
 
-            // 1. 上传文件
-            const { error: uploadError } = await supabase.storage
-                .from('file_sync')
-                .upload(filePath, file);
+            // 2. 调用后端 API
+            const response = await fetch(`${BACKEND_URL}/api/file-sync/upload`, {
+                method: 'POST',
+                // 注意：fetch 会自动设置 Content-Type 为 multipart/form-data，不要手动设置 headers
+                body: formData,
+            });
 
-            if (uploadError) throw uploadError;
-
-            // 2. 写入数据库记录 (触发 PC 端 Realtime)
-            const { error: insertError } = await supabase
-                .from('user_files')
-                .insert({
-                    user_id: targetUserId, // 归属于 PC 端用户
-                    file_name: file.name,
-                    file_path: filePath,
-                    source_device: 'mobile_scan' // 标记来源
-                });
-
-            if (insertError) throw insertError;
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || 'Upload failed');
+            }
 
             onSuccess("ok");
             message.success(`${file.name} 发送成功！`);
-            setSuccessKey(prev => prev + 1); // 触发动画
+            setSuccessKey(prev => prev + 1);
         } catch (err) {
             console.error(err);
             onError(err);
@@ -77,7 +77,6 @@ const MobileTransferPage = () => {
     return (
         <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
             <Content style={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                
                 <Card style={{ borderRadius: 16, textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                     <div style={{ marginBottom: 24 }}>
                         <CloudUploadOutlined style={{ fontSize: 64, color: '#1890ff' }} />
@@ -89,6 +88,7 @@ const MobileTransferPage = () => {
                         customRequest={customRequest}
                         showUploadList={false}
                         multiple
+                        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" // 建议限制一下类型
                     >
                         <Button 
                             type="primary" 

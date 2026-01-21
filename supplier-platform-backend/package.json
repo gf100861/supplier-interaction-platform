@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Serverless backend for Supplier Interaction Platform",
   "main": "api/index.js",
-"scripts": {
+  "scripts": {
     "start": "node api/index.js",
     "dev": "nodemon server.js",
     "build": "mkdir -p public && echo 'Backend is running' > public/index.html"
@@ -14,6 +14,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
+    "multer": "^2.0.2",
     "nodemailer": "^6.10.1",
     "openai": "^4.104.0",
     "socket.io": "^4.8.1"
