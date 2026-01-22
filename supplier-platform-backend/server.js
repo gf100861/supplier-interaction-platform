@@ -41,7 +41,7 @@ const archiveHistoricalHandler = require('./controllers/notices/archive-historic
 
 const fileUploadHandler = require('./controllers/file-sync/upload');
 
-const triggerSecurityAlertHandler = require('./controllers/security/trigger-alert');
+
 
 const filesHandler = require('./controllers/file-sync/files'); // 新增
 const app = express();
