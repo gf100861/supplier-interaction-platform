@@ -728,7 +728,7 @@ const NoticePage = () => {
                 history: [...currentHistory, newHistory],
             });
 
-            // 假设您有一个 'alerts' 表
+            // [新增] 创建结构化提醒
             const alertsToInsert = [
                 { creator_id: currentUser.id, target_user_id: notice.assignedSupplierId, message: `"${notice.title}" 已被重分配，您无需再处理。`, link: `/notices` },
                 { creator_id: currentUser.id, target_user_id: newSupplier.id, message: `您有一个新的通知单被分配: "${notice.title}"。`, link: `/notices?open=${notice.id}` },

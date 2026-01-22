@@ -3,9 +3,6 @@ import { Layout, Upload, Button, Typography, message, Card, Spin } from 'antd';
 import { CloudUploadOutlined, CheckCircleFilled, LoadingOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 
-// ❌ 移除 Supabase
-// import { supabase } from '../supabaseClient';
-
 const { Content } = Layout;
 const { Title, Text } = Typography;
 

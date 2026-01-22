@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-// ❌ 移除 Supabase
-// import { supabase } from '../supabaseClient';
 import { EmailService } from '../services/EmailService';
 
 const NoticeContext = createContext();
@@ -38,9 +36,7 @@ export const NoticeProvider = ({ children }) => {
     useEffect(() => {
         const fetchNotices = async () => {
             try {
-                const apiPath = isDev ? `/api/notices` : `/api/notices`;
-                const targetUrl = `${BACKEND_URL}${apiPath}`;
-
+                const targetUrl = `${BACKEND_URL}/api/notices`;
                 const response = await fetch(targetUrl);
                 if (!response.ok) throw new Error('Fetch notices failed');
                 
@@ -55,48 +51,29 @@ export const NoticeProvider = ({ children }) => {
             }
         };
         fetchNotices();
-        
-        // ⚠️ 实时订阅功能 (Realtime) 已暂停
-        // 迁移到 API 模式后，无法直接使用 Supabase Channel。
-        // 下一步计划：使用 Socket.IO 在后端实现实时推送。
-        
     }, []);
 
-    // --- 2. 内部辅助：批量创建站内信 (调用后端 API) ---
-    const createSystemAlerts = async (alertsData) => {
-        if (!alertsData || alertsData.length === 0) return;
+    // --- 2. 内部辅助：调用后端创建通知 (支持两种模式) ---
+    // 模式 A: 传 alerts 数组 (直接插入)
+    // 模式 B: 传 createBySupplier 对象 (后端自动分发)
+    const createSystemAlerts = async (payload) => {
         try {
-            const apiPath = isDev ? `/api/alerts` : `/api/alerts`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const targetUrl = `${BACKEND_URL}/api/alerts`;
             await fetch(targetUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(alertsData)
+                body: JSON.stringify(payload) // 直接把 payload 发给后端
             });
         } catch (err) {
             console.error("创建站内通知异常:", err);
         }
     };
 
-    // --- 3. 辅助：获取用户列表 (调用后端 API) ---
-    const fetchUsersBySupplier = async (supplierId) => {
-        try {
-            const apiPath = isDev ? `/api/users` : `/api/users`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
-            const res = await fetch(`${targetUrl}?supplierId=${supplierId}`);
-            if (!res.ok) return [];
-            return await res.json();
-        } catch (e) {
-            return [];
-        }
-    };
-
-    // --- 4. 更新通知单 (PATCH) ---
+    // --- 3. 更新通知单 (PATCH) ---
     const updateNotice = async (noticeId, updates) => {
         try {
             // A. 调用后端更新数据
-            const apiPath = isDev ? `/api/notices` : `/api/notices`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const targetUrl = `${BACKEND_URL}/api/notices`;
             const response = await fetch(targetUrl, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -106,99 +83,75 @@ export const NoticeProvider = ({ children }) => {
             if (!response.ok) throw new Error('Update failed');
             const data = await response.json(); // 后端返回最新的 notice (snake_case)
 
-            // B. 业务逻辑：发送邮件和通知 (保持前端原有逻辑，但数据源来自后端返回)
+            // B. 业务逻辑：发送通知
             const { old_supplier_id } = updates;
-            const newStatus = data.status; // data 是后端返回的 DB 记录
-            const sdName = data.creator?.username || 'SD';
-            const sdEmail = data.creator?.email;
+            const newStatus = data.status;
             const sdId = data.creator_id;
             
-            // 解析历史记录 (注意：后端返回的可能是 snake_case 字段，这里尽量兼容)
             const historyArray = data.history || [];
             const lastHistory = historyArray.length > 0 ? historyArray[historyArray.length - 1] : {};
-            const comment = lastHistory?.description || '';
             const historyType = lastHistory?.type;
 
-            const alertsToCreate = [];
-
-            // --- 逻辑块：SD 通知 ---
-            if (newStatus === '待SD确认actions') {
-                // if (sdEmail) EmailService.notifySDPlanSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
-                if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交行动计划: ${data.title}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
+            // 1. 发给 SD 的通知 (SD 只有一个人，还是手动构建比较方便)
+            const alertsForSD = [];
+            if (newStatus === '待SD确认actions' && sdId) {
+                alertsForSD.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交行动计划`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
+            }
+            if (newStatus === '待SD关闭evidence' && sdId) {
+                alertsForSD.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交完成证据`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
+            }
+            if (alertsForSD.length > 0) {
+                await createSystemAlerts({ alerts: alertsForSD });
             }
 
-            if (newStatus === '待SD关闭evidence') {
-                // if (sdEmail) EmailService.notifySDEvidenceSubmitted(sdEmail, data.assigned_supplier_name, data.title, sdName, data.notice_code);
-                if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交完成证据: ${data.title}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
-            }
-
-            // --- 逻辑块：重分配 ---
+            // 2. 发给 供应商 的通知 (使用 createBySupplier 模式)
+            // Case 1: 重分配 (通知旧供应商和新供应商)
             if (historyType === 'manager_reassignment' && old_supplier_id) {
-                // 调用新写的 Users API 获取用户
-                const oldSupUsers = await fetchUsersBySupplier(old_supplier_id);
-                const newSupUsers = await fetchUsersBySupplier(data.assigned_supplier_id);
-
-                const oldEmails = oldSupUsers.map(u => u.email).filter(Boolean);
-                const newEmails = newSupUsers.map(u => u.email).filter(Boolean);
-
-                // await EmailService.notifyReassignment({
-                //     oldSupplierEmail: oldEmails,
-                //     newSupplierEmail: newEmails,
-                //     sdEmail: sdEmail,
-                //     noticeTitle: data.title,
-                //     noticeCode: data.notice_code,
-                //     oldSupplierName: '旧供应商',
-                //     newSupplierName: data.assigned_supplier_name,
-                //     reason: comment
-                // });
-
-                // 构造 Alerts
-                oldSupUsers.forEach(u => alertsToCreate.push({ target_user_id: u.id, message: `通知单 ${data.notice_code} 已被移出您的列表 (重分配)`, link: `/notices`, created_at: new Date().toISOString() }));
-                newSupUsers.forEach(u => alertsToCreate.push({ target_user_id: u.id, message: `收到新分配的通知单: ${data.title} (${data.notice_code})`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() }));
-                if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `通知单 ${data.notice_code} 供应商已变更为 ${data.assigned_supplier_name}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
+                // 通知旧供应商
+                await createSystemAlerts({
+                    createBySupplier: {
+                        supplierId: old_supplier_id,
+                        title: '任务移除',
+                        message: `通知单 ${data.notice_code} 已被移出您的列表`,
+                        link: `/notices`
+                    }
+                });
+                // 通知新供应商
+                await createSystemAlerts({
+                    createBySupplier: {
+                        supplierId: data.assigned_supplier_id,
+                        title: '新任务分配',
+                        message: `收到新分配的通知单: ${data.title}`,
+                        link: `/notices?open=${noticeId}`
+                    }
+                });
             }
 
-            // --- 逻辑块：审核结果/作废 ---
+            // Case 2: 审核结果通知
             const isPlanReview = (newStatus === '待供应商关闭' && historyType === 'sd_plan_approval') || (newStatus === '待提交Action Plan');
             const isEvidenceReview = (newStatus === '已完成') || (newStatus === '待供应商关闭' && historyType === 'sd_evidence_rejection');
             const isAborted = (newStatus === '已作废');
 
             if (isPlanReview || isEvidenceReview || isAborted) {
-                const supUsers = await fetchUsersBySupplier(data.assigned_supplier_id);
-                if (supUsers.length > 0) {
-                    const emails = supUsers.map(u => u.email).filter(Boolean);
-                    
-                    if (isPlanReview) {
-                        const resultText = (newStatus === '待供应商关闭') ? '计划已批准，请上传证据' : '计划被驳回，请修改';
-                        // EmailService.notifySupplierAuditResult(emails, data.title, resultText, comment, sdName, data.notice_code);
-                    } else if (isEvidenceReview) {
-                        const resultText = (newStatus === '已完成') ? '所有证据已通过，通知单已关闭' : '部分证据被驳回，请补充提交';
-                        EmailService.notifySupplierEvidenceResult(emails, data.title, resultText, comment, sdName, data.notice_code);
-                    } else if (isAborted) {
-                        //EmailService.notifyNoticeAbortion(emails, data.title, data.notice_code, comment, '管理员');
+                let msg = '';
+                let title = '审核结果更新';
+                
+                if (isPlanReview) msg = `计划审核结果: ${newStatus === '待供应商关闭' ? '通过' : '驳回'}`;
+                else if (isEvidenceReview) msg = `证据审核结果: ${newStatus === '已完成' ? '通过/关闭' : '驳回'}`;
+                else if (isAborted) { msg = `通知单已作废: ${data.title}`; title = '通知单作废'; }
+
+                // 一键通知该供应商下所有人
+                await createSystemAlerts({
+                    createBySupplier: {
+                        supplierId: data.assigned_supplier_id,
+                        title: title,
+                        message: `${msg} (${data.notice_code})`,
+                        link: `/notices?open=${noticeId}`
                     }
-
-                    supUsers.forEach(u => {
-                        let msg = '';
-                        if (isPlanReview) msg = `计划审核结果: ${newStatus === '待供应商关闭' ? '通过' : '驳回'}`;
-                        else if (isEvidenceReview) msg = `证据审核结果: ${newStatus === '已完成' ? '通过/关闭' : '驳回'}`;
-                        else if (isAborted) msg = `通知单已作废: ${data.title}`;
-                        alertsToCreate.push({ target_user_id: u.id, message: `${msg} (${data.notice_code})`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
-                    });
-                }
+                });
             }
 
-            if (isAborted && sdEmail) {
-                // EmailService.notifyNoticeAbortion(sdEmail, data.title, data.notice_code, comment, '管理员');
-                if (sdId) alertsToCreate.push({ target_user_id: sdId, message: `通知单已作废: ${data.title}`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
-            }
-
-            // C. 提交 Alerts 到后端
-            if (alertsToCreate.length > 0) {
-                await createSystemAlerts(alertsToCreate);
-            }
-
-            // D. 更新本地状态 (CamelCase)
+            // C. 更新本地状态
             setNotices(prev => prev.map(n => n.id === noticeId ? { ...n, ...convertKeysToCamelCase(data) } : n));
 
         } catch (err) {
@@ -207,30 +160,23 @@ export const NoticeProvider = ({ children }) => {
         }
     };
 
-    // --- 5. 发送系统公告 ---
+    // --- 4. 发送系统公告 ---
     const sendSystemAnnouncement = async (title, content, priority) => {
+        // 系统公告比较特殊，是发给“所有人”，目前的后端 createBySupplier 只支持按供应商发。
+        // 所以这里保留原来的逻辑：先 fetch all users，再批量发。
+        // 或者您可以在后端加一个 createBroadcast 模式，这里为了简单先不动。
         try {
-            // A. 获取所有用户
-            const apiPath = isDev ? `/api/users` : `/api/users`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
-            const res = await fetch(`${targetUrl}?action=all_users`);
+            const targetUrl = `${BACKEND_URL}/api/users?action=all_users`;
+            const res = await fetch(targetUrl);
             const users = await res.json();
             
-            const emails = [...new Set(users.map(u => u.email).filter(Boolean))];
-            if (emails.length === 0) return false;
-
-            // B. 发邮件 (前端服务)
-            // await EmailService.notifySystemAnnouncement(emails, title, content, priority);
-            
-            // C. 发站内信 (后端 API)
             const alertsData = users.map(u => ({
                 target_user_id: u.id,
                 message: `[系统公告] ${title}`,
                 link: '#',
                 created_at: new Date().toISOString()
             }));
-            await createSystemAlerts(alertsData);
-            
+            await createSystemAlerts({ alerts: alertsData });
             return true;
         } catch (err) {
             console.error("发送系统公告失败:", err);
@@ -238,12 +184,11 @@ export const NoticeProvider = ({ children }) => {
         }
     };
 
-    // --- 6. 添加通知单 (POST) ---
+    // --- 5. 添加通知单 (POST) ---
     const addNotices = async (newNoticesArray) => {
         try {
             // A. 调用后端 API 创建
-            const apiPath = isDev ? `/api/notices` : `/api/notices`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const targetUrl = `${BACKEND_URL}/api/notices`;
             const response = await fetch(targetUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -251,51 +196,27 @@ export const NoticeProvider = ({ children }) => {
             });
 
             if (!response.ok) throw new Error('Create failed');
-            const noticesToProcess = await response.json(); // 后端返回已创建的数据(含creator)
+            const noticesToProcess = await response.json();
 
-            const allAlerts = [];
-
-            // B. 处理邮件和通知逻辑
+            // B. 使用进阶模式通知供应商
             if (noticesToProcess && noticesToProcess.length > 0) {
                 await Promise.all(noticesToProcess.map(async (notice) => {
                     const targetSupplierId = notice.assigned_supplier_id;
-                    const targetSdid = notice.creator?.username || 'SD';
-
                     if (!targetSupplierId) return;
 
-                    // 获取供应商用户
-                    const supplierUsers = await fetchUsersBySupplier(targetSupplierId);
-
-                    if (supplierUsers.length > 0) {
-                        const validUsers = supplierUsers.filter(u => u.email);
-                        const emails = validUsers.map(u => u.email);
-                        const usernames = validUsers.map(u => u.username || '合作伙伴');
-
-                        // 发邮件
-                        // await EmailService.notifySupplierNewNotice(emails, notice.title, notice.notice_code, usernames, targetSdid);
-                        
-                        // 准备 Alerts
-                        supplierUsers.forEach(u => {
-                            allAlerts.push({
-                                creator_id: notice.creator_id,
-                                target_user_id: u.id,
-                                message: `收到新通知单: ${notice.title} (${notice.notice_code})`,
-                                link: `/notices?open=${notice.id}`,
-                                created_at: new Date().toISOString(),
-                                is_read: false
-                            });
-                        });
-                    }
+                    // 🚀 核心修改：直接发指令，不用自己查用户了
+                    await createSystemAlerts({
+                        createBySupplier: {
+                            supplierId: targetSupplierId,
+                            title: '收到新通知单',
+                            message: `新任务: ${notice.title} (${notice.notice_code})`,
+                            link: `/notices?open=${notice.id}`
+                        }
+                    });
                 }));
-
-                // C. 提交 Alerts
-                if (allAlerts.length > 0) {
-                    await createSystemAlerts(allAlerts);
-                }
             }
             
-            // D. 更新本地状态 (添加到列表顶部)
-            // 重新 Fetch 一次或者直接 push，这里为了简单直接 push 转换后的数据
+            // C. 更新本地状态
             const camelCaseNewNotices = convertKeysToCamelCase(noticesToProcess);
             setNotices(prev => [...camelCaseNewNotices, ...prev]);
 
@@ -307,12 +228,11 @@ export const NoticeProvider = ({ children }) => {
         }
     };
 
-    // --- 7. 删除通知单 (DELETE) ---
+    // --- 6. 删除通知单 (DELETE) ---
     const deleteNotice = async (noticeId) => {
         setLoading(true);
         try {
-            const apiPath = isDev ? `/api/notices` : `/api/notices`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const targetUrl = `${BACKEND_URL}/api/notices`;
             await fetch(targetUrl, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -331,8 +251,7 @@ export const NoticeProvider = ({ children }) => {
         if (!noticeIds || noticeIds.length === 0) throw new Error("未选择");
         setLoading(true);
         try {
-            const apiPath = isDev ? `/api/notices` : `/api/notices`;
-            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const targetUrl = `${BACKEND_URL}/api/notices`;
             await fetch(targetUrl, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

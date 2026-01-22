@@ -55,31 +55,88 @@ module.exports = async (req, res) => {
             return res.status(200).json(data);
         }
 
-        // POST: 创建通知 (支持批量) - [新增]
+        // ============================
+        // Case 2: 创建通知 (POST) - ✅ 核心修改
+        // ============================
         if (req.method === 'POST') {
-            const alertsData = req.body;
-            if (!alertsData) return res.status(400).json({ error: 'No data provided' });
+            const bodyData = req.body;
+            
+            // ---------------------------------------------------------
+            // 模式 A: 按供应商自动分发 (进阶功能 - 推荐使用)
+            // 前端只需传: { createBySupplier: { supplierId: 1, title: '...', message: '...' } }
+            // ---------------------------------------------------------
+            if (bodyData.createBySupplier) {
+                const { supplierId, title, message, link } = bodyData.createBySupplier;
 
-            // 无论是单条对象还是数组，统一转为数组处理
-            const dataToInsert = Array.isArray(alertsData) ? alertsData : [alertsData];
+                if (!supplierId) return res.status(400).json({ error: 'Missing supplierId' });
 
-            const { data, error } = await supabaseAdmin
-                .from('alerts')
-                .insert(dataToInsert)
-                .select();
+                // 1. 先查找该供应商下的所有用户
+                const { data: targetUsers, error: userError } = await supabaseAdmin
+                    .from('users')
+                    .select('id')
+                    .eq('supplier_id', supplierId);
+                
+                if (userError) throw userError;
+                
+                if (!targetUsers || targetUsers.length === 0) {
+                    return res.json({ success: true, count: 0, message: 'No users found for this supplier' });
+                }
 
-            if (error) throw error;
-            return res.status(201).json(data);
+                // 2. 为每个用户构建警报数据
+                const generatedAlerts = targetUsers.map(u => ({
+                    target_user_id: u.id,
+                    message: message,
+                    title: title || '系统通知',
+                    link: link || null,
+                    is_read: false,
+                    created_at: new Date().toISOString()
+                }));
+
+                // 3. 批量插入
+                const { data, error } = await supabaseAdmin
+                    .from('alerts')
+                    .insert(generatedAlerts)
+                    .select();
+
+                if (error) throw error;
+                return res.status(201).json({ success: true, count: data.length, mode: 'by_supplier' });
+            }
+
+            // ---------------------------------------------------------
+            // 模式 B: 直接插入 (兼容旧逻辑 / SD通知)
+            // 前端传: { alerts: [...] } 或 [...]
+            // ---------------------------------------------------------
+            let alertsToInsert = [];
+
+            if (bodyData.alerts && Array.isArray(bodyData.alerts)) {
+                alertsToInsert = bodyData.alerts;
+            } else if (Array.isArray(bodyData)) {
+                alertsToInsert = bodyData;
+            } else if (bodyData && !bodyData.createBySupplier) {
+                // 如果不是 createBySupplier 且是对象，认为是单条插入
+                alertsToInsert = [bodyData];
+            }
+
+            if (alertsToInsert.length > 0) {
+                const { data, error } = await supabaseAdmin
+                    .from('alerts')
+                    .insert(alertsToInsert)
+                    .select();
+
+                if (error) throw error;
+                return res.status(201).json({ success: true, count: data.length, mode: 'direct' });
+            }
+
+            return res.status(400).json({ error: 'Invalid payload provided' });
         }
 
         // ============================
-        // Case 2: 更新状态 (PATCH) - 已读/全部已读
+        // Case 3: 更新状态 (PATCH)
         // ============================
         if (req.method === 'PATCH') {
             const { action, alertId, userId } = req.body;
 
             if (action === 'markAsRead' && alertId) {
-                // 标记单个已读
                 const { error } = await supabaseAdmin
                     .from('alerts')
                     .update({ is_read: true })
@@ -89,7 +146,6 @@ module.exports = async (req, res) => {
             }
 
             if (action === 'markAllAsRead' && userId) {
-                // 标记全部已读
                 const { error } = await supabaseAdmin
                     .from('alerts')
                     .update({ is_read: true })
@@ -103,10 +159,10 @@ module.exports = async (req, res) => {
         }
 
         // ============================
-        // Case 3: 删除通知 (DELETE)
+        // Case 4: 删除通知 (DELETE)
         // ============================
         if (req.method === 'DELETE') {
-            const { alertId } = req.query; // DELETE 参数通常在 URL query 中
+            const { alertId } = req.query; 
             if (!alertId) return res.status(400).json({ error: 'Missing alertId' });
 
             const { error } = await supabaseAdmin

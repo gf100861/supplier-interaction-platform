@@ -40,6 +40,8 @@ const analyzeDocumentHandler = require('./controllers/ai/analyze-document');
 const archiveHistoricalHandler = require('./controllers/notices/archive-historical');
 
 const fileUploadHandler = require('./controllers/file-sync/upload');
+
+const filesHandler = require('./controllers/file-sync/files'); // 新增
 const app = express();
 const server = http.createServer(app);
 
@@ -164,6 +166,8 @@ app.post('/api/ai/analyze-document', analyzeDocumentHandler);
 app.post('/api/notices/archive-historical', archiveHistoricalHandler);
 
 app.post('/api/file-sync/upload', fileUploadHandler);
+
+app.all('/api/file-sync/files', filesHandler); // 新增
 const PORT = process.env.PORT || 3001;
 
 // Vercel 环境下不运行监听，仅导出 app

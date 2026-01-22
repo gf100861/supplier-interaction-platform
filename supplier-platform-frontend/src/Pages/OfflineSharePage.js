@@ -11,7 +11,10 @@ const { Dragger } = Upload;
 const { RangePicker } = DatePicker;
 const { Search } = Input;
 
-// --- 日志系统工具函数 (复用自 LoginPage.js) ---
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'  // 本地开发环境
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 
 // 1. Session ID 管理
 const getSessionId = () => {
@@ -39,17 +42,19 @@ const getClientIp = async () => {
 
 // 3. 通用日志上报函数
 const logSystemEvent = async (params) => {
-    const { 
-        category = 'SYSTEM', 
-        eventType, 
-        severity = 'INFO', 
-        message, 
-        email = null, 
-        userId = null, 
-        meta = {} 
+    const {
+        category = 'SYSTEM',
+        eventType,
+        severity = 'INFO',
+        message,
+        email = null,
+        userId = null,
+        meta = {}
     } = params;
 
     try {
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
 
@@ -62,20 +67,22 @@ const logSystemEvent = async (params) => {
         };
 
         // Fire-and-forget
-        supabase.from('system_logs').insert([{
-            category,
-            event_type: eventType,
-            severity,
-            message,
-            user_email: email, // 如果有 email 可以传入
-            user_id: userId,
-            metadata: {
-                ...environmentInfo,
-                ...meta,
-                timestamp_client: new Date().toISOString()
-            }
-        }]).then(({ error }) => {
-            if (error) console.warn("Log upload failed:", error);
+        await fetch(`${targetUrl}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                category,
+                event_type: eventType,
+                severity,
+                message,
+                user_email: email,
+                user_id: userId,
+                metadata: {
+                    ...environmentInfo,
+                    ...meta,
+                    timestamp_client: new Date().toISOString()
+                }
+            })
         });
     } catch (e) {
         console.error("Logger exception:", e);
@@ -109,7 +116,7 @@ export const FileSender = () => {
             return JSON.parse(localStorage.getItem('user'));
         } catch (e) { return null; }
     }, []);
-    
+
     const [isQrModalVisible, setIsQrModalVisible] = useState(false);
     const qrCodeRef = useRef(null);
 
@@ -163,35 +170,54 @@ export const FileSender = () => {
         };
     }, [currentUser]);
 
-    // --- 下载文件逻辑 ---
+    // --- 下载文件逻辑 (已修改为后端鉴权) ---
     const handleDownload = async (fileRow) => {
         const key = `download-${fileRow.id}`;
         message.loading({ content: `正在准备下载 ${fileRow.file_name}...`, key });
-        
-        // 日志：记录下载行为
+
+        // 日志：记录下载请求
         logSystemEvent({
             category: 'FILE',
-            eventType: 'FILE_DOWNLOAD',
-            message: `Downloading file: ${fileRow.file_name}`,
+            eventType: 'FILE_DOWNLOAD_INIT',
+            message: `Requesting download url for: ${fileRow.file_name}`,
             userId: currentUser?.id,
-            meta: { file_id: fileRow.id, file_name: fileRow.file_name }
+            meta: { file_id: fileRow.id }
         });
 
         try {
-            const { data, error } = await supabase.storage
-                .from('file_sync')
-                .download(fileRow.file_path);
-            
-            if (error) throw error;
-            
-            saveAs(data, fileRow.file_name);
-            message.success({ content: '下载已开始！', key });
+            // 1. 请求后端获取临时下载链接 (Signed URL)
+            const response = await fetch(`${BACKEND_URL}/api/file-sync/files`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'download',
+                    filePath: fileRow.file_path
+                })
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to get download URL');
+            }
+
+            const { downloadUrl } = await response.json();
+
+            // 2. 使用临时链接下载文件流
+            // 注意：虽然有了 URL，为了触发浏览器下载行为并重命名文件，
+            // 我们通常还是需要 fetch blob，然后用 file-saver 保存。
+            const fileRes = await fetch(downloadUrl);
+            if (!fileRes.ok) throw new Error('File download stream failed');
+
+            const blob = await fileRes.blob();
+
+            // 3. 保存文件
+            saveAs(blob, fileRow.file_name);
+            message.success({ content: '下载成功！', key });
 
         } catch (error) {
             console.error('下载失败:', error);
             message.error({ content: `下载失败: ${error.message}`, key });
-            
-            // 日志：记录下载失败
+
             logSystemEvent({
                 category: 'FILE',
                 eventType: 'DOWNLOAD_FAILED',
@@ -204,54 +230,50 @@ export const FileSender = () => {
     };
 
     // --- 删除文件逻辑 ---
+    // --- 删除文件逻辑 (已修改为调用后端) ---
     const handleDelete = async (fileRow) => {
-         const key = `delete-${fileRow.id}`;
-         message.loading({ content: `正在删除 ${fileRow.file_name}...`, key });
+        const key = `delete-${fileRow.id}`;
+        message.loading({ content: `正在删除 ${fileRow.file_name}...`, key });
 
-         try {
-            // 1. 从 Storage 删除
-            const { error: storageError } = await supabase.storage
-                .from('file_sync')
-                .remove([fileRow.file_path]);
+        try {
+            // ✅ 改为调用后端 API
+            // 后端会同时处理：1.从Storage删除文件 2.从Database删除记录
+            const response = await fetch(`${BACKEND_URL}/api/file-sync/files`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    fileId: fileRow.id,
+                    filePath: fileRow.file_path
+                })
+            });
 
-            if (storageError) {
-                 console.error("Storage deletion failed:", storageError.message);
-                 // 即使 Storage 删除失败，也记录日志并尝试删 DB
-                 logSystemEvent({
-                    category: 'FILE',
-                    eventType: 'DELETE_STORAGE_FAILED',
-                    severity: 'WARN',
-                    message: `Storage delete failed: ${storageError.message}`,
-                    userId: currentUser?.id,
-                    meta: { file_path: fileRow.file_path }
-                });
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || 'Delete failed');
             }
 
-            // 2. 从数据库删除
-            const { error: dbError } = await supabase
-                .from('user_files')
-                .delete()
-                .eq('id', fileRow.id);
+            messageApi.success({ content: '文件已删除！', key });
 
-            if (dbError) throw dbError;
+            // 手动更新本地列表，提升 UI 响应速度 (虽然 Realtime 也会推，但这样更快)
+            setSyncedFiles(prev => prev.filter(f => f.id !== fileRow.id));
 
-            message.success({ content: '文件已删除！', key });
-            
             // 日志：记录删除成功
             logSystemEvent({
                 category: 'FILE',
                 eventType: 'FILE_DELETED',
-                message: `File deleted: ${fileRow.file_name}`,
+                message: `File deleted via Backend: ${fileRow.file_name}`,
                 userId: currentUser?.id,
                 meta: { file_id: fileRow.id, file_name: fileRow.file_name }
             });
 
         } catch (error) {
-             console.error('删除失败:', error);
-             message.error({ content: `删除失败: ${error.message}`, key });
-             
-             // 日志：记录删除失败
-             logSystemEvent({
+            console.error('删除失败:', error);
+            messageApi.error({ content: `删除失败: ${error.message}`, key });
+
+            // 日志：记录删除失败
+            logSystemEvent({
                 category: 'FILE',
                 eventType: 'DELETE_FAILED',
                 severity: 'ERROR',
@@ -274,7 +296,7 @@ export const FileSender = () => {
                         size: 256,
                         level: 'H'
                     });
-                    
+
                     // 日志：记录用户打开了手机上传二维码
                     logSystemEvent({
                         category: 'INTERACTION',
@@ -300,18 +322,16 @@ export const FileSender = () => {
         const fetchFiles = async () => {
             setFilesLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('user_files')
-                    .select('*')
-                    .eq('user_id', currentUser.id)
-                    .order('created_at', { ascending: false });
-                
-                if (error) throw error;
+                // ✅ 改为调用后端
+                const response = await fetch(`${BACKEND_URL}/api/file-sync/files?userId=${currentUser.id}`);
+                if (!response.ok) throw new Error('Fetch files failed');
+
+                const data = await response.json();
                 setSyncedFiles(data || []);
             } catch (error) {
                 console.error("加载已同步文件失败:", error);
                 messageApi.error(`加载文件列表失败: ${error.message}`);
-                
+
                 logSystemEvent({
                     category: 'FILE',
                     eventType: 'FETCH_LIST_FAILED',
@@ -334,10 +354,10 @@ export const FileSender = () => {
                 (payload) => {
                     // console.log('Realtime 收到新文件:', payload);
                     setSyncedFiles(prevFiles => [payload.new, ...prevFiles]);
-                    
+
                     // 仅当文件来源不是当前设备时，才显得比较有意思（这里简单记录所有同步）
                     if (payload.new.source_device !== 'web') {
-                         logSystemEvent({
+                        logSystemEvent({
                             category: 'SYNC',
                             eventType: 'FILE_RECEIVED_REALTIME',
                             message: `Received file from ${payload.new.source_device || 'other device'}`,
@@ -367,7 +387,7 @@ export const FileSender = () => {
         return () => {
             supabase.removeChannel(channel);
         };
-    
+
     }, [currentUser, notificationApi, messageApi]);
 
     const handleFileChange = ({ fileList }) => {
@@ -375,6 +395,7 @@ export const FileSender = () => {
     };
 
     // --- 上传并同步逻辑 (核心修改：添加时长统计 + exe拦截) ---
+    // --- 上传并同步逻辑 (已修改为调用后端) ---
     const handleUploadAndSync = async () => {
         if (fileList.length === 0) {
             messageApi.warning('请先选择要同步的文件！');
@@ -389,7 +410,7 @@ export const FileSender = () => {
         const hasExe = fileList.some(file => file.name.toLowerCase().endsWith('.exe'));
         if (hasExe) {
             messageApi.error('安全限制：不支持上传 .exe 可执行文件。');
-            
+
             // 记录拦截日志
             logSystemEvent({
                 category: 'FILE',
@@ -414,42 +435,33 @@ export const FileSender = () => {
         logSystemEvent({
             category: 'FILE',
             eventType: 'UPLOAD_ATTEMPT',
-            message: `Attempting to upload ${fileList.length} files`,
+            message: `Attempting to upload ${fileList.length} files via Backend`,
             userId: currentUser.id,
-            meta: { 
+            meta: {
                 file_count: fileList.length,
-                total_size_bytes: totalSizeBytes // 记录本次上传总量
+                total_size_bytes: totalSizeBytes
             }
         });
 
+        // 3. 构建上传队列
         const uploadPromises = fileList.map(async (fileInfo) => {
             const file = fileInfo.originFileObj;
             if (!file) throw new Error(`无法获取文件 ${fileInfo.name}`);
-            
-            const fileExt = file.name.split('.').pop();
-            const safeFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}${fileExt ? '.' + fileExt : ''}`;
-            const filePath = `${currentUser.id}/${safeFileName}`;
 
-            // 1. Upload Storage
-            const { error: uploadError } = await supabase.storage
-                .from('file_sync')
-                .upload(filePath, file);
+            // ✅ 改为调用后端 API 上传
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('targetUserId', currentUser.id); // 明确告知后端这是哪个用户的文件
 
-            if (uploadError) throw new Error(`上传 ${file.name} 失败: ${uploadError.message}`);
+            const response = await fetch(`${BACKEND_URL}/api/file-sync/upload`, {
+                method: 'POST',
+                // fetch 会自动设置 Content-Type 为 multipart/form-data，不需要手动设置 header
+                body: formData
+            });
 
-            // 2. Insert DB
-            const { error: insertError } = await supabase
-                .from('user_files')
-                .insert({
-                    user_id: currentUser.id,
-                    file_name: file.name,
-                    file_path: filePath,
-                    source_device: 'web'
-                });
-            
-            if (insertError) {
-                 await supabase.storage.from('file_sync').remove([filePath]);
-                 throw new Error(`上传 ${file.name} 成功，但同步记录失败: ${insertError.message}`);
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `上传 ${file.name} 失败`);
             }
 
             return file.name;
@@ -457,33 +469,31 @@ export const FileSender = () => {
 
         try {
             const uploadedFiles = await Promise.all(uploadPromises);
-            
-            // 3. 记录结束时间，计算耗时
+
+            // 4. 记录结束时间，计算耗时
             const endTime = Date.now();
             const durationMs = endTime - startTime;
-            
-            // 4. 计算简单平均速度 (KB/s)
-            // (Total Bytes / 1024) / (Duration ms / 1000)
-            const speedKbps = totalSizeBytes > 0 && durationMs > 0 
-                ? (totalSizeBytes / 1024) / (durationMs / 1000) 
+
+            // 5. 计算简单平均速度 (KB/s)
+            const speedKbps = totalSizeBytes > 0 && durationMs > 0
+                ? (totalSizeBytes / 1024) / (durationMs / 1000)
                 : 0;
 
-            messageApi.success({ 
-                // 显示本次耗时给用户看
-                content: `成功同步 ${uploadedFiles.length} 个文件！(耗时: ${(durationMs / 1000).toFixed(1)}秒)`, 
-                key: 'syncing', 
-                duration: 3 
+            messageApi.success({
+                content: `成功同步 ${uploadedFiles.length} 个文件！(耗时: ${(durationMs / 1000).toFixed(1)}秒)`,
+                key: 'syncing',
+                duration: 3
             });
             setFileList([]);
 
-            // 日志：上传成功 (包含关键的预测指标数据)
+            // 日志：上传成功
             logSystemEvent({
                 category: 'FILE',
                 eventType: 'UPLOAD_SUCCESS',
                 severity: 'INFO',
                 message: `Successfully uploaded ${uploadedFiles.length} files`,
                 userId: currentUser.id,
-                meta: { 
+                meta: {
                     file_count: uploadedFiles.length,
                     total_size_bytes: totalSizeBytes,
                     duration_ms: durationMs,
@@ -492,13 +502,12 @@ export const FileSender = () => {
             });
 
         } catch (error) {
-            // 计算失败时的耗时也有分析价值（例如超时）
             const durationMs = Date.now() - startTime;
 
-            messageApi.error({ 
-                content: error.message, 
-                key: 'syncing', 
-                duration: 5 
+            messageApi.error({
+                content: error.message,
+                key: 'syncing',
+                duration: 5
             });
 
             // 日志：上传失败
@@ -508,9 +517,9 @@ export const FileSender = () => {
                 severity: 'ERROR',
                 message: `Upload failed: ${error.message}`,
                 userId: currentUser.id,
-                meta: { 
+                meta: {
                     error: error.message,
-                    duration_ms: durationMs 
+                    duration_ms: durationMs
                 }
             });
         } finally {
@@ -524,8 +533,8 @@ export const FileSender = () => {
             let matchesDate = true;
             if (dateRange && dateRange[0] && dateRange[1]) {
                 const fileDate = dayjs(file.created_at);
-                matchesDate = fileDate.isAfter(dateRange[0].startOf('day')) && 
-                              fileDate.isBefore(dateRange[1].endOf('day'));
+                matchesDate = fileDate.isAfter(dateRange[0].startOf('day')) &&
+                    fileDate.isBefore(dateRange[1].endOf('day'));
             }
             return matchesSearch && matchesDate;
         });
@@ -539,15 +548,15 @@ export const FileSender = () => {
                     <Paragraph type="secondary">
                         上传文件到您的私有云端。文件将实时推送到您已登录的其他设备（如电脑或手机）。
                     </Paragraph>
-                      <Alert
-                      message="如何从手机上传？"
-                      description="点击下方的“从手机上传”按钮，用您的手机扫描弹出的二维码。在手机浏览器中登录同一个账户，即可上传文件并同步回电脑。"
-                      type="info"
-                      showIcon
-                      style={{ marginBottom: 24, textAlign: 'left' }}
+                    <Alert
+                        message="如何从手机上传？"
+                        description="点击下方的“从手机上传”按钮，用您的手机扫描弹出的二维码。在手机浏览器中登录同一个账户，即可上传文件并同步回电脑。"
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 24, textAlign: 'left' }}
                     />
                 </div>
-                
+
                 <Dragger
                     fileList={fileList}
                     onChange={handleFileChange}
@@ -571,7 +580,7 @@ export const FileSender = () => {
                     >
                         {loading ? '正在同步...' : '上传并同步'}
                     </Button>
-                    
+
                     <Button
                         icon={<QrcodeOutlined />}
                         size="large"
@@ -583,7 +592,7 @@ export const FileSender = () => {
                 </Space>
             </Card>
 
-            <Card 
+            <Card
                 title={
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span>已同步的文件 ({filteredFiles.length})</span>
@@ -595,14 +604,14 @@ export const FileSender = () => {
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{ width: 200 }}
                             />
-                            <RangePicker 
-                                onChange={setDateRange} 
+                            <RangePicker
+                                onChange={setDateRange}
                                 style={{ width: 240 }}
                                 placeholder={['开始日期', '结束日期']}
                             />
                         </Space>
                     </div>
-                } 
+                }
                 style={{ marginTop: 24 }}
             >
                 <List
@@ -629,10 +638,10 @@ export const FileSender = () => {
                 />
             </Card>
 
-            <Modal 
-                title="从手机上传" 
-                open={isQrModalVisible} 
-                onCancel={() => setIsQrModalVisible(false)} 
+            <Modal
+                title="从手机上传"
+                open={isQrModalVisible}
+                onCancel={() => setIsQrModalVisible(false)}
                 footer={null}
             >
                 <div style={{ textAlign: 'center', padding: '20px' }}>
