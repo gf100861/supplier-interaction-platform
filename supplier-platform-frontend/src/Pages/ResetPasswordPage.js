@@ -3,8 +3,6 @@ import { Form, Input, Button, Card, Typography, Layout } from 'antd';
 import { MailOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
-// ❌ 移除直接的 supabase 引用
-// import { supabase } from '../supabaseClient'; 
 
 const { Title, Paragraph } = Typography;
 

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag, Tooltip } from 'antd'; // 引入 Tooltip 用于 Header 按钮
+import { 
+    Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag, Tooltip, 
+    Grid, Drawer // 新增 Grid 和 Drawer 组件
+} from 'antd'; 
 import {
     HomeOutlined,
     UserOutlined,
@@ -12,12 +15,15 @@ import {
     GlobalOutlined,
     CrownOutlined,
     RobotOutlined,
-    InfoCircleOutlined,
+    InfoCircleOutlined, // 虽然没用到，但保持原有引用防止报错
     ExclamationOutlined,
-    CloseCircleOutlined,
     WarningOutlined,
     SoundOutlined,
-    QuestionCircleOutlined // 1. 引入帮助图标
+    QuestionCircleOutlined,
+    MenuOutlined,          // 新增：汉堡菜单图标
+    FileAddOutlined,       // 新增：新建通知单图标
+    UnorderedListOutlined, // 新增：列表图标
+    SwapOutlined           // 新增：互传图标
 } from '@ant-design/icons';
 import './MainLayout.css';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -28,8 +34,9 @@ import { supabase } from '../supabaseClient';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Text } = Typography;
+const { useBreakpoint } = Grid; // 引入断点钩子
 
-// --- 智能权限过滤函数 (保持不变) ---
+// --- 智能权限过滤函数 ---
 const filterMenu = (menuItems, role) => {
     return menuItems
         .map(item => {
@@ -44,17 +51,12 @@ const filterMenu = (menuItems, role) => {
         .filter(item => item !== null);
 };
 
-// --- 修改后的组件：滚动通知栏 (支持后端数据 + 实时更新) ---
+// --- 滚动通知栏组件 ---
 const RollingNoticeBar = () => {
-    // 控制显示的状态
     const [visible, setVisible] = useState(true);
-    // 存储从后端获取的通知数据
     const [notices, setNotices] = useState([]);
-
-    // 定义存储在 localStorage 中的 key
     const STORAGE_KEY = 'system_notice_closed_date';
 
-    // 1. 初始化检查本地缓存 (是否今日已关闭)
     useEffect(() => {
         const closedDate = localStorage.getItem(STORAGE_KEY);
         const today = new Date().toDateString();
@@ -63,13 +65,12 @@ const RollingNoticeBar = () => {
         }
     }, []);
 
-    // 2. 从 Supabase 获取数据并建立实时监听
     useEffect(() => {
         const fetchNotices = async () => {
             const { data, error } = await supabase
                 .from('system_notices')
                 .select('*')
-                .eq('is_active', true) // 只获取激活状态的公告
+                .eq('is_active', true)
                 .order('created_at', { ascending: false });
 
             if (!error && data) {
@@ -77,10 +78,8 @@ const RollingNoticeBar = () => {
             }
         };
 
-        // 初次加载
         fetchNotices();
 
-        // 订阅实时变化 (新增/删除公告时自动刷新)
         const channel = supabase
             .channel('public:system_notices')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'system_notices' }, () => {
@@ -93,11 +92,8 @@ const RollingNoticeBar = () => {
         };
     }, []);
 
-    // 如果没有通知，或者用户已经关闭，直接不渲染
     if (!visible || !notices || notices.length === 0) return null;
 
-    // --- 动态颜色逻辑 ---
-    // 优先级: Error (红) > Warning (橙) > Info (蓝)
     const hasError = notices.some(n => n.type === 'error');
     const hasWarning = notices.some(n => n.type === 'warning');
 
@@ -112,7 +108,6 @@ const RollingNoticeBar = () => {
         icon = <WarningOutlined />;
     }
 
-    // 处理关闭事件
     const handleClose = () => {
         const today = new Date().toDateString();
         localStorage.setItem(STORAGE_KEY, today);
@@ -149,6 +144,7 @@ const RollingNoticeBar = () => {
     );
 };
 
+// --- MainLayout 主组件 ---
 const MainLayout = () => {
     const [collapsed, setCollapsed] = useState(false);
     const navigate = useNavigate();
@@ -158,8 +154,15 @@ const MainLayout = () => {
 
     const { language, toggleLanguage, t } = useLanguage();
 
-    // 菜单定义
-    const allMenuItems = useMemo(() => [
+    // 1. 设备检测
+    const screens = useBreakpoint();
+    const isMobile = !screens.md; // 屏幕宽度小于 md (768px) 视为移动端
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    // 2. 定义两套菜单配置
+    
+    // A. 桌面端完整菜单
+    const desktopMenuItems = useMemo(() => [
         { key: '/', icon: <HomeOutlined />, label: t('menu.dashboard'), roles: ['SD', 'Manager', 'Supplier', 'Admin'] },
         { key: '/audit-plan', icon: <AuditOutlined />, label: t('menu.auditPlan'), roles: ['SD', 'Manager'] },
         {
@@ -198,8 +201,33 @@ const MainLayout = () => {
         }
     ], [language, t]);
 
+    // B. 移动端精简菜单 (只保留核心功能)
+    const mobileMenuItemsRaw = useMemo(() => [
+        { 
+            key: '/notices', // 1. 通知单列表 (用于审核/查看)
+            icon: <UnorderedListOutlined />, 
+            label: t('menu.notices') || '通知单列表', 
+            roles: ['SD', 'Manager', 'Supplier'] 
+        },
+        { 
+            key: '/upload', // 2. 手动开设通知单
+            icon: <FileAddOutlined />, 
+            label: t('menu.manualUpload') || '新建通知单', 
+            roles: ['SD', 'Manager'] // 注意：通常只有 SD/Manager 能开单
+        },
+        { 
+            key: '/offline-share', // 3. 文件互传
+            icon: <SwapOutlined />, 
+            label: t('menu.offlineShare') || '文件互传', 
+            roles: ['SD', 'Manager', 'Admin', 'Supplier']
+        }
+    ], [language, t]);
+
+    // 3. 根据设备选择菜单源
+    const currentMenuItems = isMobile ? mobileMenuItemsRaw : desktopMenuItems;
+
     const getOpenKeys = (path) => {
-        for (const item of allMenuItems) {
+        for (const item of currentMenuItems) {
             if (item.children && item.children.some(child => child.key === path)) {
                 return [item.key];
             }
@@ -208,15 +236,12 @@ const MainLayout = () => {
     };
 
     useEffect(() => {
-        const currentPath = '/' + location.pathname.split('/')[1];
-        // const effectiveKey = location.pathname === '/' ? '/' : currentPath; 
-
         setSelectedKeys([location.pathname]);
-        if (!collapsed) {
+        if (!collapsed && !isMobile) {
             const newOpenKeys = getOpenKeys(location.pathname);
             if (newOpenKeys.length > 0) setOpenKeys(prev => [...new Set([...prev, ...newOpenKeys])]);
         }
-    }, [location.pathname, collapsed, allMenuItems]);
+    }, [location.pathname, collapsed, currentMenuItems, isMobile]);
 
     const handleLogout = () => {
         localStorage.removeItem('user');
@@ -226,6 +251,7 @@ const MainLayout = () => {
 
     const handleMenuClick = (e) => {
         navigate(e.key);
+        if (isMobile) setMobileMenuOpen(false); // 移动端点击后自动关闭抽屉
     };
 
     const storedUser = useMemo(() => {
@@ -235,88 +261,151 @@ const MainLayout = () => {
 
     const userRole = storedUser?.role || null;
     const userName = storedUser?.username || '访客';
-    const visibleMenuItems = useMemo(() => filterMenu(allMenuItems, userRole), [allMenuItems, userRole]);
+    
+    // 4. 计算最终可见菜单
+    const visibleMenuItems = useMemo(() => filterMenu(currentMenuItems, userRole), [currentMenuItems, userRole]);
+
+    // 提取 Menu 组件以便复用
+    const MenuComponent = (
+        <Menu
+            theme="dark"
+            selectedKeys={selectedKeys}
+            openKeys={!isMobile ? openKeys : undefined} // 移动端通常不需要展开逻辑，因为是扁平的
+            onOpenChange={!isMobile ? setOpenKeys : undefined}
+            mode="inline"
+            items={visibleMenuItems}
+            onClick={handleMenuClick}
+            style={{ borderRight: 0 }}
+        />
+    );
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-            <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
-                <div className="logo-container">
-                    <img
-                        src="/system-logo.png"
-                        alt="Logo"
-                        className="logo-img"
-                    />
-                    {!collapsed && (
-                        <span style={{
-                            color: 'white',
-                            marginLeft: 8,
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden'
-                        }}>
+            {/* --- PC端: 侧边栏 --- */}
+            {!isMobile && (
+                <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
+                    <div className="logo-container">
+                        <img src="/system-logo.png" alt="Logo" className="logo-img" />
+                        {!collapsed && (
+                            <span style={{
+                                color: 'white',
+                                marginLeft: 8,
+                                fontWeight: 600,
+                                fontSize: '14px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden'
+                            }}>
+                                SD Platform
+                            </span>
+                        )}
+                    </div>
+                    {MenuComponent}
+                </Sider>
+            )}
+
+            {/* --- 移动端: 抽屉导航 --- */}
+            {isMobile && (
+                <Drawer
+                    placement="left"
+                    onClose={() => setMobileMenuOpen(false)}
+                    open={mobileMenuOpen}
+                    styles={{ body: { padding: 0, backgroundColor: '#001529' } }}
+                    width={250}
+                    closable={false}
+                >
+                    <div className="logo-container" style={{ justifyContent: 'flex-start', paddingLeft: 24 }}>
+                        <img src="/system-logo.png" alt="Logo" className="logo-img" />
+                        <span style={{ color: 'white', marginLeft: 12, fontWeight: 600, fontSize: '16px' }}>
                             SD Platform
                         </span>
-                    )}
-                </div>
-                <Menu
-                    theme="dark"
-                    selectedKeys={selectedKeys}
-                    openKeys={openKeys}
-                    onOpenChange={setOpenKeys}
-                    mode="inline"
-                    items={visibleMenuItems}
-                    onClick={handleMenuClick}
-                />
-            </Sider>
+                    </div>
+                    {MenuComponent}
+                </Drawer>
+            )}
+
             <Layout className="site-layout">
                 <Header
                     style={{
-                        padding: '0 24px',
+                        padding: isMobile ? '0 12px' : '0 24px',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         backgroundColor: '#fff',
+                        position: isMobile ? 'sticky' : 'relative', // 移动端头部吸顶
+                        top: 0,
+                        zIndex: 99,
+                        boxShadow: isMobile ? '0 2px 8px rgba(0,0,0,0.06)' : 'none'
                     }}
                 >
-                    <h2 style={{ color: '#1890ff', margin: 0, fontSize: '20px' }}>{t('app.title')}</h2>
-
-                    <Space size="large">
-                        <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
-                        <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>
-
-                        <Tooltip title={t('menu.helpCenter') || '帮助中心'}>
-                            <Button
-                                type="text"
-                                icon={<QuestionCircleOutlined style={{ fontSize: '16px' }} />}
-                                // ❌ 删除: onClick={() => navigate('/help-center')}
-                                // ✅ 修改: 使用 window.open 打开新标签页
-                                onClick={() => window.open('/help-center', '_blank')}
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                        {/* 移动端汉堡菜单按钮 */}
+                        {isMobile && (
+                            <Button 
+                                type="text" 
+                                icon={<MenuOutlined />} 
+                                onClick={() => setMobileMenuOpen(true)}
+                                style={{ marginRight: 8, fontSize: '18px' }}
                             />
-                        </Tooltip>
-                        <Button
-                            type="text"
-                            icon={<GlobalOutlined />}
-                            onClick={toggleLanguage}
-                        >
-                            {language === 'zh' ? 'English' : '中文'}
-                        </Button>
+                        )}
+                        <h2 style={{ color: '#1890ff', margin: 0, fontSize: isMobile ? '16px' : '20px' }}>
+                            {t('app.title')}
+                        </h2>
+                    </div>
+
+                    <Space size={isMobile ? "small" : "large"}>
+                        {/* 移动端隐藏欢迎语 */}
+                        {!isMobile && <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>}
+                        
+                        <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
+
+                        {/* 移动端隐藏帮助和语言切换，保持 Header 简洁 */}
+                        {!isMobile && (
+                            <>
+                                <Tooltip title={t('menu.helpCenter') || '帮助中心'}>
+                                    <Button
+                                        type="text"
+                                        icon={<QuestionCircleOutlined style={{ fontSize: '16px' }} />}
+                                        onClick={() => window.open('/help-center', '_blank')}
+                                    />
+                                </Tooltip>
+                                <Button
+                                    type="text"
+                                    icon={<GlobalOutlined />}
+                                    onClick={toggleLanguage}
+                                >
+                                    {language === 'zh' ? 'English' : '中文'}
+                                </Button>
+                            </>
+                        )}
+                        
                         <AlertBell />
-                        <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>{t('header.logout')}</Button>
+                        
+                        {/* 移动端 Logout 仅显示图标 */}
+                        <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>
+                            {!isMobile && t('header.logout')}
+                        </Button>
                     </Space>
                 </Header>
 
-                {/* --- 动态滚动的通知栏 --- */}
+                {/* 滚动通知栏 */}
                 <RollingNoticeBar />
 
-                <Content style={{ margin: '16px' }}>
-                    <div style={{ padding: 24, minHeight: '100%', background: '#fff', borderRadius: '8px' }}>
+                <Content style={{ margin: isMobile ? '8px' : '16px' }}>
+                    <div style={{ 
+                        padding: isMobile ? 12 : 24, 
+                        minHeight: '100%', 
+                        background: '#fff', 
+                        borderRadius: '8px' 
+                    }}>
                         <Outlet />
                     </div>
                 </Content>
-                <Footer style={{ textAlign: 'center' }}>
-                    Supplier Platform ©2025 Created by Louis
-                </Footer>
+                
+                {!isMobile && (
+                    <Footer style={{ textAlign: 'center' }}>
+                        Supplier Platform ©2025 Created by Louis
+                    </Footer>
+                )}
             </Layout>
             <FileReceiver />
         </Layout>
