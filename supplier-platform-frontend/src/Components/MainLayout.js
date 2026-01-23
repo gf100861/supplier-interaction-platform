@@ -226,6 +226,12 @@ const MainLayout = () => {
             icon: <SwapOutlined />,
             label: t('menu.offlineShare') || '文件互传',
             roles: ['SD', 'Manager', 'Admin', 'Supplier']
+        },
+        {
+            key: '/intelligence-search', // 3. 智能搜索
+            icon: <RobotOutlined />,
+            label: t('menu.intelligenceSearch') || '智能搜索',
+            roles: ['SD', 'Manager', 'Admin']
         }
     ], [language, t]);
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Card, Typography, Upload, Button, notification, message, Spin, Space, Modal, Alert, List, Popconfirm, Avatar, DatePicker, Input } from 'antd';
-import { ShareAltOutlined, UploadOutlined, InboxOutlined, DownloadOutlined, QrcodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
+// 1. 引入 Grid
+import { Card, Typography, Upload, Button, message, Space, Modal, Alert, List, Popconfirm, Avatar, DatePicker, Input, Grid } from 'antd';
+import { ShareAltOutlined, InboxOutlined, DownloadOutlined, QrcodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 import { saveAs } from 'file-saver';
@@ -10,6 +11,7 @@ const { Title, Paragraph, Text } = Typography;
 const { Dragger } = Upload;
 const { RangePicker } = DatePicker;
 const { Search } = Input;
+const { useBreakpoint } = Grid; // 2. 获取断点 Hook
 
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
@@ -124,6 +126,9 @@ export const FileSender = () => {
     const [filesLoading, setFilesLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState(null);
+
+    const screens = useBreakpoint();
+    const isMobile = !screens.md; // md (768px) 以下视为移动端
 
     // --- 全局错误监听与页面访问日志 ---
     useEffect(() => {
@@ -540,21 +545,26 @@ export const FileSender = () => {
         });
     }, [syncedFiles, searchTerm, dateRange]);
 
-    return (
-        <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
-            <Card>
+  return (
+        <div style={{ maxWidth: 800, margin: 'auto', padding: isMobile ? '12px' : '24px 0' }}>
+            {/* 4. 上传卡片 */}
+            <Card bodyStyle={{ padding: isMobile ? '16px' : '24px' }}>
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                    <Title level={4}>跨设备文件同步</Title>
-                    <Paragraph type="secondary">
-                        上传文件到您的私有云端。文件将实时推送到您已登录的其他设备（如电脑或手机）。
+                    <Title level={isMobile ? 5 : 4}>跨设备文件同步</Title>
+                    <Paragraph type="secondary" style={{ fontSize: isMobile ? '13px' : '14px' }}>
+                        上传文件到云端，实时推送到其他登录设备。
                     </Paragraph>
-                    <Alert
-                        message="如何从手机上传？"
-                        description="点击下方的“从手机上传”按钮，用您的手机扫描弹出的二维码。在手机浏览器中登录同一个账户，即可上传文件并同步回电脑。"
-                        type="info"
-                        showIcon
-                        style={{ marginBottom: 24, textAlign: 'left' }}
-                    />
+                    
+                    {/* 仅在非移动端显示二维码引导，手机端不需要自己扫自己 */}
+                    {!isMobile && (
+                        <Alert
+                            message="如何从手机上传？"
+                            description="点击下方“从手机上传”按钮，用手机扫描二维码即可。"
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 24, textAlign: 'left' }}
+                        />
+                    )}
                 </div>
 
                 <Dragger
@@ -562,10 +572,12 @@ export const FileSender = () => {
                     onChange={handleFileChange}
                     beforeUpload={() => false}
                     multiple={true}
+                    height={isMobile ? 120 : 180} // 移动端减小高度
+                    style={{ padding: isMobile ? '10px' : '16px' }}
                 >
-                    <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                    <p className="ant-upload-text">点击或拖拽文件到此区域</p>
-                    <p className="ant-upload-hint">支持单个或多个文件。文件将被安全存储并同步到您的账户。（不支持 .exe 格式）</p>
+                    <p className="ant-upload-drag-icon"><InboxOutlined style={{ fontSize: isMobile ? '32px' : '48px' }}/></p>
+                    <p className="ant-upload-text" style={{ fontSize: isMobile ? '14px' : '16px' }}>点击或拖拽文件</p>
+                    {!isMobile && <p className="ant-upload-hint">支持多个文件 (.exe除外)</p>}
                 </Dragger>
 
                 <Space style={{ width: '100%', marginTop: 24 }} direction="vertical" size="middle">
@@ -576,65 +588,117 @@ export const FileSender = () => {
                         loading={loading}
                         disabled={fileList.length === 0}
                         onClick={handleUploadAndSync}
-                        style={{ width: '100%' }}
+                        style={{ width: '100%' }} // 保持全宽
                     >
                         {loading ? '正在同步...' : '上传并同步'}
                     </Button>
 
-                    <Button
-                        icon={<QrcodeOutlined />}
-                        size="large"
-                        onClick={() => setIsQrModalVisible(true)}
-                        style={{ width: '100%' }}
-                    >
-                        从手机上传文件
-                    </Button>
+                    {/* 5. 移动端隐藏“从手机上传”按钮 */}
+                    {!isMobile && (
+                        <Button
+                            icon={<QrcodeOutlined />}
+                            size="large"
+                            onClick={() => setIsQrModalVisible(true)}
+                            style={{ width: '100%' }}
+                        >
+                            从手机上传文件
+                        </Button>
+                    )}
                 </Space>
             </Card>
 
+            {/* 6. 文件列表卡片 - 彻底重构 Header */}
             <Card
+                style={{ marginTop: 24 }}
+                bodyStyle={{ padding: isMobile ? '0 12px 12px' : '24px' }} // 移动端列表紧凑
                 title={
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span>已同步的文件 ({filteredFiles.length})</span>
-                        <Space size="small" style={{ fontWeight: 'normal' }}>
+                    // 移动端简单标题，PC端复杂标题
+                    isMobile ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                           <span>已同步 ({filteredFiles.length})</span>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span>已同步的文件 ({filteredFiles.length})</span>
+                             {/* PC端筛选器保持在右侧 */}
+                             <Space size="small">
+                                <Search
+                                    placeholder="搜索文件名"
+                                    allowClear
+                                    onSearch={setSearchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    style={{ width: 180 }}
+                                />
+                                <RangePicker
+                                    onChange={setDateRange}
+                                    style={{ width: 220 }}
+                                />
+                            </Space>
+                        </div>
+                    )
+                }
+            >
+                {/* 7. 移动端筛选器：移到 Card Body 内部，并垂直堆叠 */}
+                {isMobile && (
+                    <div style={{ marginBottom: 16, marginTop: 16, padding: '0 4px' }}>
+                        <Space direction="vertical" style={{ width: '100%' }} size="small">
                             <Search
                                 placeholder="搜索文件名"
                                 allowClear
                                 onSearch={setSearchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{ width: 200 }}
+                                style={{ width: '100%' }}
                             />
                             <RangePicker
                                 onChange={setDateRange}
-                                style={{ width: 240 }}
-                                placeholder={['开始日期', '结束日期']}
+                                style={{ width: '100%' }}
+                                placeholder={['开始', '结束']} // 简化 placeholder
                             />
                         </Space>
                     </div>
-                }
-                style={{ marginTop: 24 }}
-            >
+                )}
+
                 <List
                     loading={filesLoading}
                     dataSource={filteredFiles}
-                    pagination={{ pageSize: 5 }}
+                    pagination={{ pageSize: 5, size: 'small' }} // 移动端分页变小
                     renderItem={(file) => (
                         <List.Item
                             actions={[
-                                <Button type="link" icon={<DownloadOutlined />} onClick={() => handleDownload(file)}>下载</Button>,
-                                <Popconfirm title="确定删除此文件吗？" description="文件将从云端永久删除。" onConfirm={() => handleDelete(file)} okText="删除" cancelText="取消">
-                                    <Button danger type="link" icon={<DeleteOutlined />} />
+                                // 8. 移动端只显示图标，PC端显示文字+图标
+                                <Button type="link" icon={<DownloadOutlined />} onClick={() => handleDownload(file)}>
+                                    {!isMobile && "下载"}
+                                </Button>,
+                                <Popconfirm 
+                                    title="删除文件？" 
+                                    onConfirm={() => handleDelete(file)} 
+                                    okText="是" 
+                                    cancelText="否"
+                                    placement="topRight" // 防止被屏幕遮挡
+                                >
+                                    <Button danger type="link" icon={<DeleteOutlined />}>
+                                         {!isMobile && "删除"}
+                                    </Button>
                                 </Popconfirm>
                             ]}
+                            style={{ padding: isMobile ? '12px 0' : '16px 24px' }}
                         >
                             <List.Item.Meta
-                                avatar={<Avatar icon={<FileTextOutlined />} style={{ backgroundColor: '#1890ff' }} />}
-                                title={<Text strong>{file.file_name}</Text>}
-                                description={`同步于: ${dayjs(file.created_at).format('YYYY-MM-DD HH:mm')}`}
+                                avatar={<Avatar icon={<FileTextOutlined />} style={{ backgroundColor: '#1890ff' }} size={isMobile ? 'small' : 'default'} />}
+                                title={
+                                    <Text strong style={{ fontSize: isMobile ? '14px' : '16px', wordBreak: 'break-all' }}>
+                                        {file.file_name}
+                                    </Text>
+                                }
+                                description={
+                                    <span style={{ fontSize: '12px' }}>
+                                        {dayjs(file.created_at).format('MM-DD HH:mm')}
+                                    </span>
+                                }
                             />
                         </List.Item>
                     )}
-                    locale={{ emptyText: "没有找到符合条件的文件。" }}
+                    locale={{ emptyText: "没有找到文件" }}
                 />
             </Card>
 
@@ -643,17 +707,16 @@ export const FileSender = () => {
                 open={isQrModalVisible}
                 onCancel={() => setIsQrModalVisible(false)}
                 footer={null}
+                width={320} // 限制 Modal 宽度
             >
-                <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <Paragraph>1. 请使用您手机的浏览器或微信扫描下方二维码。</Paragraph>
-                    <canvas ref={qrCodeRef} style={{ border: '1px solid #f0f0f0', borderRadius: '8px' }}></canvas>
-                    <Paragraph style={{ marginTop: '16px' }}>2. 在手机浏览器中**登录您的账户**。</Paragraph>
-                    <Paragraph type="secondary">3. 登录后，您将看到相同的上传界面，上传的文件将实时同步到这里。</Paragraph>
+                <div style={{ textAlign: 'center', padding: '10px' }}>
+                    <Paragraph>1. 使用手机扫描二维码</Paragraph>
+                    <canvas ref={qrCodeRef} style={{ border: '1px solid #f0f0f0', borderRadius: '8px', maxWidth: '100%' }}></canvas>
+                    <Paragraph style={{ marginTop: '16px', fontSize: '13px' }}>2. 登录账户后即可同步</Paragraph>
                 </div>
             </Modal>
         </div>
     );
 };
 
-// 导出页面组件
 export default FileSender;

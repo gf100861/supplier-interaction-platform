@@ -405,17 +405,6 @@ const handleBatchDeleteWithinBatch = async () => {
                     const responsible = toPlainText(rawResponsibleValue)?.toString() || '';
                     const deadlineValue = rawDeadlineValue; // 日期对象或字符串
 
-                    // --- 3. 添加日志：打印解析后的每行数据 ---
-                    //  console.log(`[Action Upload] Row ${rowNumber}:`, {
-                    //     noticeId: noticeId,
-                    //     rawPlan: rawPlanValue,
-                    //     parsedPlan: planText.trim(),
-                    //     rawResp: rawResponsibleValue,
-                    //     parsedResp: responsible.trim(),
-                    //     rawDeadline: deadlineValue,
-                    //     isPlanValid: !!(noticeId && planText.trim()) // <-- 修正后的逻辑
-                    // });
-
                     // --- 4. 核心修正：仅要求 Action Plan 必填 ---
                     if (noticeId && planText.trim() && responsible.trim() && deadlineValue) {
                         if (!plansByNoticeId[noticeId]) {

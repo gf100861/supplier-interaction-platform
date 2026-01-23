@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
     Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, 
-    Button, Divider, Space, Select, Popconfirm, Tour, Skeleton, Tag, message 
+    Button, Divider, Space, Select, Popconfirm, Tour, Skeleton, Tag, message,
+    Grid // 1. 引入 Grid
 } from 'antd';
 import { 
     ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, 
@@ -21,6 +22,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 dayjs.extend(minMax);
 
 const { Title, Paragraph, Text } = Typography;
+const { useBreakpoint } = Grid; // 2. 获取断点 Hook
 
 // 🔧 动态配置 API 地址
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -38,9 +40,13 @@ const getPlanIcon = (type) => {
     }
 };
 
-// --- 重构后的组件: PlanItem (修复溢出问题) ---
+// --- 重构后的组件: PlanItem (修复溢出问题 + 移动端隐藏按钮) ---
 const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
     const [targetDateStr, setTargetDateStr] = useState(null); 
+    
+    // 3. 响应式检测
+    const screens = useBreakpoint();
+    const isMobile = !screens.md; 
 
     const handleConfirmReschedule = () => {
         if (targetDateStr) {
@@ -80,7 +86,6 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
         </div>
     );
 
-    // 修复的核心：使用 minWidth: 0 和 flex: 1 让左侧内容自适应收缩
     const itemContent = (
         <div style={{ 
             display: 'flex', 
@@ -92,7 +97,7 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
             borderRadius: '6px', 
             marginBottom: '8px', 
             backgroundColor: '#fff',
-            overflow: 'hidden' // 防止整体溢出
+            overflow: 'hidden' 
         }}>
             {/* 左侧信息区域：自适应宽度 */}
             <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 }}>
@@ -114,26 +119,35 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
                  <Tooltip title="查找相关通知单">
                     <Button type="text" size="small" icon={<FileTextOutlined />} style={{ color: '#595959' }} onClick={(e) => { e.stopPropagation(); onNavigate(plan); }} />
                 </Tooltip>
-                <Tooltip title="调整计划月份">
-                    <Popconfirm
-                        title={rescheduleTitle}
-                        onConfirm={handleConfirmReschedule}
-                        onCancel={() => setTargetDateStr(null)}
-                        okText="移动"
-                        cancelText="取消"
-                        disabled={plan.status === 'completed'}
-                    >
-                        <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={plan.status === 'completed'} />
-                    </Popconfirm>
-                </Tooltip>
+                
+                {/* 4. 移动端隐藏重分配按钮 */}
+                {!isMobile && (
+                    <Tooltip title="调整计划月份">
+                        <Popconfirm
+                            title={rescheduleTitle}
+                            onConfirm={handleConfirmReschedule}
+                            onCancel={() => setTargetDateStr(null)}
+                            okText="移动"
+                            cancelText="取消"
+                            disabled={plan.status === 'completed'}
+                        >
+                            <Button type="text" size="small" icon={<CalendarOutlined />} style={{ color: '#1890ff' }} disabled={plan.status === 'completed'} />
+                        </Popconfirm>
+                    </Tooltip>
+                )}
+
                 <Tooltip title="标记完成/待办">
                     <Popconfirm title={`标记为 ${plan.status === 'pending' ? '已完成' : '待办'}?`} onConfirm={() => onMarkComplete(plan.id, plan.status)}>
                         <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{ color: 'grey' }} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
                     </Popconfirm>
                 </Tooltip>
-                 <Popconfirm title="确定删除?" onConfirm={() => onDelete(plan.id)}>
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
+                
+                 {/* 5. 移动端隐藏删除按钮 */}
+                 {!isMobile && (
+                    <Popconfirm title="确定删除?" onConfirm={() => onDelete(plan.id)}>
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                 )}
             </div>
         </div>
     );
