@@ -1,34 +1,30 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload } from 'antd';
-import { FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload, Grid, Card, Dropdown } from 'antd';
+import { 
+    FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, 
+    SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined,
+    MoreOutlined, CalendarOutlined, UserOutlined 
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNotices } from '../../contexts/NoticeContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
+const { Text, Paragraph } = Typography;
+const { useBreakpoint } = Grid;
 
-const { Text } = Typography;
-
-// --- 1. 新增：高亮文本辅助组件 ---
-// 支持多关键词 (例如用逗号分隔的)
+// --- 1. 高亮文本组件 (保持不变) ---
 const HighlightText = ({ text, keyword }) => {
     const strText = String(text || '');
     if (!keyword || !keyword.trim()) {
         return <>{strText}</>;
     }
-
-    // 1. 将搜索词按分隔符拆分为数组，并过滤空值
     const keywords = keyword.toLowerCase().split(/[；;@,，\s]+/).filter(k => k.trim());
     if (keywords.length === 0) return <>{strText}</>;
-
-    // 2. 构建正则：(keyword1|keyword2|...)，注意转义特殊字符
     const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const regex = new RegExp(`(${escapedKeywords.join('|')})`, 'gi');
-
-    // 3. 拆分并高亮
     const parts = strText.split(regex);
-
     return (
         <span>
             {parts.map((part, i) =>
@@ -36,197 +32,39 @@ const HighlightText = ({ text, keyword }) => {
                     <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
                         {part}
                     </span>
-                ) : (
-                    part
-                )
+                ) : part
             )}
         </span>
     );
 };
 
-// --- 子组件：单个通知单 ---
+// --- 辅助函数 (保持不变) ---
 const getStatusTag = (status) => {
     let color;
     switch (status) {
         case '待提交Action Plan':
-        case '待供应商处理':
-            color = 'processing'; // 蓝色
-            break;
-        case '待供应商关闭':
-            color = 'warning'; // 橙色
-            break;
-        case '待SD确认actions':
-            color = 'red';
-            break;
+        case '待供应商处理': color = 'processing'; break;
+        case '待供应商关闭': color = 'warning'; break;
+        case '待SD确认actions': color = 'red'; break;
         case '待SD关闭evidence':
-        case '待SD审核计划':
-            color = 'purple'; // 紫色
-            break;
-        case '已完成':
-            color = 'success'; // 绿色
-            break;
-        case '已作废':
-            color = 'default'; // 灰色
-            break;
-        default:
-            color = 'default';
+        case '待SD审核计划': color = 'purple'; break;
+        case '已完成': color = 'success'; break;
+        case '已作废': color = 'default'; break;
+        default: color = 'default';
     }
-    return <Tag color={color}>{status}</Tag>;
+    // 移动端Tag稍微小一点
+    return <Tag color={color} style={{ marginRight: 0 }}>{status}</Tag>;
 };
 
 const toPlainText = (val) => {
     if (val == null) return '';
-    if (typeof val === 'object' && val.richText) {
-        return val.richText.map(r => r?.text || '').join('');
-    }
-    if (typeof val === 'object' && Array.isArray(val.richText)) {
-        return val.richText.map(r => r?.text || '').join('');
-    }
-    if (typeof val === 'object' && typeof val.richText === 'string') {
-        return val.richText;
-    }
+    if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
+    if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
+    if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
     return String(val);
 };
 
-
-// const SingleNoticeItem = ({
-//     item,
-//     getActionsForItem,
-//     showDetailsModal,
-//     handleReviewToggle,
-//     token,
-//     currentUser,
-//     noticeCategoryDetails,
-//     selectable = false,
-//     selected = false,
-//     onSelectChange = () => { },
-//     searchTerm = '' // --- 2. 接收 searchTerm ---
-// }) => {
-
-//     const getChineseOnly = (text = '') =>
-//         text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
-
-//     // 获取纯文本标题用于高亮
-//     const plainTitle = toPlainText(item.title);
-//     const chineseTitle = getChineseOnly(plainTitle)?.trim();
-
-//     const rawTitle =
-//         item.category === 'Historical 8D' && chineseTitle.length > 0
-//             ? chineseTitle
-//             : plainTitle;
-
-//     // const rawTitle = item.category === 'Historical 8D' ? getChineseOnly(toPlainText(item.title)) : toPlainText(item.title);
-
-//     const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
-//         ? noticeCategoryDetails[item.category]
-//         : { id: 'N/A', color: 'orange' };
-
-//     const plainDetails = toPlainText(
-//         item.details?.rootCause ||
-//         item.sdNotice?.details?.finding ||
-//         item.sdNotice?.description
-//     );
-
-//     const chineseDetails = getChineseOnly(plainDetails)?.trim();
-
-//     const highlightText =
-//         item.category === 'Historical 8D' && chineseDetails
-//             ? chineseDetails
-//             : plainDetails;
-
-
-    
-//     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
-
-//     // 将原先通过 List.Item 的 actions 渲染的操作按钮移到左侧和标签对齐
-//     const actions = getActionsForItem ? getActionsForItem(item) : [];
-
-//     return (
-//         // note: 不再使用 List.Item 的 actions 属性，而是在 description 区域里统一排版
-//         <List.Item onClick={() => showDetailsModal(item)}>
-//             {selectable && (
-//                 <Checkbox
-//                     checked={selected}
-//                     onChange={(e) => onSelectChange(item.id, e.target.checked)}
-//                     onClick={(e) => e.stopPropagation()}
-//                     style={{ marginRight: 16 }}
-//                 />
-//             )}
-
-//             {isReviewable && (
-//                 <Checkbox
-//                     checked={item.isReviewed}
-//                     onChange={(e) => handleReviewToggle(item, e)}
-//                     onClick={(e) => e.stopPropagation()}
-//                     style={{ marginRight: 16 }}
-//                 />
-//             )}
-
-//             <List.Item.Meta
-//                 style={{ paddingLeft: selectable || isReviewable ? 0 : 24 }}
-//                 avatar={<FileTextOutlined style={{ fontSize: 24, color: token.colorPrimary }} />}
-//                 title={
-//                     <Space>
-//                         <a onClick={(e) => { e.stopPropagation(); showDetailsModal(item); }}>
-//                             <Text strong>
-//                                 <HighlightText text={rawTitle} keyword={searchTerm} />
-//                             </Text>
-//                         </a>
-
-//                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />}>已审阅</Tag>}
-
-//                         <Text type="secondary" style={{ fontSize: 12 }}>
-//                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
-//                         </Text>
-//                     </Space>
-//                 }
-//                 description={
-//                     <div>
-//                         {/* 详情行（保留原来的截断表现） */}
-//                         <div style={{ maxHeight: 42, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-//                             <HighlightText text={highlightText} keyword={searchTerm} />
-//                         </div>
-
-//                         {/* 标签 + 状态 + 操作：放在同一行，统一左对齐 */}
-//                         <div
-//                             style={{
-//                                 display: 'flex',
-//                                 alignItems: 'center',
-//                                 gap: 12,
-//                                 marginTop: 8,
-//                                 flexWrap: 'wrap'
-//                             }}
-//                             // 阻止点击穿透到外层 List.Item
-//                             onClick={(e) => e.stopPropagation()}
-//                         >
-//                             <Space size="middle" style={{ alignItems: 'center' }}>
-//                                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
-//                                 {getStatusTag(item.status)}
-//                             </Space>
-
-//                             {/* 把原来的 action 节点渲染在标签右侧并左对齐 */}
-//                             {actions && actions.length > 0 && (
-//                                 <Space size="small" style={{ marginLeft: 0 }}>
-//                                     {actions.map((act, idx) => (
-//                                         // 把每个 action 包装一层，避免点击触发父容器 onClick
-//                                         <span key={idx} onClick={(e) => { e.stopPropagation(); }}>
-//                                             {act}
-//                                         </span>
-//                                     ))}
-//                                 </Space>
-//                             )}
-//                         </div>
-//                     </div>
-//                 }
-//             />
-//             {/* <Space size="middle">
-//                 <Tag color={categoryInfo.color}>{item.category || '未分类'}</Tag>
-//                 {getStatusTag(item.status)}
-//             </Space> */}
-//         </List.Item>
-//     );
-// };
-
+// --- 子组件：单个通知单 (重点修改) ---
 const SingleNoticeItem = ({
     item,
     getActionsForItem,
@@ -238,9 +76,11 @@ const SingleNoticeItem = ({
     selectable = false,
     selected = false,
     onSelectChange = () => { },
-    searchTerm = '' 
+    searchTerm = ''
 }) => {
-    // ... 原有的逻辑 (getChineseOnly, plainTitle, rawTitle, categoryInfo 等) 保持不变 ...
+    const screens = useBreakpoint();
+    const isMobile = !screens.md; // 小于 md (768px) 视为移动端
+
     const getChineseOnly = (text = '') => text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
     const plainTitle = toPlainText(item.title);
     const chineseTitle = getChineseOnly(plainTitle)?.trim();
@@ -255,18 +95,74 @@ const SingleNoticeItem = ({
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
 
+    // --- 移动端渲染逻辑 ---
+    if (isMobile) {
+        return (
+            <div style={{ 
+                padding: '12px', 
+                borderBottom: '1px solid #f0f0f0', 
+                backgroundColor: '#fff',
+                position: 'relative'
+            }}>
+                {/* 1. 顶部：选择框 + 标题 + 状态 */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 8 }}>
+                    {(selectable || isReviewable) && (
+                        <Checkbox
+                            checked={selectable ? selected : item.isReviewed}
+                            onChange={(e) => selectable ? onSelectChange(item.id, e.target.checked) : handleReviewToggle(item, e)}
+                            style={{ marginTop: 4, marginRight: 12 }}
+                        />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                            <Text strong style={{ fontSize: '15px', lineHeight: 1.4, marginRight: 8 }} ellipsis={{ rows: 2 }}>
+                                <HighlightText text={rawTitle} keyword={searchTerm} />
+                            </Text>
+                            {/* 状态Tag放右上角 */}
+                            <div style={{ flexShrink: 0, transform: 'scale(0.9)', transformOrigin: 'top right' }}>
+                                {getStatusTag(item.status)}
+                            </div>
+                        </div>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                            <HighlightText text={item.noticeCode} keyword={searchTerm} />
+                        </Text>
+                    </div>
+                </div>
+
+                {/* 2. 中部：描述内容 */}
+                <div style={{ marginBottom: 8, paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
+                    <Paragraph type="secondary" ellipsis={{ rows: 2, expandable: false }} style={{ fontSize: '13px', margin: 0 }}>
+                         <HighlightText text={highlightText} keyword={searchTerm} />
+                    </Paragraph>
+                </div>
+
+                {/* 3. 底部：分类标签 + 操作按钮 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
+                    <Tag color={categoryInfo.color} style={{ fontSize: '12px', lineHeight: '20px' }}>
+                        {item.category || '未分类'}
+                    </Tag>
+                    
+                    {/* 移动端操作按钮组 */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                         {/* 直接复用 getActionsForItem，但在移动端可能需要 CSS 调整间距 */}
+                        {getActionsForItem(item)}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- 桌面端渲染逻辑 (保持原样) ---
     return (
-        <List.Item 
-            // 关键点 1: actions 依然负责最右侧按钮，AntD 会自动将其固定在右侧
+        <List.Item
             actions={getActionsForItem(item)}
-            style={{ 
-                padding: '12px 24px', 
-                alignItems: 'center', // 垂直居中，保证右侧按钮不随左侧内容高度跳动
-                display: 'flex' 
+            style={{
+                padding: '12px 24px',
+                alignItems: 'center',
+                display: 'flex'
             }}
         >
             <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
-                {/* 选择框 */}
                 {(selectable || isReviewable) && (
                     <Checkbox
                         checked={selectable ? selected : item.isReviewed}
@@ -275,13 +171,8 @@ const SingleNoticeItem = ({
                         style={{ marginRight: '16px' }}
                     />
                 )}
-
-                {/* 图标 */}
                 <FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary, marginRight: '16px', flexShrink: 0 }} />
-
-                {/* 内容区域：标题、描述、标签都在这里向左对齐 */}
                 <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {/* 第一行：标题 + 已审阅标签 + 编号 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <a onClick={() => showDetailsModal(item)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             <Text strong><HighlightText text={rawTitle} keyword={searchTerm} /></Text>
@@ -291,22 +182,17 @@ const SingleNoticeItem = ({
                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
                         </Text>
                     </div>
-
-                    {/* 第二行：描述文字 和 业务标签 在同一行显示 (若空间不足会截断描述) */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                        {/* 描述文字：自动占据剩余空间并显示省略号 */}
-                        <div style={{ 
-                            color: 'rgba(0, 0, 0, 0.45)', 
+                        <div style={{
+                            color: 'rgba(0, 0, 0, 0.45)',
                             fontSize: '14px',
-                            whiteSpace: 'nowrap', 
-                            overflow: 'hidden', 
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            flex: 1 
+                            flex: 1
                         }}>
                             <HighlightText text={highlightText} keyword={searchTerm} />
                         </div>
-
-                        {/* 业务标签组：紧跟在描述后面，保持向左重齐，且不会换行 */}
                         <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                             <Tag color={categoryInfo.color} style={{ margin: 0 }}>{item.category || '未分类'}</Tag>
                             {getStatusTag(item.status)}
@@ -314,85 +200,68 @@ const SingleNoticeItem = ({
                     </div>
                 </div>
             </div>
-            {/* getActionsForItem(item) 会被渲染在 List.Item 的 actions 区域，即最右侧 */}
         </List.Item>
     );
 };
 
 const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
-
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+    
     const [sortOrder, setSortOrder] = useState('default');
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
-    // const supplierName = batch.representative.supplier?.name || '未知供应商';
     const category = batch.representative?.category || '未知类型';
     const sdNotice = batch.representative?.sdNotice;
-    //三元表达式应用
     const createDate = sdNotice?.createTime
         ? dayjs(sdNotice.createTime).format('YYYY-MM-DD')
         : sdNotice?.planSubmitTime
             ? sdNotice.planSubmitTime.slice(0, 10)
             : '未知日期';
+    
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const isRealBatch = batch.batchId.startsWith('BATCH-');
+    
+    // 移动端简化标题
     const titleText = isRealBatch
-        ? `批量任务: ${supplierShortCode} - ${category}`
-        : `每日任务: ${supplierShortCode}- ${category}`;
+        ? `批量: ${supplierShortCode} - ${category}`
+        : `${supplierShortCode} - ${category}`;
 
     const { deleteMultipleNotices, updateNotice } = useNotices();
     const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]);
     const [isDeletingBatchItems, setIsDeletingBatchItems] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-
     const { messageApi } = useNotification();
 
-
-    // 辅助函数：用于安全地将富文本转为纯文本
+    // ... (toPlainText 保持不变) ...
     const toPlainText = (val) => {
-        if (val == null) return '';
-        // 检查 ExcelJS 可能返回的富文本对象
-        if (typeof val === 'object' && val.richText) {
-            console.log('检测到 Excel RichText:', val);
-            return val.richText.map(r => r?.text || '').join('');
-        }
-        // 检查您系统中存储的富文本对象
-        if (typeof val === 'object' && Array.isArray(val.richText)) {
-            console.log('检测到 System RichText Array:', val);
-            return val.richText.map(r => r?.text || '').join('');
-        }
-        if (typeof val === 'object' && typeof val.richText === 'string') {
-            console.log('检测到 System RichText String:', val);
-            return val.richText;
-        }
-        // 已经是纯文本或数字
-        return String(val);
+       if (val == null) return '';
+       if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
+       if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
+       if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
+       return String(val);
     };
 
+    // ... (allowBatchActions, allowBatchEvidenceUpload, allowDeletion useMemos 保持不变) ...
     const allowBatchActions = useMemo(() => {
         const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
-        return allPending && currentUser.role === 'Supplier'; // 只有供应商可以操作
+        return allPending && currentUser.role === 'Supplier';
     }, [batch.notices, currentUser]);
-
 
     const allowBatchEvidenceUpload = useMemo(() => {
         const allPendingEvidence = batch.notices.every(notice => notice.status === '待供应商关闭');
         return allPendingEvidence && currentUser.role === 'Supplier';
     }, [batch.notices, currentUser]);
 
-    // 修正：SD/Manager/Admin 都可以批量删除
     const allowDeletion = useMemo(() => {
         const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
         return allPending && ['SD', 'Manager', 'Admin'].includes(currentUser.role);
     }, [batch.notices, currentUser]);
 
-
+    // ... (sortedNotices, handleSort, handleSelectChange, handleSelectAll 保持不变) ...
     const sortedNotices = useMemo(() => {
         const noticesToSort = [...batch.notices];
-        if (sortOrder === 'asc') {
-            return noticesToSort.sort((a, b) => (toPlainText(a.title) || '').localeCompare(toPlainText(b.title) || ''));
-        }
-        if (sortOrder === 'desc') {
-            return noticesToSort.sort((a, b) => (toPlainText(b.title) || '').localeCompare(toPlainText(a.title) || ''));
-        }
+        if (sortOrder === 'asc') return noticesToSort.sort((a, b) => (toPlainText(a.title) || '').localeCompare(toPlainText(b.title) || ''));
+        if (sortOrder === 'desc') return noticesToSort.sort((a, b) => (toPlainText(b.title) || '').localeCompare(toPlainText(a.title) || ''));
         return noticesToSort;
     }, [batch.notices, sortOrder]);
 
@@ -408,14 +277,9 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
     const handleSelectAll = (e) => {
         const checked = e.target.checked;
-        if (checked) {
-            setSelectedNoticeKeys(sortedNotices.map(n => n.id));
-        } else {
-            setSelectedNoticeKeys([]);
-        }
+        setSelectedNoticeKeys(checked ? sortedNotices.map(n => n.id) : []);
     };
-
-    const handleBatchDeleteWithinBatch = async () => {
+const handleBatchDeleteWithinBatch = async () => {
         if (selectedNoticeKeys.length === 0) {
             messageApi.warning('请至少选择一项进行删除。');
             return;
@@ -792,16 +656,66 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         return false;
     };
 
-
     const isAllSelected = sortedNotices.length > 0 && selectedNoticeKeys.length === sortedNotices.length;
     const isIndeterminate = selectedNoticeKeys.length > 0 && selectedNoticeKeys.length < sortedNotices.length;
 
+    // --- 批量操作按钮渲染函数 (响应式适配) ---
+    const renderBatchActions = () => {
+        // 定义通用的按钮样式
+        const btnStyle = isMobile ? { width: '100%', marginBottom: 8 } : {};
+        const containerStyle = isMobile 
+            ? { padding: '16px', display: 'flex', flexDirection: 'column' }
+            : { marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', gap: '16px' };
+
+        if (allowBatchActions) {
+            return (
+                <div style={containerStyle}>
+                    <Button icon={<DownloadOutlined />} onClick={handleActionDownloadTemplate} style={btnStyle}>
+                        下载行动计划模板
+                    </Button>
+                    <Upload
+                        beforeUpload={handleActionExcelUpload}
+                        showUploadList={false}
+                        accept=".xlsx, .xls"
+                        disabled={isUploading}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                    >
+                        <Button type="primary" icon={<FileExcelOutlined />} loading={isUploading} style={btnStyle} block={isMobile}>
+                            上传行动计划
+                        </Button>
+                    </Upload>
+                </div>
+            );
+        }
+
+        if (allowBatchEvidenceUpload) {
+            return (
+                <div style={containerStyle}>
+                    <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate} style={btnStyle}>
+                        下载证据模板
+                    </Button>
+                    <Upload
+                        beforeUpload={handleEvidenceExcelUpload}
+                        showUploadList={false}
+                        accept=".xlsx, .xls"
+                        disabled={isUploading}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                    >
+                        <Button type="primary" icon={<FileExcelOutlined />} loading={isUploading} style={btnStyle} block={isMobile}>
+                            上传证据 (仅文本)
+                        </Button>
+                    </Upload>
+                </div>
+            );
+        }
+        return null;
+    };
 
     return (
-        <List.Item style={{ display: 'block', padding: 0 }}>
+        <List.Item style={{ display: 'block', padding: 0, marginBottom: 16 }}>
             <Collapse
                 bordered={false}
-                style={{ width: '100%', backgroundColor: props.token.colorBgLayout }}
+                style={{ width: '100%', backgroundColor: props.token.colorBgLayout, borderRadius: 8 }}
                 expandIconPosition="end"
                 activeKey={activeCollapseKeys}
                 onChange={(keys) => setActiveCollapseKeys(keys)}
@@ -809,36 +723,32 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                 <Collapse.Panel
                     key={batch.batchId}
                     header={
-                        <List.Item.Meta
-                            avatar={<ProfileOutlined style={{ fontSize: '24px', color: props.token.colorPrimary }} />}
-                            title={
-                                <Space align="center">
-                                    <Tooltip title={isRealBatch ? `${supplierShortCode} - ${category}` : `${supplierShortCode} - ${createDate}`}>
-                                        <Text strong style={{ fontSize: '16px' }}>
-                                            {titleText}
-                                        </Text>
-                                    </Tooltip>
-                                    {batch.notices.length > 1 && (
-                                        <>
-                                            <Tooltip title="按标题升序排列">
-                                                <Button type={sortOrder === 'asc' ? 'primary' : 'text'} size="small" shape="circle" icon={<SortAscendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('asc'); }} />
-                                            </Tooltip>
-                                            <Tooltip title="按标题降序排列">
-                                                <Button type={sortOrder === 'desc' ? 'primary' : 'text'} size="small" shape="circle" icon={<SortDescendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('desc'); }} />
-                                            </Tooltip>
-                                        </>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                           <ProfileOutlined style={{ fontSize: isMobile ? '20px' : '24px', color: props.token.colorPrimary, marginRight: 12 }} />
+                           <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <Text strong style={{ fontSize: isMobile ? '14px' : '16px' }}>{titleText}</Text>
+                                    {/* 排序按钮 (仅在展开且非移动端或移动端空间足够时显示，这里简化为只在PC显示排序，移动端节省空间) */}
+                                    {!isMobile && batch.notices.length > 1 && (
+                                        <Space size="small">
+                                            <Tooltip title="升序"><Button type={sortOrder === 'asc' ? 'primary' : 'text'} size="small" icon={<SortAscendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('asc'); }} /></Tooltip>
+                                            <Tooltip title="降序"><Button type={sortOrder === 'desc' ? 'primary' : 'text'} size="small" icon={<SortDescendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('desc'); }} /></Tooltip>
+                                        </Space>
                                     )}
-                                </Space>
-                            }
-                            description={`通知日期: ${createDate} | (共 ${batch.notices.length} 项)`}
-                        />
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#888', marginTop: 4 }}>
+                                    <CalendarOutlined style={{ marginRight: 4 }}/>{createDate} 
+                                    <span style={{ margin: '0 8px' }}>|</span> 
+                                    共 {batch.notices.length} 项
+                                </div>
+                           </div>
+                        </div>
                     }
                 >
-                    {/* --- 10. 核心修改：条件渲染操作区域 --- */}
                     {/* 批量删除 (SD/Manager/Admin) */}
                     {allowDeletion && (
-                        <div style={{ marginBottom: '16px', padding: '0 16px' }}>
-                            <Space>
+                        <div style={{ padding: '0 16px 16px', borderBottom: '1px solid #eee' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Checkbox
                                     indeterminate={isIndeterminate}
                                     onChange={handleSelectAll}
@@ -846,68 +756,32 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                                 >
                                     全选
                                 </Checkbox>
-                                <Popconfirm
-                                    title={`确定要删除选中的 ${selectedNoticeKeys.length} 项吗？`}
-                                    onConfirm={handleBatchDeleteWithinBatch}
-                                    okText="确认删除"
-                                    cancelText="取消"
-                                    disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
-                                >
-                                    <Button
-                                        danger
-                                        icon={<DeleteOutlined />}
+                                <Space>
+                                    {selectedNoticeKeys.length > 0 && <Text type="secondary" style={{ fontSize: '12px' }}>已选 {selectedNoticeKeys.length}</Text>}
+                                    <Popconfirm
+                                        title={`删除 ${selectedNoticeKeys.length} 项?`}
+                                        onConfirm={handleBatchDeleteWithinBatch}
+                                        okText="是"
+                                        cancelText="否"
                                         disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
-                                        loading={isDeletingBatchItems}
                                     >
-                                        删除选中项
-                                    </Button>
-                                </Popconfirm>
-                                {selectedNoticeKeys.length > 0 && <Text type="secondary">已选择 {selectedNoticeKeys.length} 项</Text>}
-                            </Space>
+                                        <Button
+                                            danger
+                                            size="small"
+                                            icon={<DeleteOutlined />}
+                                            disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
+                                            loading={isDeletingBatchItems}
+                                        >
+                                            删除
+                                        </Button>
+                                    </Popconfirm>
+                                </Space>
+                            </div>
                         </div>
                     )}
 
-                    {/* 批量提交行动计划 (Supplier) */}
-                    {allowBatchActions && (
-                        <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                            <Space>
-                                <Button icon={<DownloadOutlined />} onClick={handleActionDownloadTemplate}>
-                                    下载行动计划模板
-                                </Button>
-                                <Upload
-                                    beforeUpload={handleActionExcelUpload} // <-- 确保调用正确的函数
-                                    showUploadList={false}
-                                    accept=".xlsx, .xls"
-                                    disabled={isUploading}
-                                >
-                                    <Button icon={<FileExcelOutlined />} loading={isUploading}>
-                                        上传行动计划
-                                    </Button>
-                                </Upload>
-                            </Space>
-                        </div>
-                    )}
-
-                    {/* 批量提交证据 (Supplier) */}
-                    {allowBatchEvidenceUpload && (
-                        <div style={{ marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                            <Space>
-                                <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate}>
-                                    下载证据模板
-                                </Button>
-                                <Upload
-                                    beforeUpload={handleEvidenceExcelUpload} // <-- 确保调用正确的函数
-                                    showUploadList={false}
-                                    accept=".xlsx, .xls"
-                                    disabled={isUploading}
-                                >
-                                    <Button icon={<FileExcelOutlined />} loading={isUploading}>
-                                        上传证据 (仅文本)
-                                    </Button>
-                                </Upload>
-                            </Space>
-                        </div>
-                    )}
+                    {/* 批量操作区域 (下载/上传) */}
+                    {renderBatchActions()}
 
                     <List
                         dataSource={sortedNotices}
@@ -915,7 +789,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                             <SingleNoticeItem
                                 item={notice}
                                 {...props}
-                                selectable={allowDeletion} // 仅在允许删除时才可选择
+                                selectable={allowDeletion}
                                 selected={selectedNoticeKeys.includes(notice.id)}
                                 onSelectChange={handleSelectChange}
                             />
@@ -927,19 +801,23 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     );
 };
 
-// --- 主组件：通知单列表 ---
+// --- 主组件 ---
 export const NoticeList = (props) => {
-    // props.searchTerm 应该由父组件传入
+    // 提示：父组件(NoticePage)应该负责处理 filter 的UI (如 DatePicker)
+    // 这里仅负责展示列表。
+    // 如果 props.data 是空，显示 Empty 状态
     return (
         <List
             dataSource={props.data}
             pagination={props.pagination}
+            split={false} // 移除默认分割线，使用组件内部的 border/margin
             renderItem={item => (
                 item.isBatch
-                    ? <NoticeBatchItem batch={item} {...props} searchTerm={props.searchTerm} /> // --- 6. 传递 searchTerm ---
-                    : <SingleNoticeItem item={item} selectable={false} {...props} searchTerm={props.searchTerm} /> // --- 7. 传递 searchTerm ---
+                    ? <NoticeBatchItem batch={item} {...props} searchTerm={props.searchTerm} />
+                    : <SingleNoticeItem item={item} selectable={false} {...props} searchTerm={props.searchTerm} />
             )}
             locale={{ emptyText: '暂无相关通知单' }}
+            style={{ backgroundColor: 'transparent' }} // 列表背景透明
         />
     );
 };

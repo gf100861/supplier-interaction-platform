@@ -40,7 +40,7 @@ module.exports = async (req, res) => {
             // 获取用户 ID 和 Supplier ID (用于 Notice 上下文)
             const { data, error } = await supabaseAdmin
                 .from('users')
-                .select('id, supplier_id'); // 按需只取这俩字段
+                .select('id, supplier_id, username'); // 按需只取这俩字段
 
             if (error) throw error;
             return res.json(data);

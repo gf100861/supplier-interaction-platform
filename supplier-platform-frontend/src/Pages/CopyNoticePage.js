@@ -1,261 +1,376 @@
-import React, { useState, useMemo } from 'react';
-import { Card, Avatar, Typography, Button, Upload, Form, Input, List, Switch, Divider, Col, Row, Select, Spin, Modal, Image } from 'antd'; // 引入 Image 组件
-import { UserOutlined, UploadOutlined, LockOutlined, MessageOutlined, InboxOutlined, QrcodeOutlined, MobileOutlined } from '@ant-design/icons'; // 引入新图标
-import { useTheme } from '../contexts/ThemeContext';
-import { useNotification } from '../contexts/NotificationContext';
-import { supabase } from '../supabaseClient';
-
-const { Title, Text, Paragraph } = Typography;
-const { TextArea } = Input; // 3. 确保 TextArea 从 Input 导入
-const { Option } = Select;
-const { Dragger } = Upload; // 4. 引入 Dragger
-
-// 5. 引入文件处理的辅助函数
-const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
-const getBase64 = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = (error) => reject(error); });
-const MINI_PROGRAM_IMAGE_URL = '/images/mini-program.jpg'; // 替换为你的图片地址
-
-const SettingsPage = () => {
-    const [passwordForm] = Form.useForm();
-    const [feedbackForm] = Form.useForm();
-    const { messageApi } = useNotification();
-    const [feedbackLoading, setFeedbackLoading] = useState(false); // 6. 为反馈表单添加 loading 状态
-    
-    // 预览图片的状态
-    const [previewOpen, setPreviewOpen] = useState(false);
-    const [previewImage, setPreviewImage] = useState('');
-    const [previewTitle, setPreviewTitle] = useState('');
-
-    const [currentUser, setCurrentUser] = useState(() => {
-        const userString = localStorage.getItem('user');
-        return userString ? JSON.parse(userString) : null;
-    });
-
-    const { theme, toggleTheme } = useTheme();
-
-    if (!currentUser) {
-        return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
-    }
-
-    // 7. 文件预览逻辑
-    const handlePreview = async (file) => {
-        if (!file.url && !file.preview && file.originFileObj) {
-            file.preview = await getBase64(file.originFileObj);
+   const handleBatchDeleteWithinBatch = async () => {
+        if (selectedNoticeKeys.length === 0) {
+            messageApi.warning('请至少选择一项进行删除。');
+            return;
         }
-        setPreviewImage(file.url || file.preview);
-        setPreviewOpen(true);
-        setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
-    };
-    const handleCancelPreview = () => setPreviewOpen(false);
-
-    // 8. 核心修改：更新 handleFeedbackSubmit 以处理文件
-    const handleFeedbackSubmit = async (values) => {
-        setFeedbackLoading(true);
+        setIsDeletingBatchItems(true);
         try {
-            // 8a. 复制文件处理逻辑
-            const processFiles = async (fileList = []) => {
-                return Promise.all((fileList || []).map(async file => {
-                    if (file.originFileObj && !file.url) { // 是新文件
-                        const base64Url = await getBase64(file.originFileObj);
-                        return { uid: file.uid, name: file.name, status: 'done', url: base64Url, type: file.type, size: file.size };
-                    }
-                    return file; // 已经是处理过的文件 (例如，来自草稿)
-                }));
+            await deleteMultipleNotices(selectedNoticeKeys);
+            messageApi.success(`成功删除了 ${selectedNoticeKeys.length} 条通知单。`);
+            setSelectedNoticeKeys([]);
+        } catch (error) {
+            messageApi.error(`批量删除失败: ${error.message}`);
+        } finally {
+            setIsDeletingBatchItems(false);
+        }
+    };
+
+    // --- 下载行动计划模板 ---
+    const handleActionDownloadTemplate = async () => {
+        messageApi.loading({ content: '正在生成模板...', key: 'template' });
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Batch Action Plan');
+
+            worksheet.mergeCells('A1:F1');
+            worksheet.getCell('A1').value = '批量行动计划模板';
+            worksheet.getCell('A1').font = { bold: true, size: 16 };
+
+            worksheet.mergeCells('A2:F2');
+            worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
+
+            worksheet.mergeCells('A3:F3');
+            worksheet.getCell('A3').value = {
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C 列！请在 D, E, F 列填写内容。如有多个行动项，您可以复制并粘贴 A, B, C 列的内容到新行。' }]
             };
 
-            const processedImages = await processFiles(values.images);
-            const processedAttachments = await processFiles(values.attachments);
+            worksheet.getRow(5).values = [
+                'Notice ID (请勿修改)',
+                'Process/Question (问题项)',
+                'Finding/Deviation (问题描述)',
+                'Action Plan (请填写)',
+                'Responsible (请填写)',
+                'Deadline (YYYY-MM-DD 请填写)'
+            ];
+            worksheet.getRow(5).font = { bold: true };
+            // worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
 
-            // 8b. 插入数据库，包含新字段
-            const { error } = await supabase.from('feedback').insert([
-                {
-                    user_id: currentUser.id,
-                    content: values.content,
-                    category: values.category,
-                    images: processedImages.length > 0 ? processedImages : null, // 存入图片
-                    attachments: processedAttachments.length > 0 ? processedAttachments : null, // 存入附件
-                }
-            ]);
+            const grayHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } }; // 深灰色
+            const blueHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; // 浅蓝色
 
-            if (error) throw error;
+            worksheet.getCell('A5').fill = grayHeaderFill;
+            worksheet.getCell('B5').fill = grayHeaderFill;
+            worksheet.getCell('C5').fill = grayHeaderFill;
+            worksheet.getCell('D5').fill = blueHeaderFill;
+            worksheet.getCell('E5').fill = blueHeaderFill;
+            worksheet.getCell('F5').fill = blueHeaderFill;
+            worksheet.columns = [
+                { key: 'id', width: 38 },
+                { key: 'process', width: 40 },
+                { key: 'finding', width: 40 },
+                { key: 'plan', width: 40 },
+                { key: 'responsible', width: 20 },
+                { key: 'deadline', width: 20 },
+            ];
 
-            messageApi.success('非常感谢您的宝贵意见，我们已经收到啦！');
-            feedbackForm.resetFields();
-        } catch (error) {
-            messageApi.error(`提交失败: ${error.message}`);
-        } finally {
-            setFeedbackLoading(false);
-        }
-    };
+            const grayDataFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // 浅灰色
 
-    const onFinishChangePassword = async (values) => {
-        // (密码修改逻辑保持不变)
-        try {
-            const { error } = await supabase.auth.updateUser({
-                password: values.newPassword
+            batch.notices.forEach(notice => {
+                const processText = toPlainText(notice.title) || 'N/A';
+                const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description) || 'N/A';
+
+
+                worksheet.addRow({
+                    id: notice.id,
+                    process: processText,
+                    finding: findingText,
+                    plan: '',
+                    responsible: '',
+                    deadline: ''
+                });
             });
-            if (error) throw error;
-            messageApi.success('密码修改成功！请重新登录以使新密码生效。');
-            passwordForm.resetFields();
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `BatchPlan_${supplierShortCode}_${category}.xlsx`);
+            messageApi.success({ content: '模板已开始下载。', key: 'template' });
+
         } catch (error) {
-            messageApi.error(`密码修改失败: ${error.message}`);
+            console.error("生成模板失败:", error);
+            messageApi.error({ content: '模板生成失败，请重试。', key: 'template' });
         }
     };
 
-   return (
-        <div style={{ padding: '24px' }}>
-            <Row gutter={[24, 24]}>
-                {/* --- 左侧栏 --- */}
-                <Col xs={24} md={8}>
-                    {/* 1. 个人信息卡片 */}
-                    <Card style={{ marginBottom: 24 }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <Avatar size={128} icon={<UserOutlined />} />
-                            <Title level={4} style={{ marginTop: 16 }}>{currentUser.name || currentUser.username}</Title>
-                            <Text type="secondary">{currentUser.role}</Text>
-                        </div>
-                    </Card>
+    // --- 处理行动计划批量上传 ---
+    const handleActionExcelUpload = (file) => {
+        setIsUploading(true);
+        messageApi.loading({ content: '正在解析并批量提交行动计划...', key: 'excelRead' });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
 
-                    {/* 2. [新增] 小程序访问卡片 */}
-                    <Card style={{ marginBottom: 24 }} bodyStyle={{ padding: '12px 24px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div>
-                                <Title level={5} style={{ margin: 0, fontSize: 16 }}>
-                                    <MobileOutlined /> 移动端访问
-                                </Title>
-                                <Paragraph type="secondary" style={{ margin: '4px 0 0 0', fontSize: 12 }}>
-                                    扫一扫，小程序立刻上岗！
-                                </Paragraph>
-                            </div>
-                            {/* 图片展示区域 */}
-                            <div style={{ 
-                                width: 80, 
-                                height: 80, 
-                                overflow: 'hidden', 
-                                borderRadius: 8, 
-                                border: '1px solid #f0f0f0',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                            }}>
-                                <Image 
-                                    width={80}
-                                    src={MINI_PROGRAM_IMAGE_URL} 
-                                    alt="小程序码"
-                                    fallback="https://via.placeholder.com/80?text=QR" // 占位图
-                                />
-                            </div>
-                        </div>
-                    </Card>
+                const plansByNoticeId = {};
+                let processedCount = 0;
 
-                    {/* 3. 反馈表单卡片 */}
-                    <Card>
-                        <Title level={5}><MessageOutlined /> 反馈与建议</Title>
-                        <Paragraph type="secondary">我们非常重视您的意见。</Paragraph>
-                        <Form form={feedbackForm} layout="vertical" onFinish={handleFeedbackSubmit}>
-                            {/* ... (表单内容保持不变) ... */}
-                             <Form.Item name="category" label="反馈类型" rules={[{ required: true, message: '请选择一个反馈类型' }]}>
-                                <Select placeholder="请选择反馈类型">
-                                    <Option value="feature_request">功能建议</Option>
-                                    <Option value="bug_report">问题报告</Option>
-                                    <Option value="general_feedback">一般性反馈</Option>
-                                </Select>
-                            </Form.Item>
-                            <Form.Item name="content" label="详细内容" rules={[{ required: true, message: '请填写您的反馈内容' }]}>
-                                <TextArea rows={4} placeholder="请详细描述..." />
-                            </Form.Item>
+                // --- 1. 添加日志：打印表头 ---
+                const headers = worksheet.getRow(5).values;
+                console.log('[Action Upload] Excel Headers (Row 5):', JSON.stringify(headers));
 
-                            <Form.Item label="相关图片 (可选)">
-                                <Form.Item name="images" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
-                                    <Dragger 
-                                        multiple 
-                                        listType="picture" 
-                                        beforeUpload={() => false} 
-                                        onPreview={handlePreview} 
-                                        accept="image/*"
-                                        height={100} // 稍微调小一点高度，节省空间
-                                    >
-                                        <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}><InboxOutlined style={{ fontSize: 24 }} /></p>
-                                        <p className="ant-upload-text" style={{ fontSize: 12 }}>点击或拖拽上传</p>
-                                    </Dragger>
-                                </Form.Item>
-                            </Form.Item>
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 5) return; // 跳过表头
 
-                            <Form.Item label="相关附件 (可选)">
-                                <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
-                                    <Upload beforeUpload={() => false} multiple>
-                                        <Button icon={<UploadOutlined />} block>点击上传附件</Button> {/* block 让按钮撑满 */}
-                                    </Upload>
-                                </Form.Item>
-                            </Form.Item>
-                            
-                            <Form.Item>
-                                <Button type="primary" htmlType="submit" loading={feedbackLoading} block>提交反馈</Button>
-                            </Form.Item>
-                        </Form>
-                    </Card>
-                </Col>
+                    const noticeId = row.getCell(1).value?.toString();
 
-                {/* --- 右侧栏 --- */}
-                <Col xs={24} md={16}>
-                    <Card>
-                        {/* ... (安全设置和通用设置保持不变) ... */}
-                         <Title level={5}><LockOutlined /> 安全设置</Title>
-                        <Form
-                            form={passwordForm}
-                            layout="vertical"
-                            onFinish={onFinishChangePassword}
-                            style={{ maxWidth: 400 }}
-                        >
-                            <Form.Item 
-                                name="newPassword" 
-                                label="新密码" 
-                                rules={[{ required: true, message: '请输入新密码' }, {min: 6, message: '密码至少需要6位'}]}
-                                hasFeedback
-                            >
-                                <Input.Password placeholder="输入新密码" />
-                            </Form.Item>
-                            <Form.Item
-                                name="confirmPassword"
-                                label="确认新密码"
-                                dependencies={['newPassword']}
-                                hasFeedback
-                                rules={[
-                                    { required: true, message: '请确认您的新密码' },
-                                    ({ getFieldValue }) => ({
-                                        validator(_, value) {
-                                            if (!value || getFieldValue('newPassword') === value) {
-                                                return Promise.resolve();
-                                            }
-                                            return Promise.reject(new Error('两次输入的密码不一致!'));
-                                        },
-                                    }),
-                                ]}
-                            >
-                                <Input.Password placeholder="再次输入新密码" />
-                            </Form.Item>
-                            <Form.Item>
-                                <Button type="primary" htmlType="submit">修改密码</Button>
-                            </Form.Item>
-                        </Form>
-                        <Divider />
-                        <Title level={5}><UserOutlined /> 通用设置</Title>
-                        <List>
-                            <List.Item>
-                                <Text>夜间模式</Text>
-                                <Switch checked={theme === 'dark'} onChange={toggleTheme} />
-                            </List.Item>
-                        </List>
-                    </Card>
-                </Col>
-            </Row>
+                    // --- 2. 添加日志：打印原始单元格数据 ---
+                    const rawPlanValue = row.getCell(4).value;
+                    const rawResponsibleValue = row.getCell(5).value;
+                    const rawDeadlineValue = row.getCell(6).value;
 
-            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancelPreview}>
-                <img alt="预览" style={{ width: '100%' }} src={previewImage} />
-            </Modal>
-        </div>
-    );
-};
+                    // 使用 toPlainText 确保能处理富文本
+                    const planText = toPlainText(rawPlanValue)?.toString() || '';
+                    const responsible = toPlainText(rawResponsibleValue)?.toString() || '';
+                    const deadlineValue = rawDeadlineValue; // 日期对象或字符串
 
+                    // --- 3. 添加日志：打印解析后的每行数据 ---
+                    //  console.log(`[Action Upload] Row ${rowNumber}:`, {
+                    //     noticeId: noticeId,
+                    //     rawPlan: rawPlanValue,
+                    //     parsedPlan: planText.trim(),
+                    //     rawResp: rawResponsibleValue,
+                    //     parsedResp: responsible.trim(),
+                    //     rawDeadline: deadlineValue,
+                    //     isPlanValid: !!(noticeId && planText.trim()) // <-- 修正后的逻辑
+                    // });
 
-export default SettingsPage;
+                    // --- 4. 核心修正：仅要求 Action Plan 必填 ---
+                    if (noticeId && planText.trim() && responsible.trim() && deadlineValue) {
+                        if (!plansByNoticeId[noticeId]) {
+                            plansByNoticeId[noticeId] = [];
+                        }
+
+                        plansByNoticeId[noticeId].push({
+                            plan: planText.trim(),
+                            responsible: responsible.trim(), // 允许为空
+                            deadline: dayjs(deadlineValue).format('YYYY-MM-DD')// 允许为空
+                        });
+                        processedCount++;
+                    }
+                });
+
+                console.log(`[Action Upload] Total processed rows: ${processedCount}`);
+
+                if (processedCount === 0) {
+                    messageApi.warning({ content: '未在Excel中找到有效的行动计划数据（请确保 "Action Plan","Responsable"和"Deadline" 列已填写）。', key: 'excelRead', duration: 4 });
+                    setIsUploading(false);
+                    return;
+                }
+
+                // --- 批量更新 Notice ---
+                const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
+                    const notice = batch.notices.find(n => n.id === noticeId);
+                    if (!notice) {
+                        console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
+                        return null;
+                    }
+
+                    const newHistory = {
+                        type: 'supplier_plan_submission',
+                        submitter: currentUser.name || currentUser.username,
+                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                        description: '供应商已批量提交行动计划。',
+                        actionPlans: plansByNoticeId[noticeId]
+                    };
+                    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+                    return updateNotice(noticeId, {
+                        status: '待SD确认actions',
+                        history: [...currentHistory, newHistory]
+                    });
+                });
+
+                await Promise.all(updatePromises.filter(Boolean));
+
+                messageApi.success({ content: `成功处理 ${processedCount} 条行动计划，已提交 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
+                setActiveCollapseKeys([]);
+
+            } catch (error) {
+                console.error("解析或提交Excel失败:", error);
+                messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
+            } finally {
+                setIsUploading(false);
+            }
+        };
+        reader.onerror = (error) => {
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            setIsUploading(false);
+        };
+        reader.readAsArrayBuffer(file);
+        return false;
+    };
+
+    // --- 下载证据模板 ---
+    const handleDownloadEvidenceTemplate = async () => {
+        messageApi.loading({ content: '正在生成证据模板...', key: 'evidenceTemplate' });
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Batch Evidence Template');
+
+            worksheet.mergeCells('A1:F1');
+            worksheet.getCell('A1').value = '批量证据提交模板';
+            worksheet.getCell('A1').font = { bold: true, size: 16 };
+            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } };
+
+            worksheet.mergeCells('A2:F2');
+            worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
+
+            worksheet.mergeCells('A3:F3');
+            worksheet.getCell('A3').value = {
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C, D, E 列！请仅在 F 列填写“完成情况说明”。' }]
+            };
+            worksheet.mergeCells('A4:F4');
+            worksheet.getCell('A4').value = {
+                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '图片和附件仍需进入通知单详情页单独上传。' }]
+            };
+
+            worksheet.getRow(6).values = [
+                'Notice ID (请勿修改)',
+                'Problem Finding (供参考)',
+                'Approved Action Plan (供参考)',
+                'Responsible (供参考)',
+                'Deadline (供参考)',
+                'Evidence Description (请填写)'
+            ];
+            worksheet.getRow(6).font = { bold: true };
+            worksheet.getRow(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
+            worksheet.columns = [
+                { key: 'id', width: 38 },
+                { key: 'finding', width: 40 },
+                { key: 'plan', width: 40 },
+                { key: 'responsible', width: 20 },
+                { key: 'deadline', width: 20 },
+                { key: 'evidence', width: 50 },
+            ];
+
+            batch.notices.forEach(notice => {
+                const lastApprovedPlan = [...(notice.history || [])].reverse().find(h => h.type === 'sd_plan_approval');
+                if (lastApprovedPlan && lastApprovedPlan.actionPlans) {
+                    const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title) || 'N/A';
+                    lastApprovedPlan.actionPlans.forEach(plan => {
+                        worksheet.addRow({
+                            id: notice.id,
+                            finding: findingText,
+                            plan: toPlainText(plan.plan),
+                            responsible: plan.responsible,
+                            deadline: dayjs(plan.deadline).format('YYYY-MM-DD'),
+                            evidence: ''
+                        });
+                    });
+                }
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `BatchEvidence_${supplierShortCode}_${category}.xlsx`);
+            messageApi.success({ content: '证据模板已开始下载。', key: 'evidenceTemplate' });
+
+        } catch (error) {
+            console.error("生成证据模板失败:", error);
+            messageApi.error({ content: '模板生成失败，请重试。', key: 'evidenceTemplate' });
+        }
+    };
+
+    // --- 处理证据批量上传 ---
+    const handleEvidenceExcelUpload = (file) => {
+        setIsUploading(true);
+        messageApi.loading({ content: '正在解析并批量提交证据...', key: 'excelRead' });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const buffer = e.target.result;
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.getWorksheet(1);
+
+                const plansByNoticeId = {};
+                let processedCount = 0;
+
+                // --- 5. 添加日志：打印表头 ---
+                const headers = worksheet.getRow(6).values;
+                console.log('[Evidence Upload] Excel Headers (Row 6):', JSON.stringify(headers));
+
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 6) return;
+
+                    const noticeId = row.getCell(1).value?.toString();
+                    const planText = row.getCell(3).value?.toString() || '';
+                    const responsible = row.getCell(4).value?.toString() || '';
+                    const deadlineValue = row.getCell(5).value;
+
+                    // --- 6. 添加日志：打印原始单元格数据 ---
+                    const rawEvidenceValue = row.getCell(6).value;
+                    const evidenceDescription = toPlainText(rawEvidenceValue)?.toString() || '';
+
+                    console.log(`[Evidence Upload] Row ${rowNumber}:`, {
+                        noticeId: noticeId,
+                        rawEvidence: rawEvidenceValue,
+                        parsedEvidence: evidenceDescription.trim(),
+                    });
+
+                    // --- 7. 核心修正：仅要求 Evidence Description 必填 ---
+                    if (noticeId && evidenceDescription.trim()) {
+                        if (!plansByNoticeId[noticeId]) {
+                            plansByNoticeId[noticeId] = [];
+                        }
+                        plansByNoticeId[noticeId].push({
+                            plan: planText,
+                            responsible: responsible.trim() || '',
+                            deadline: deadlineValue ? dayjs(deadlineValue).format('YYYY-MM-DD') : null,
+                            evidenceDescription: evidenceDescription.trim(),
+                            evidenceImages: [],
+                            evidenceAttachments: []
+                        });
+                        processedCount++;
+                    }
+                });
+
+                console.log(`[Evidence Upload] Total processed rows: ${processedCount}`);
+
+                if (processedCount === 0) {
+                    messageApi.warning({ content: '未在Excel中找到有效的证据说明数据（请确保 "Evidence Description" 列已填写）。', key: 'excelRead', duration: 4 });
+                    setIsUploading(false);
+                    return;
+                }
+
+                const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
+                    const notice = batch.notices.find(n => n.id === noticeId);
+                    if (!notice) {
+                        console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
+                        return null;
+                    }
+
+                    const newHistory = {
+                        type: 'supplier_evidence_submission',
+                        submitter: currentUser.name || currentUser.username,
+                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                        description: '供应商已批量提交完成证据。',
+                        actionPlans: plansByNoticeId[noticeId]
+                    };
+                    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
+
+                    return updateNotice(noticeId, {
+                        status: '待SD关闭evidence',
+                        history: [...currentHistory, newHistory]
+                    });
+                });
+
+                await Promise.all(updatePromises.filter(Boolean));
+
+                messageApi.success({ content: `成功处理 ${processedCount} 条证据，已更新 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
+                setActiveCollapseKeys([]);
+
+            } catch (error) {
+                console.error("解析或提交Excel失败:", error);
+                messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
+            } finally {
+                setIsUploading(false);
+            }
+        };
+        reader.onerror = (error) => {
+            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
+            setIsUploading(false);
+        };
+        reader.readAsArrayBuffer(file);
+        return false;
+    };

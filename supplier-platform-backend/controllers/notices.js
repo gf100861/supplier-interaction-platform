@@ -78,7 +78,7 @@ module.exports = async (req, res) => {
                 .from('notices')
                 .update(dbUpdates)
                 .eq('id', id)
-                .select(`*, creator:users(id, email, username), supplier:suppliers(id, name)`)
+                .select(`*, creator:users(id, email, username), supplier:suppliers(id, name,short_code)`)
                 .single();
 
             if (error) throw error;

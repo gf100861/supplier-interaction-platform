@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-// 引入 Row, Col 和 DatePicker
-import { Form, Input, Button, Upload, Typography, Divider, Modal, Select, InputNumber, Card, Row, Col, DatePicker, Radio, Empty, Checkbox, Collapse } from 'antd';
+// 引入 Grid 用于响应式断点检测
+import { Form, Input, Button, Upload, Typography, Divider, Modal, Select, InputNumber, Card, Row, Col, DatePicker, Radio, Empty, Checkbox, Collapse, Grid } from 'antd';
 import { UploadOutlined, InboxOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useCategories } from '../contexts/CategoryContext';
@@ -13,7 +13,7 @@ const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
 const { Panel } = Collapse;
-
+const { useBreakpoint } = Grid; // 引入断点钩子
 
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -70,12 +70,10 @@ const logSystemEvent = async (params) => {
     } = params;
 
     try {
-
         const apiPath = isDev ? '/api/system-log' : '/api/system-log';
         const targetUrl = `${BACKEND_URL}${apiPath}`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
-
 
         await fetch(`${targetUrl}`, {
             method: 'POST',
@@ -121,6 +119,10 @@ const FileUploadPage = () => {
   const [apiKey, setApiKey] = useState('');
   const [rememberApiKey, setRememberApiKey] = useState(false);
 
+  // --- 移动端适配 Hook ---
+  const screens = useBreakpoint();
+  const isMobile = !screens.md; // md (768px) 以下视为移动端
+
   const { suppliers, loading: suppliersLoading } = useSuppliers();
   const { categories, loading: categoriesLoading } = useCategories();
   const { addNotices } = useNotices();
@@ -155,8 +157,6 @@ const FileUploadPage = () => {
       messageApi.info('不再记住 API Key');
     }
   };
-
-
 
   const getBackendEmbedding = async (text) => {
     if (!text || !text.trim()) return null;
@@ -277,8 +277,6 @@ const FileUploadPage = () => {
       setLoadingHistory(false);
     }
   };
-
-
 
   const renderDynamicFields = () => {
     if (!selectedCategory) return null;
@@ -402,7 +400,6 @@ const FileUploadPage = () => {
         const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     
         // --- 1. 构建用于生成向量的文本 (语义指纹) ---
-        // 优化：字段名更清晰，增加 title 和 description
         const problemSource = values.problem_source || '';
         const cause = values.cause || '';
         const processOrTitle = values.details.process || values.details.criteria || '';
@@ -417,14 +414,7 @@ const FileUploadPage = () => {
     [RootCause]: ${cause}
 `.trim();
 
-        // --- 2. 生成向量 (如果填了 Key) ---
-        // let embeddingVector = null;
-        // if (apiKey) {
-        //     messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
-        //     embeddingVector = await getGeminiEmbedding(textToEmbed);
-        // }
-
-        // 2. ✅ 调用后端生成向量 (后端会自动使用环境变量中的 Key)
+        // 2. ✅ 调用后端生成向量
         messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
         const embeddingVector = await getBackendEmbedding(textToEmbed);
     
@@ -436,7 +426,6 @@ const FileUploadPage = () => {
           assigned_supplier_name: selectedSupplierInfo?.name || '',
           status: '待提交Action Plan',
           creator_id: currentUser.id,
-          // *** 核心修改：写入向量字段 ***
           embedding: embeddingVector,
           sd_notice: {
             creatorId: currentUser.id,
@@ -511,23 +500,30 @@ const FileUploadPage = () => {
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: 'auto', padding: '24px 0' }}>
-      <Card>
+    <div style={{ maxWidth: 800, margin: 'auto', padding: isMobile ? '12px' : '24px 0' }}>
+      <Card bodyStyle={{ padding: isMobile ? '12px' : '24px' }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Title level={4}>手工输入新的审核结果</Title>
-          <Paragraph type="secondary">请填写问题详情、选择供应商并上传必要的证据文件。</Paragraph>
+          <Title level={isMobile ? 5 : 4}>手工输入新的审核结果</Title>
+          <Paragraph type="secondary" style={{ fontSize: isMobile ? '12px' : '14px' }}>
+            请填写问题详情、选择供应商并上传必要文件
+          </Paragraph>
         </div>
 
         <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ date: dayjs() }}>
-          <Row gutter={16}>
-            <Col span={8}>
+          {/* 移动端优化：
+              使用 gutter={[16, 16]} 增加垂直间距
+              xs={24} 让在手机上占满一行
+              md={8} 在PC上保持三列
+          */}
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={8}>
               <Form.Item name="category" label="问题类型" rules={[{ required: true, message: '请选择问题类型！' }]}>
                 <Select placeholder="请选择问题类型" loading={categoriesLoading} onChange={value => setSelectedCategory(value)}>
                   {sortedCategories.map(cat => <Option key={cat} value={cat}>{cat}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} md={8}>
               <Form.Item name="supplierId" label="供应商" rules={[{ required: true, message: '请选择一个供应商！' }]}>
                 <Select
                   showSearch
@@ -539,15 +535,17 @@ const FileUploadPage = () => {
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} md={8}>
               <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期！' }]}>
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+            
             <Col span={24}>
               <Card
                 type="inner"
-                title="历史经验标签 (可选) - 请先选择供应商"
+                title="历史经验标签 (可选)"
+                size="small" // 移动端使用紧凑模式
                 loading={loadingHistory}
                 style={{
                   marginBottom: 24,
@@ -555,8 +553,10 @@ const FileUploadPage = () => {
                   pointerEvents: !selectedSupplierId ? 'none' : 'auto'
                 }}
               >
-                <Row gutter={16}>
-                  <Col span={12}>
+                {!selectedSupplierId && <div style={{ marginBottom: 16, color: '#faad14' }}>请先选择上面的供应商以加载数据</div>}
+                
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} md={12}>
                     <Form.Item name="problem_source" label="产品">
                       <Select
                         placeholder={!selectedSupplierId ? "请先选择供应商" : "选择产品或'其他'"}
@@ -573,7 +573,7 @@ const FileUploadPage = () => {
                       </Select>
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
+                  <Col xs={24} md={12}>
                     {selectedSource === '其他' ? (
                       <Form.Item name="cause" label="造成原因 (手动输入)" rules={[{ required: true, message: '请手动输入造成原因' }]}>
                         <Input placeholder="请输入具体原因" />
@@ -589,8 +589,8 @@ const FileUploadPage = () => {
                     )}
                   </Col>
                 </Row>
-                {!loadingHistory && Object.keys(historicalTags).length === 0 && (
-                  <Text type="secondary">暂无该供应商的历史标签数据，本次提交将作为新经验记录。</Text>
+                {!loadingHistory && Object.keys(historicalTags).length === 0 && selectedSupplierId && (
+                  <Text type="secondary" style={{ fontSize: '12px' }}>暂无该供应商的历史标签数据，本次提交将作为新经验记录。</Text>
                 )}
               </Card>
             </Col>
@@ -603,7 +603,14 @@ const FileUploadPage = () => {
 
           <Form.Item label="图片证据 (可拖拽上传)">
             <Form.Item name="images" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
-              <Dragger multiple listType="picture" beforeUpload={() => false} onPreview={handlePreview} accept="image/*">
+              <Dragger 
+                multiple 
+                listType="picture" 
+                beforeUpload={() => false} 
+                onPreview={handlePreview} 
+                accept="image/*"
+                height={150} // 减小高度适应移动端
+              >
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
               </Dragger>
@@ -613,18 +620,17 @@ const FileUploadPage = () => {
           <Form.Item label="补充附件 (可选)">
             <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
               <Upload beforeUpload={() => false} multiple>
-                <Button icon={<UploadOutlined />}>点击上传附件</Button>
+                <Button icon={<UploadOutlined />} block={isMobile}>点击上传附件</Button>
               </Upload>
             </Form.Item>
-            <Paragraph type="secondary" style={{ marginTop: '8px' }}>
-              提示：目前附件上传暂不支持 .txt 格式的文件，请打包为 .zip 或使用其他格式。
+            <Paragraph type="secondary" style={{ marginTop: '8px', fontSize: '12px' }}>
+              提示：目前附件上传暂不支持 .txt 格式的文件。
             </Paragraph>
           </Form.Item>
 
-          {/* --- 新增：API Key 设置区域，后续直接不显示（将公共key作为默认值） --- */}
           <Collapse ghost style={{ marginTop: 16 }}>
-            <Panel header={<><ApiOutlined /> AI 增强设置 (配置后可生成智能检索向量)</>} key="1">
-              <Form.Item label={<><GoogleOutlined /> Google Gemini API Key</>} help="设置 Key 后，系统将自动生成问题向量，方便后续的 AI 相似问题检索。">
+            <Panel header={<><ApiOutlined /> AI 增强设置</>} key="1">
+              <Form.Item label={<><GoogleOutlined /> Gemini API Key</>} help="生成向量用于智能检索">
                 <Input.Password
                   placeholder="请输入您的 Gemini API Key"
                   value={apiKey}
@@ -633,21 +639,27 @@ const FileUploadPage = () => {
               </Form.Item>
               <Form.Item>
                 <Checkbox checked={rememberApiKey} onChange={handleRememberChange}>
-                  在本地记住 API Key (下次无需输入)
+                  本地记住 API Key
                 </Checkbox>
               </Form.Item>
             </Panel>
           </Collapse>
 
-          <Form.Item style={{ marginTop: 24, textAlign: 'right' }}>
-            <Button type="primary" htmlType="submit" loading={loading} size="large">
+          <Form.Item style={{ marginTop: 24, textAlign: isMobile ? 'center' : 'right' }}>
+            <Button 
+                type="primary" 
+                htmlType="submit" 
+                loading={loading} 
+                size="large"
+                block={isMobile} // 移动端全宽按钮，更易点击
+            >
               确认提交
             </Button>
           </Form.Item>
         </Form>
       </Card>
 
-      <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel}>
+      <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel} width={isMobile ? '95%' : 520}>
         <img alt="预览" style={{ width: '100%' }} src={previewImage} />
       </Modal>
     </div>

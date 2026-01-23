@@ -7,7 +7,7 @@ const NoticeContext = createContext();
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 // --- 辅助函数 ---
 const toCamel = (s) => {
@@ -39,7 +39,7 @@ export const NoticeProvider = ({ children }) => {
                 const targetUrl = `${BACKEND_URL}/api/notices`;
                 const response = await fetch(targetUrl);
                 if (!response.ok) throw new Error('Fetch notices failed');
-                
+
                 const data = await response.json();
                 const camelCaseData = convertKeysToCamelCase(data);
                 setNotices(camelCaseData);
@@ -87,18 +87,20 @@ export const NoticeProvider = ({ children }) => {
             const { old_supplier_id } = updates;
             const newStatus = data.status;
             const sdId = data.creator_id;
-            
+
             const historyArray = data.history || [];
             const lastHistory = historyArray.length > 0 ? historyArray[historyArray.length - 1] : {};
             const historyType = lastHistory?.type;
 
+            const supplierName = data?.supplier?.short_code || '供应商';
+
             // 1. 发给 SD 的通知 (SD 只有一个人，还是手动构建比较方便)
             const alertsForSD = [];
             if (newStatus === '待SD确认actions' && sdId) {
-                alertsForSD.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交行动计划`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
+                alertsForSD.push({ target_user_id: sdId, message: `${supplierName} 已提交行动计划`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
             }
             if (newStatus === '待SD关闭evidence' && sdId) {
-                alertsForSD.push({ target_user_id: sdId, message: `供应商 ${data.assigned_supplier_name} 已提交完成证据`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
+                alertsForSD.push({ target_user_id: sdId, message: `${supplierName} 已提交完成证据`, link: `/notices?open=${noticeId}`, created_at: new Date().toISOString() });
             }
             if (alertsForSD.length > 0) {
                 await createSystemAlerts({ alerts: alertsForSD });
@@ -135,7 +137,7 @@ export const NoticeProvider = ({ children }) => {
             if (isPlanReview || isEvidenceReview || isAborted) {
                 let msg = '';
                 let title = '审核结果更新';
-                
+
                 if (isPlanReview) msg = `计划审核结果: ${newStatus === '待供应商关闭' ? '通过' : '驳回'}`;
                 else if (isEvidenceReview) msg = `证据审核结果: ${newStatus === '已完成' ? '通过/关闭' : '驳回'}`;
                 else if (isAborted) { msg = `通知单已作废: ${data.title}`; title = '通知单作废'; }
@@ -169,7 +171,7 @@ export const NoticeProvider = ({ children }) => {
             const targetUrl = `${BACKEND_URL}/api/users?action=all_users`;
             const res = await fetch(targetUrl);
             const users = await res.json();
-            
+
             const alertsData = users.map(u => ({
                 target_user_id: u.id,
                 message: `[系统公告] ${title}`,
@@ -215,7 +217,7 @@ export const NoticeProvider = ({ children }) => {
                     });
                 }));
             }
-            
+
             // C. 更新本地状态
             const camelCaseNewNotices = convertKeysToCamelCase(noticesToProcess);
             setNotices(prev => [...camelCaseNewNotices, ...prev]);
@@ -266,14 +268,14 @@ export const NoticeProvider = ({ children }) => {
         }
     };
 
-    const value = { 
-        notices, 
-        loading, 
-        updateNotice, 
-        addNotices, 
-        deleteNotice, 
+    const value = {
+        notices,
+        loading,
+        updateNotice,
+        addNotices,
+        deleteNotice,
         deleteMultipleNotices,
-        sendSystemAnnouncement 
+        sendSystemAnnouncement
     };
 
     return (

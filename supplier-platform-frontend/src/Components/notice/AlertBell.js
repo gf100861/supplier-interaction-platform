@@ -1,20 +1,19 @@
 import React from 'react';
-import { Badge, Popover, List, Button, Typography, Empty, Space, Tooltip } from 'antd';
+import { Badge, Popover, List, Button, Typography, Empty, Space, Tooltip, Grid } from 'antd';
 import { BellOutlined, CheckCircleOutlined, DeleteOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { useAlert } from '../../contexts/AlertContext'; // 引入 Context Hook
+import { useAlert } from '../../contexts/AlertContext';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn'; // 引入中文包
+import 'dayjs/locale/zh-cn';
 
-// 初始化 dayjs 相对时间插件
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 export const AlertBell = () => {
-    // 从 Context 获取数据和方法
     const { 
         alerts, 
         unreadCount, 
@@ -24,8 +23,9 @@ export const AlertBell = () => {
     } = useAlert();
     
     const navigate = useNavigate();
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
 
-    // 处理单条点击：标记已读 + 跳转
     const handleItemClick = (item) => {
         if (!item.is_read) {
             markAsRead(item.id);
@@ -35,15 +35,18 @@ export const AlertBell = () => {
         }
     };
 
-    // 处理删除：阻止冒泡（防止触发点击跳转） + 调用删除
     const handleDelete = (e, itemId) => {
-        e.stopPropagation(); // 关键：阻止事件冒泡
+        e.stopPropagation();
         deleteAlert(itemId);
     };
 
-    // 弹窗内容
     const content = (
-        <div style={{ width: 360, maxHeight: 450, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ 
+            width: isMobile ? 250 : 360, 
+            maxHeight: isMobile ? '60vh' : 450, 
+            display: 'flex', 
+            flexDirection: 'column' 
+        }}>
             {/* 顶部栏 */}
             <div style={{ 
                 display: 'flex', 
@@ -53,16 +56,17 @@ export const AlertBell = () => {
                 borderBottom: '1px solid #f0f0f0'
             }}>
                 <Text strong>消息通知 ({unreadCount})</Text>
-                <Button 
-                    type="link" 
-                    size="small" 
-                    icon={<CheckCircleOutlined />} 
-                    onClick={markAllAsRead}
-                    disabled={unreadCount === 0}
-                    style={{ padding: 0 }}
-                >
-                    全部已读
-                </Button>
+                
+                {/* 修改部分：只保留图标，去除文字，增加 Tooltip */}
+                <Tooltip title="全部已读">
+                    <Button 
+                        type="text" // 改为 text 类型，看起来更像纯图标
+                        size="small" 
+                        icon={<CheckCircleOutlined style={{ fontSize: '16px', color: unreadCount > 0 ? '#1890ff' : undefined }} />} 
+                        onClick={markAllAsRead}
+                        disabled={unreadCount === 0}
+                    />
+                </Tooltip>
             </div>
             
             {/* 列表区域 */}
@@ -74,14 +78,14 @@ export const AlertBell = () => {
                             onClick={() => handleItemClick(item)}
                             style={{ 
                                 cursor: 'pointer', 
-                                background: item.is_read ? '#fff' : '#e6f7ff', // 未读显示浅蓝背景
+                                background: item.is_read ? '#fff' : '#e6f7ff',
                                 padding: '12px 16px',
                                 transition: 'background 0.3s',
-                                position: 'relative' // 为了定位删除按钮
+                                position: 'relative'
                             }}
-                            className="alert-item-hover" // 可以配合 CSS 做 hover 效果
+                            className="alert-item-hover"
                             actions={[
-                                <Tooltip title="删除此通知">
+                                <Tooltip title="删除">
                                     <Button 
                                         type="text" 
                                         size="small" 
@@ -132,7 +136,7 @@ export const AlertBell = () => {
             content={content} 
             trigger="click" 
             placement="bottomRight"
-            overlayInnerStyle={{ padding: 0 }} // 让列表贴边
+            overlayInnerStyle={{ padding: 0 }}
             arrow={false}
         >
             <span style={{ padding: '0 12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', height: '100%' }}>

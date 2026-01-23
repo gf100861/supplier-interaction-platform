@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-    Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag, Tooltip, 
+import {
+    Layout, Menu, Space, Avatar, Button, Typography, message, Alert, Tag, Tooltip,
     Grid, Drawer // 新增 Grid 和 Drawer 组件
-} from 'antd'; 
+} from 'antd';
 import {
     HomeOutlined,
     UserOutlined,
@@ -160,7 +160,7 @@ const MainLayout = () => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     // 2. 定义两套菜单配置
-    
+
     // A. 桌面端完整菜单
     const desktopMenuItems = useMemo(() => [
         { key: '/', icon: <HomeOutlined />, label: t('menu.dashboard'), roles: ['SD', 'Manager', 'Supplier', 'Admin'] },
@@ -203,22 +203,28 @@ const MainLayout = () => {
 
     // B. 移动端精简菜单 (只保留核心功能)
     const mobileMenuItemsRaw = useMemo(() => [
-        { 
-            key: '/notices', // 1. 通知单列表 (用于审核/查看)
-            icon: <UnorderedListOutlined />, 
-            label: t('menu.notices') || '通知单列表', 
-            roles: ['SD', 'Manager', 'Supplier'] 
+        {
+            key: '/', // 仪表盘首页
+            icon: <HomeOutlined />,
+            label: t('menu.dashboard') || '仪表盘',
+            roles: ['SD', 'Manager', 'Supplier', 'Admin']
         },
-        { 
+        {
+            key: '/notices', // 1. 通知单列表 (用于审核/查看)
+            icon: <UnorderedListOutlined />,
+            label: t('menu.notices') || '通知单列表',
+            roles: ['SD', 'Manager', 'Supplier']
+        },
+        {
             key: '/upload', // 2. 手动开设通知单
-            icon: <FileAddOutlined />, 
-            label: t('menu.manualUpload') || '新建通知单', 
+            icon: <FileAddOutlined />,
+            label: t('menu.manualUpload') || '新建通知单',
             roles: ['SD', 'Manager'] // 注意：通常只有 SD/Manager 能开单
         },
-        { 
+        {
             key: '/offline-share', // 3. 文件互传
-            icon: <SwapOutlined />, 
-            label: t('menu.offlineShare') || '文件互传', 
+            icon: <SwapOutlined />,
+            label: t('menu.offlineShare') || '文件互传',
             roles: ['SD', 'Manager', 'Admin', 'Supplier']
         }
     ], [language, t]);
@@ -261,7 +267,7 @@ const MainLayout = () => {
 
     const userRole = storedUser?.role || null;
     const userName = storedUser?.username || '访客';
-    
+
     // 4. 计算最终可见菜单
     const visibleMenuItems = useMemo(() => filterMenu(currentMenuItems, userRole), [currentMenuItems, userRole]);
 
@@ -340,22 +346,30 @@ const MainLayout = () => {
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                         {/* 移动端汉堡菜单按钮 */}
                         {isMobile && (
-                            <Button 
-                                type="text" 
-                                icon={<MenuOutlined />} 
+                            <Button
+                                type="text"
+                                icon={<MenuOutlined />}
                                 onClick={() => setMobileMenuOpen(true)}
                                 style={{ marginRight: 8, fontSize: '18px' }}
                             />
                         )}
-                        <h2 style={{ color: '#1890ff', margin: 0, fontSize: isMobile ? '16px' : '20px' }}>
-                            {t('app.title')}
+                        <h2 style={{
+                            color: '#1890ff',
+                            margin: 0,
+                            fontSize: isMobile ? '18px' : '20px', // 移动端稍微调大一点，因为字数少了
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap', // 强制不换行
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                        }}>
+                            {isMobile ? '信息交互平台' : t('app.title')}
                         </h2>
                     </div>
 
                     <Space size={isMobile ? "small" : "large"}>
                         {/* 移动端隐藏欢迎语 */}
                         {!isMobile && <Text>{t('header.welcome')}, <Text strong>{userName}</Text></Text>}
-                        
+
                         <Avatar style={{ backgroundColor: '#1890ff' }} icon={<UserOutlined />} />
 
                         {/* 移动端隐藏帮助和语言切换，保持 Header 简洁 */}
@@ -377,9 +391,9 @@ const MainLayout = () => {
                                 </Button>
                             </>
                         )}
-                        
+
                         <AlertBell />
-                        
+
                         {/* 移动端 Logout 仅显示图标 */}
                         <Button type="primary" icon={<LogoutOutlined />} onClick={handleLogout}>
                             {!isMobile && t('header.logout')}
@@ -391,16 +405,16 @@ const MainLayout = () => {
                 <RollingNoticeBar />
 
                 <Content style={{ margin: isMobile ? '8px' : '16px' }}>
-                    <div style={{ 
-                        padding: isMobile ? 12 : 24, 
-                        minHeight: '100%', 
-                        background: '#fff', 
-                        borderRadius: '8px' 
+                    <div style={{
+                        padding: isMobile ? 12 : 24,
+                        minHeight: '100%',
+                        background: '#fff',
+                        borderRadius: '8px'
                     }}>
                         <Outlet />
                     </div>
                 </Content>
-                
+
                 {!isMobile && (
                     <Footer style={{ textAlign: 'center' }}>
                         Supplier Platform ©2025 Created by Louis
