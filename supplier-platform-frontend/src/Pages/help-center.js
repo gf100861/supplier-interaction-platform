@@ -932,6 +932,7 @@ const FaqContent = () => {
         { q: "为什么无法将日期重分配到下一年", a: "请在年度战略规划面板下拉选择年份，或联系系统管理员。" },
         { q: "供应商可以填写空的action plan吗", a: "支持空的action plan提交，请删除所有提交框即可" },
         { q: "为什么我的界面出现了不属于我的供应商的发现项", a: "可能是由于其他SD重分配了发现项" },
+        { q: "为什么我无法作废/改派通知单", a: "请检查你的role,如果是SD或Manager则可以作废/改派。如果role正确，处于mobile模式下也不会显示" },
     ];
     return (
         <div className="animate-fade-in">

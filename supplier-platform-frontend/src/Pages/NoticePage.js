@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-    Card, Typography, Tabs, Space, Button, Form, Input, Spin,  Select, Radio, Popconfirm, DatePicker, Tooltip, theme // 1. 引入 DatePicker
+   Grid, Card, Typography, Tabs, Space, Button, Form, Input, Spin,  Select, Radio, Popconfirm, DatePicker, Tooltip, theme // 1. 引入 DatePicker
 } from 'antd';
-import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined } from '@ant-design/icons';
+import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined, FilterOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 
@@ -25,6 +25,7 @@ const { Search } = Input;
 const { TabPane } = Tabs;
 const { RangePicker } = DatePicker; // 4. 解构 RangePicker
 
+const { useBreakpoint } = Grid; // 2. 解构 useBreakpoint
 
 // --- 1. 新增：高亮文本辅助组件 ---
 // 支持多关键词 (例如用逗号分隔的)
@@ -72,6 +73,12 @@ const NoticePage = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
+    // --- 3. 响应式 Hooks ---
+    const screens = useBreakpoint();
+    // 这里的判断逻辑：如果没有 md (>=768px)，则认为是移动端
+    // 注意：screens 初始可能为空对象，增加非 undefined 判断
+    const isMobile = screens.md === false; 
+
 
     const allPossibleStatuses = [
         '待提交Action Plan', '待供应商关闭', '待SD确认actions',
@@ -105,6 +112,13 @@ const NoticePage = () => {
 
     //如果需要默认是分组就改成grouped
     const [viewMode, setViewMode] = useState('flat');
+
+    // --- 响应式副作用：如果是移动端，强制使用列表模式 (flat) ---
+    useEffect(() => {
+        if (isMobile) {
+            setViewMode('flat');
+        }
+    }, [isMobile]);
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -807,15 +821,15 @@ const NoticePage = () => {
         messageApi.info('请填写退回原因');
     };
 
+    // 根据通知单和当前用户角色动态生成操作按钮，会传递到Noticelist组件
     const getActionsForItem = (item) => {
 
         const actions = [];
         const isSDOrManager = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager');
-        const isAllowedToEdit = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager' || currentUser.role === 'Admin');
+        const isAllowedToEdit = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager' || currentUser.role === 'Admin') && item.status === '待提交Action Plan';
         const canEdit = item.status === '待提交Action Plan';
         const isManager = currentUser && currentUser.role === 'Manager';
         const stopPropagationAndRun = (e, func) => { e?.stopPropagation(); func(); };
-
         if (isAllowedToEdit) {
             // --- 核心修正：修改此按钮的 onClick ---
             actions.push(
@@ -869,7 +883,7 @@ const NoticePage = () => {
         return actions;
     };
 
-const renderTabs = () => {
+    const renderTabs = () => {
         if (!currentUser) return <p>请先登录</p>;
         if (configLoading || noticesLoading) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}><Spin size="large" /></div>; }
 
@@ -967,116 +981,225 @@ const renderTabs = () => {
         );
     };
 
-    const supplier_special_text ='若您找不到下载模板选项，请您筛选待提交ActionPlan并点击分组'
-    return (
-        <div style={{ padding: '24px' }}>
-            <Card style={{ marginBottom: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                    <div>
-                        <Title level={4} style={{ margin: 0 }}>整改通知单</Title>
-                        <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单 {currentUser.role === 'Supplier' ? supplier_special_text : ''}</Paragraph>
-                    
-                    </div>
+    // --- 移动端专属渲染逻辑 ---
+    const renderMobileView = () => {
+         return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <Title level={4} style={{ margin: 0 }}>整改通知单</Title>
+                    <span style={{ color: '#999', fontSize: '12px' }}>共 {searchedNotices.length} 条</span>
+                 </div>
 
-                    <Space wrap>
-                        <Radio.Group
-                            value={viewMode}
-                            onChange={(e) => setViewMode(e.target.value)}
-                            buttonStyle="solid"
-                            optionType="button"
+                {/* 1. 搜索栏 (全宽) */}
+                <Search
+                    placeholder="搜索：编号/标题/内容..."
+                    allowClear
+                    onSearch={setSearchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    style={{ width: '100%' }}
+                />
 
-                        >
-                            <Radio.Button value="grouped"><AppstoreOutlined /> 分组</Radio.Button>
-                            <Radio.Button value="flat"><BarsOutlined /> 列表</Radio.Button>
-                        </Radio.Group>
-                        {isSDManagerOrAdmin && (
-                            <Select
-                                mode="multiple"
-                                allowClear
-                                style={{ minWidth: 200 }} // 改为 minWidth
-                                placeholder="按供应商筛选"
-                                value={selectedSuppliers} // 绑定 state
-                                onChange={setSelectedSuppliers} // 绑定 state setter
-                                loading={suppliersLoading}
-                                maxTagCount="responsive"
-                                showSearch // 明确开启搜索功能
-
-                                // --- 核心修正 1：在这里组合 label ---
-                                options={managedSuppliers.map(s => ({
-                                    value: s.id,
-                                    label: `${s.short_code}` // 例如: "CVG (CVI-CVG)"
-                                }))}
-
-                                // --- 核心修正 2：使用 Antd 的默认智能筛选 ---
-                                filterOption={(input, option) =>
-                                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                                }
-                            />
-                        )}
-                        <RangePicker
-                            style={{ minWidth: 240 }}
-                            value={dateRange} // 绑定 state
-                            onChange={setDateRange} // 绑定 state setter
-                        />
+                {/* 2. 筛选行 (一行显示供应商和状态，节省空间) */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    {isSDManagerOrAdmin && (
                         <Select
-                            mode="multiple"
+                            style={{ flex: 1 }}
+                            placeholder="供应商"
                             allowClear
-                            style={{ minWidth: 200 }}
-                            placeholder="按问题类型筛选"
-                            onChange={setSelectedCategories}
-                            options={sortedNoticeCategories.map(c => ({ label: c, value: c }))}
-                            loading={configLoading}
-                            maxTagCount="responsive"
+                            showSearch
+                            value={selectedSuppliers}
+                            onChange={setSelectedSuppliers}
+                            options={managedSuppliers.map(s => ({
+                                value: s.id,
+                                label: s.short_code
+                            }))}
+                            filterOption={(input, option) =>
+                                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
                         />
-                        <Select
-                            mode="multiple"
-                            allowClear
-                            style={{ minWidth: 200 }}
-                            placeholder="按状态筛选"
-                            onChange={setSelectedStatuses}
-                            options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
-                            maxTagCount="responsive"
-                        />
-
-                        <Search
-                            placeholder="搜索通知单：可用;；@,，分隔关键词"
-                            allowClear
-                            onSearch={setSearchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            style={{ width: 360 }}
-                        />
-                        <Tooltip title="按创建日期升序">
-                            <Button
-                                icon={<SortAscendingOutlined />}
-                                onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                                type={listSortOrder === 'asc' ? 'primary' : 'default'}
-                            />
-                        </Tooltip>
-                        <Tooltip title="按创建日期降序">
-                            <Button
-                                icon={<SortDescendingOutlined />}
-                                onClick={() => setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
-                                type={listSortOrder === 'desc' ? 'primary' : 'default'}
-                            />
-                        </Tooltip>
-
-                    </Space>
+                    )}
+                    <Select
+                        style={{ flex: 1 }}
+                        placeholder="状态"
+                        mode="multiple"
+                        allowClear
+                        maxTagCount={1} // 移动端只显示一个 Tag，避免撑开
+                        value={selectedStatuses}
+                        onChange={setSelectedStatuses}
+                        options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
+                    />
                 </div>
-            </Card>
-            <Card>{renderTabs()}</Card>
+                 
+                 {/* 3. 排序按钮 (可选，如果空间允许) */}
+                 <div style={{ display: 'flex', justifyContent: 'flex-end'}}>
+                     <Button 
+                         size="small"
+                         icon={listSortOrder === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
+                         onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                     >
+                         {listSortOrder === 'asc' ? '按时间: 旧→新' : '按时间: 新→旧'}
+                     </Button>
+                 </div>
 
-            <div style={{ textAlign: 'center', marginTop: 24 }}>
-                {hasMore ? (
-                    <Button
-                        onClick={loadMoreNotices}
-                        loading={noticesLoading && notices.length > 0}
-                    >
-                        加载更多
-                    </Button>
+                {/* 4. 列表区域 - 直接渲染 NoticeList，不使用 Tabs */}
+                {noticesLoading && notices.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 20 }}><Spin /></div>
                 ) : (
-                    <Text type="secondary">已经到底啦</Text>
+                    <NoticeList
+                        // 在移动端 viewMode 被强制为 flat，groupedNotices 会返回打散的列表
+                        data={groupedNotices} 
+                        searchTerm={searchTerm}
+                        getActionsForItem={getActionsForItem}
+                        showDetailsModal={showDetailsModal}
+                        handleReviewToggle={handleReviewToggle}
+                        token={token}
+                        currentUser={currentUser}
+                        noticeCategoryDetails={noticeCategoryDetails}
+                        activeCollapseKeys={activeCollapseKeys}
+                        setActiveCollapseKeys={setActiveCollapseKeys}
+                        pagination={{
+                            simple: true, // 移动端使用简易分页
+                            defaultPageSize: 10,
+                            hideOnSinglePage: true,
+                            size: 'small'
+                        }}
+                    />
                 )}
+
+                 {/* 加载更多 */}
+                <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 24 }}>
+                    {hasMore ? (
+                        <Button
+                            onClick={loadMoreNotices}
+                            loading={noticesLoading && notices.length > 0}
+                        >
+                            加载更多
+                        </Button>
+                    ) : (
+                        <Text type="secondary" style={{ fontSize: '12px' }}>已经到底啦</Text>
+                    )}
+                </div>
             </div>
+        )
+    }
+
+
+    const supplier_special_text ='若您找不到下载模板选项，请您筛选待提交ActionPlan并点击分组'
+    
+    return (
+        <div style={{ padding: isMobile ? '12px' : '24px' }}>
+            {/* 移动端 vs 桌面端 布局切换 */}
+            {isMobile ? renderMobileView() : (
+                <>
+                    <Card style={{ marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                            <div>
+                                <Title level={4} style={{ margin: 0 }}>整改通知单</Title>
+                                <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单 {currentUser.role === 'Supplier' ? supplier_special_text : ''}</Paragraph>
+                            
+                            </div>
+
+                            <Space wrap>
+                                <Radio.Group
+                                    value={viewMode}
+                                    onChange={(e) => setViewMode(e.target.value)}
+                                    buttonStyle="solid"
+                                    optionType="button"
+
+                                >
+                                    <Radio.Button value="grouped"><AppstoreOutlined /> 分组</Radio.Button>
+                                    <Radio.Button value="flat"><BarsOutlined /> 列表</Radio.Button>
+                                </Radio.Group>
+                                {isSDManagerOrAdmin && (
+                                    <Select
+                                        mode="multiple"
+                                        allowClear
+                                        style={{ minWidth: 200 }} // 改为 minWidth
+                                        placeholder="按供应商筛选"
+                                        value={selectedSuppliers} // 绑定 state
+                                        onChange={setSelectedSuppliers} // 绑定 state setter
+                                        loading={suppliersLoading}
+                                        maxTagCount="responsive"
+                                        showSearch // 明确开启搜索功能
+
+                                        // --- 核心修正 1：在这里组合 label ---
+                                        options={managedSuppliers.map(s => ({
+                                            value: s.id,
+                                            label: `${s.short_code}` // 例如: "CVG (CVI-CVG)"
+                                        }))}
+
+                                        // --- 核心修正 2：使用 Antd 的默认智能筛选 ---
+                                        filterOption={(input, option) =>
+                                            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                        }
+                                    />
+                                )}
+                                <RangePicker
+                                    style={{ minWidth: 240 }}
+                                    value={dateRange} // 绑定 state
+                                    onChange={setDateRange} // 绑定 state setter
+                                />
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    style={{ minWidth: 200 }}
+                                    placeholder="按问题类型筛选"
+                                    onChange={setSelectedCategories}
+                                    options={sortedNoticeCategories.map(c => ({ label: c, value: c }))}
+                                    loading={configLoading}
+                                    maxTagCount="responsive"
+                                />
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    style={{ minWidth: 200 }}
+                                    placeholder="按状态筛选"
+                                    onChange={setSelectedStatuses}
+                                    options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
+                                    maxTagCount="responsive"
+                                />
+
+                                <Search
+                                    placeholder="搜索通知单：可用;；@,，分隔关键词"
+                                    allowClear
+                                    onSearch={setSearchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    style={{ width: 360 }}
+                                />
+                                <Tooltip title="按创建日期升序">
+                                    <Button
+                                        icon={<SortAscendingOutlined />}
+                                        onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                        type={listSortOrder === 'asc' ? 'primary' : 'default'}
+                                    />
+                                </Tooltip>
+                                <Tooltip title="按创建日期降序">
+                                    <Button
+                                        icon={<SortDescendingOutlined />}
+                                        onClick={() => setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                                        type={listSortOrder === 'desc' ? 'primary' : 'default'}
+                                    />
+                                </Tooltip>
+
+                            </Space>
+                        </div>
+                    </Card>
+                    <Card>{renderTabs()}</Card>
+
+                    <div style={{ textAlign: 'center', marginTop: 24 }}>
+                        {hasMore ? (
+                            <Button
+                                onClick={loadMoreNotices}
+                                loading={noticesLoading && notices.length > 0}
+                            >
+                                加载更多
+                            </Button>
+                        ) : (
+                            <Text type="secondary">已经到底啦</Text>
+                        )}
+                    </div>
+                </>
+            )}
 
             <NoticeDetailModal
                 open={!!selectedNotice}

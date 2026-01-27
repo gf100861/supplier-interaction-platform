@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Row, Col, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message, Carousel, Alert } from 'antd';
+import { Row, Col, Tag, Button, Modal, Typography, Divider, Timeline, Form, Input, DatePicker, Upload, Space, Card, Image, theme, Popconfirm, message, Carousel, Alert, Grid } from 'antd';
 import {
     PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, PaperClipOutlined, PictureOutlined, UploadOutlined, SolutionOutlined,
     CameraOutlined, UserOutlined as PersonIcon, CalendarOutlined, LeftOutlined, RightOutlined, MinusCircleOutlined, StarOutlined, StarFilled, TagsOutlined,
@@ -20,17 +20,21 @@ import { saveAs } from 'file-saver';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
+const { useBreakpoint } = Grid; // 引入断点钩子
 
 // --- 3. 新增：本地定义的图片轮播组件 ---
 const LocalImageCarousel = ({ images, title }) => {
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
     if (!images || !Array.isArray(images) || images.length === 0) return null;
 
     // 轮播容器样式
     const contentStyle = {
         margin: 0,
-        height: '300px',
+        height: isMobile ? '200px' : '300px', // 移动端减小高度
         color: '#fff',
-        lineHeight: '300px',
+        lineHeight: isMobile ? '200px' : '300px',
         textAlign: 'center',
         background: '#f0f2f5',
         display: 'flex',
@@ -128,11 +132,6 @@ const Historical8DDisplay = ({ notice }) => {
     const getChineseOnly = (text = '') =>
         text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
 
-    const getEnglishOnly = (text = '') =>
-        text.replace(/[^a-zA-Z0-9.,!?() \n]/g, '');
-
-    // console.log('Historical8DDisplay details:', no);
-
     // 打开预览
     const handlePreviewReport = () => {
         setIsPreviewVisible(true);
@@ -141,7 +140,6 @@ const Historical8DDisplay = ({ notice }) => {
 
     const handleDownloadReport = () => {
         // 1. 检查是否有 Base64 内容
-        // 注意：截图中的 key 是 fileContent (驼峰)，不是 report_file_path
         if (!details?.fileContent) {
             messageApi.warning('未找到文件内容');
             return;
@@ -154,11 +152,9 @@ const Historical8DDisplay = ({ notice }) => {
             const link = document.createElement('a');
 
             // 3. 直接将 Base64 字符串赋值给 href
-            // 截图显示 fileContent 已经包含了 "data:application/pdf;base64,..." 前缀，所以直接用
             link.href = details.fileContent;
 
             // 4. 设置下载文件名
-            // 优先使用原始文件名，如果没有则生成一个
             link.download = details.originalFileName || `${notice?.noticeCode || 'Report'}.pdf`;
 
             // 5. 触发点击并清理
@@ -175,24 +171,25 @@ const Historical8DDisplay = ({ notice }) => {
 
     return (
         <Card type="inner" title={<Space><HistoryOutlined /> 历史 8D 归档详情</Space>} style={{ marginTop: 16, backgroundColor: '#f9f9f9' }}>
+            {/* 响应式修改：xs=24 占满一行, md=12 占一半 */}
             <Row gutter={[16, 16]}>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                     <Text type="secondary">零件号 (Part No):</Text>
                     <div><Text strong>{details.partNumber || 'N/A'}</Text></div>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                     <Text type="secondary">零件名称 (Part Name):</Text>
                     <div><Text strong>{details.partName || 'N/A'}</Text></div>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                     <Text type="secondary">数量 (Qty):</Text>
                     <div>{details.quantity || 'N/A'}</div>
                 </Col>
-                 <Col span={12}>
+                 <Col xs={24} md={12}>
                     <Text type="secondary">供应商(Supplier):</Text>
                     <div>{notice?.supplier?.shortCode || 'N/A'}</div>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                     <Text type="secondary">原始报告:</Text>
                     <div style={{ marginTop: 8 }}>
                         {details.fileContent ? (
@@ -226,16 +223,16 @@ const Historical8DDisplay = ({ notice }) => {
 
                         <Modal
                             title="报告预览"
-                            open={isPreviewVisible} // Antd v5 用 open, v4 用 visible
+                            open={isPreviewVisible}
                             onCancel={() => setIsPreviewVisible(false)}
-                            width="80%"
+                            width="95%" // 移动端更宽
+                            style={{ top: 20 }}
                             footer={null}
-                            destroyOnClose // 关闭时销毁，释放内存
+                            destroyOnClose
                             bodyStyle={{ height: '80vh', padding: 0 }}
                         >
                             {details?.fileContent ? (
                                 <iframe
-                                    // 核心点：这里直接放入 Base64 字符串
                                     src={details.fileContent}
                                     style={{ width: '100%', height: '100%', border: 'none' }}
                                     title="PDF Preview"
@@ -314,6 +311,9 @@ const DynamicDetailsDisplay = ({ notice }) => {
 
 // --- PlanSubmissionForm ---
 const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
     // ... (PlanSubmissionForm 代码保持不变)
     const draftKey = `actionPlanDraft_${notice?.id}`;
     const { messageApi } = useNotification();
@@ -477,8 +477,8 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
         <div style={actionAreaStyle}>
             <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
 
-            <Space style={{ marginBottom: 16 }}>
-                <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
+            <Space style={{ marginBottom: 16,width: '100%' }} direction={isMobile ? "vertical" : "horizontal"}>
+                <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate} block={isMobile}>
                     下载模板
                 </Button>
                 <Upload
@@ -486,12 +486,12 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
                     showUploadList={false}
                     accept=".xlsx, .xls"
                 >
-                    <Button icon={<UploadOutlined />}>
+                    <Button icon={<UploadOutlined />} block={isMobile}>
                         从Excel导入
                     </Button>
                 </Upload>
             </Space>
-            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: '-8px' }}>
+            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: isMobile ? '4px' : '-8px' }}>
                 您可以下载模板，离线填写行动计划后，再导入回系统。
             </Paragraph>
             <Divider />
@@ -511,12 +511,12 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
                                     <Form.Item {...field} name={[field.name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
                                         <TextArea autoSize={{ minRows: 3, maxRows: 9 }} />
                                     </Form.Item>
-                                    <Space wrap align="baseline">
-                                        <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]}>
+                                    <Space wrap align="baseline" direction={isMobile ? "vertical" : "horizontal"} style={{width: '100%'}}>
+                                        <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]} style={{width: isMobile ? '100%' : 'auto'}}>
                                             <Input />
                                         </Form.Item>
-                                        <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]}>
-                                            <DatePicker />
+                                        <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]} style={{width: isMobile ? '100%' : 'auto'}}>
+                                            <DatePicker style={{width: '100%'}}/>
                                         </Form.Item>
                                     </Space>
                                 </Card>
@@ -526,7 +526,7 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
                     )}
                 </Form.List>
                 <Divider />
-                <Form.Item><Button type="primary" htmlType="submit">提交计划</Button></Form.Item>
+                <Form.Item><Button type="primary" htmlType="submit" block={isMobile} size="large">提交计划</Button></Form.Item>
             </Form>
         </div>
     );
@@ -534,6 +534,9 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
 
 // --- EvidencePerActionForm ---
 const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
     // ... (EvidencePerActionForm 代码保持不变)
     const { messageApi } = useNotification();
     const draftKey = `evidenceDraft_${notice?.id}`;
@@ -710,8 +713,8 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
             <Paragraph type="secondary">请为每一个已批准的行动项，填写完成说明并上传证据文件。</Paragraph>
 
             {/* --- 8. 新增：添加导入/导出按钮 --- */}
-            <Space style={{ marginBottom: 16 }}>
-                <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate}>
+            <Space style={{ marginBottom: 16, width: '100%' }} direction={isMobile ? "vertical" : "horizontal"}>
+                <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate} block={isMobile}>
                     下载证据模板
                 </Button>
                 <Upload
@@ -719,12 +722,12 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                     showUploadList={false}
                     accept=".xlsx, .xls"
                 >
-                    <Button icon={<UploadOutlined />}>
+                    <Button icon={<UploadOutlined />} block={isMobile}>
                         导入证据说明
                     </Button>
                 </Upload>
             </Space>
-            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: '-8px' }}>
+            <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: isMobile ? '4px' : '-8px' }}>
                 您可以下载模板，离线填写**证据说明**后，再导入回系统。
             </Paragraph>
             <Divider />
@@ -775,24 +778,30 @@ const EvidencePerActionForm = ({ onFinish, form, notice, handlePreview }) => {
                 ))}
             </div>
             <Divider />
-            <Form.Item><Button type="primary" htmlType="submit">提交所有证据</Button></Form.Item>
+            <Form.Item><Button type="primary" htmlType="submit" block={isMobile} size="large">提交所有证据</Button></Form.Item>
         </Form>
     );
 };
 
-const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, actionAreaStyle }) => (
-    <div style={actionAreaStyle}>
-        <Title level={5}>{title}</Title>
-        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-            <Button type="primary" icon={<CheckCircleOutlined />} onClick={onApprove} style={{ flex: 1 }} size="large" >
-                {approveText || '批准'}
-            </Button>
-            <Button danger icon={<CloseCircleOutlined />} onClick={onReject} style={{ flex: 1 }} size="large" >
-                {rejectText || '驳回'}
-            </Button>
+const ApprovalArea = ({ title, onApprove, onReject, approveText, rejectText, actionAreaStyle }) => {
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
+    return (
+        <div style={actionAreaStyle}>
+            <Title level={5}>{title}</Title>
+            {/* 响应式：移动端垂直排列，桌面端水平排列 */}
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', marginTop: '16px' }}>
+                <Button type="primary" icon={<CheckCircleOutlined />} onClick={onApprove} style={{ flex: 1 }} size="large" block={isMobile} >
+                    {approveText || '批准'}
+                </Button>
+                <Button danger icon={<CloseCircleOutlined />} onClick={onReject} style={{ flex: 1 }} size="large" block={isMobile} >
+                    {rejectText || '驳回'}
+                </Button>
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 
 export const NoticeDetailModal = ({
@@ -806,6 +815,8 @@ export const NoticeDetailModal = ({
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
+    const screens = useBreakpoint(); // 获取断点
+    const isMobile = !screens.md;    // 判断是否为移动端
 
     if (!notice) return null;
 
@@ -915,17 +926,17 @@ export const NoticeDetailModal = ({
                                         showTitle={false}
                                     />
                                     <AttachmentsDisplay attachments={plan.evidenceAttachments || plan.attachments} />
-                                    <Space style={{ marginTop: 8 }}>
-                                        <Button type="primary" icon={<CheckCircleOutlined />} disabled={approvedFlags[index]} onClick={() => onApproveEvidenceItem?.(index)}>
+                                    <div style={{ marginTop: 8, display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px' }}>
+                                        <Button type="primary" icon={<CheckCircleOutlined />} disabled={approvedFlags[index]} onClick={() => onApproveEvidenceItem?.(index)} block={isMobile}>
                                             {approvedFlags[index] ? '已批准' : '批准此证据'}
                                         </Button>
-                                        <Button danger icon={<CloseCircleOutlined />} onClick={() => onRejectEvidenceItem?.(index)}>驳回此证据并退回</Button>
-                                    </Space>
+                                        <Button danger icon={<CloseCircleOutlined />} onClick={() => onRejectEvidenceItem?.(index)} block={isMobile}>驳回此证据并退回</Button>
+                                    </div>
                                 </Card>
                             ))}
                             <Divider />
                             <Popconfirm title="确定所有证据均已审核通过并关闭吗？" onConfirm={() => onClosureApprove()}>
-                                <Button type="primary">全部批准并关闭</Button>
+                                <Button type="primary" block={isMobile} size="large">全部批准并关闭</Button>
                             </Popconfirm>
                         </Space>
                     </div>
@@ -960,7 +971,16 @@ export const NoticeDetailModal = ({
 
 
     return (
-        <Modal title={`通知单详情: ${safeTitle} - ${notice?.noticeCode || ''}`} open={open} onCancel={onCancel} footer={null} width={800}>
+        <Modal
+            title={`通知单详情: ${safeTitle} - ${notice?.noticeCode || ''}`}
+            open={open}
+            onCancel={onCancel}
+            footer={null}
+            // 响应式 Modal 属性
+            width={isMobile ? '100%' : 800}
+            style={isMobile ? { top: 0, margin: 0, maxWidth: '100vw', padding: 0 } : {}}
+            bodyStyle={isMobile ? { minHeight: '100vh', padding: '16px' } : {}}
+        >
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
             {/* 核心修改：如果是 Historical 8D，使用新的展示组件，否则使用默认的 */}
             {notice?.category === 'Historical 8D' ? (
@@ -1059,6 +1079,7 @@ export const NoticeDetailModal = ({
                             icon={isLiked ? <StarFilled /> : <StarOutlined />}
                             onClick={() => onLikeToggle(notice)}
                             size="large"
+                            block={isMobile}
                         >
                             {isLiked ? '已赞' : '点赞表彰'}
                         </Button>
@@ -1072,7 +1093,7 @@ export const NoticeDetailModal = ({
             {/* 核心修改：如果是 Historical 8D，不显示操作区域，因为它是已完成状态 */}
             {notice.category !== 'Historical 8D' && renderActionArea()}
 
-            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel}>
+            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel} width={isMobile ? '100%' : undefined} style={isMobile ? {top: 20} : {}}>
                 <img alt="example" style={{ width: '100%' }} src={previewImage} />
             </Modal>
         </Modal>

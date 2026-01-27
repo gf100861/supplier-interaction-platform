@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload, Grid, Card, Dropdown } from 'antd';
-import { 
-    FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined, 
+import {
+    FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined,
     SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined,
-    MoreOutlined, CalendarOutlined, UserOutlined 
+    MoreOutlined, CalendarOutlined, UserOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNotices } from '../../contexts/NoticeContext';
@@ -14,7 +14,7 @@ import { saveAs } from 'file-saver';
 const { Text, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
 
-// --- 1. 高亮文本组件 (保持不变) ---
+// ... (HighlightText, getStatusTag, toPlainText functions remain unchanged)
 const HighlightText = ({ text, keyword }) => {
     const strText = String(text || '');
     if (!keyword || !keyword.trim()) {
@@ -38,7 +38,6 @@ const HighlightText = ({ text, keyword }) => {
     );
 };
 
-// --- 辅助函数 (保持不变) ---
 const getStatusTag = (status) => {
     let color;
     switch (status) {
@@ -46,13 +45,12 @@ const getStatusTag = (status) => {
         case '待供应商处理': color = 'processing'; break;
         case '待供应商关闭': color = 'warning'; break;
         case '待SD确认actions': color = 'red'; break;
-        case '待SD关闭evidence':
+        case '待SD关闭evidence' || '待SD审核关闭': color = 'orange'; break;
         case '待SD审核计划': color = 'purple'; break;
         case '已完成': color = 'success'; break;
         case '已作废': color = 'default'; break;
         default: color = 'default';
     }
-    // 移动端Tag稍微小一点
     return <Tag color={color} style={{ marginRight: 0 }}>{status}</Tag>;
 };
 
@@ -64,7 +62,7 @@ const toPlainText = (val) => {
     return String(val);
 };
 
-// --- 子组件：单个通知单 (重点修改) ---
+// --- SingleNoticeItem (Unchanged) ---
 const SingleNoticeItem = ({
     item,
     getActionsForItem,
@@ -79,7 +77,7 @@ const SingleNoticeItem = ({
     searchTerm = ''
 }) => {
     const screens = useBreakpoint();
-    const isMobile = !screens.md; // 小于 md (768px) 视为移动端
+    const isMobile = !screens.md;
 
     const getChineseOnly = (text = '') => text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
     const plainTitle = toPlainText(item.title);
@@ -95,16 +93,14 @@ const SingleNoticeItem = ({
 
     const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
 
-    // --- 移动端渲染逻辑 ---
     if (isMobile) {
         return (
-            <div style={{ 
-                padding: '12px', 
-                borderBottom: '1px solid #f0f0f0', 
+            <div style={{
+                padding: '12px',
+                borderBottom: '1px solid #f0f0f0',
                 backgroundColor: '#fff',
                 position: 'relative'
             }}>
-                {/* 1. 顶部：选择框 + 标题 + 状态 */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 8 }}>
                     {(selectable || isReviewable) && (
                         <Checkbox
@@ -118,7 +114,6 @@ const SingleNoticeItem = ({
                             <Text strong style={{ fontSize: '15px', lineHeight: 1.4, marginRight: 8 }} ellipsis={{ rows: 2 }}>
                                 <HighlightText text={rawTitle} keyword={searchTerm} />
                             </Text>
-                            {/* 状态Tag放右上角 */}
                             <div style={{ flexShrink: 0, transform: 'scale(0.9)', transformOrigin: 'top right' }}>
                                 {getStatusTag(item.status)}
                             </div>
@@ -128,31 +123,26 @@ const SingleNoticeItem = ({
                         </Text>
                     </div>
                 </div>
-
-                {/* 2. 中部：描述内容 */}
                 <div style={{ marginBottom: 8, paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
                     <Paragraph type="secondary" ellipsis={{ rows: 2, expandable: false }} style={{ fontSize: '13px', margin: 0 }}>
-                         <HighlightText text={highlightText} keyword={searchTerm} />
+                        <HighlightText text={highlightText} keyword={searchTerm} />
                     </Paragraph>
                 </div>
-
-                {/* 3. 底部：分类标签 + 操作按钮 */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
                     <Tag color={categoryInfo.color} style={{ fontSize: '12px', lineHeight: '20px' }}>
                         {item.category || '未分类'}
                     </Tag>
-                    
-                    {/* 移动端操作按钮组 */}
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                         {/* 直接复用 getActionsForItem，但在移动端可能需要 CSS 调整间距 */}
-                        {getActionsForItem(item)}
+                    <div style={{ display: 'flex' }}>
+                        {/* 使用 filter 过滤掉 key 为 'edit' (修改) 和 'correct' (修正/撤回) 的按钮 */}
+                        {getActionsForItem(item).filter(action =>
+                            action.key !== 'edit' && action.key !== 'correct'
+                        )}
                     </div>
                 </div>
             </div>
         );
     }
 
-    // --- 桌面端渲染逻辑 (保持原样) ---
     return (
         <List.Item
             actions={getActionsForItem(item)}
@@ -207,7 +197,7 @@ const SingleNoticeItem = ({
 const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
     const screens = useBreakpoint();
     const isMobile = !screens.md;
-    
+
     const [sortOrder, setSortOrder] = useState('default');
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
     const category = batch.representative?.category || '未知类型';
@@ -217,10 +207,10 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         : sdNotice?.planSubmitTime
             ? sdNotice.planSubmitTime.slice(0, 10)
             : '未知日期';
-    
+
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const isRealBatch = batch.batchId.startsWith('BATCH-');
-    
+
     // 移动端简化标题
     const titleText = isRealBatch
         ? `批量: ${supplierShortCode} - ${category}`
@@ -234,11 +224,11 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
     // ... (toPlainText 保持不变) ...
     const toPlainText = (val) => {
-       if (val == null) return '';
-       if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
-       if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
-       if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
-       return String(val);
+        if (val == null) return '';
+        if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
+        if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
+        if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
+        return String(val);
     };
 
     // ... (allowBatchActions, allowBatchEvidenceUpload, allowDeletion useMemos 保持不变) ...
@@ -279,7 +269,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         const checked = e.target.checked;
         setSelectedNoticeKeys(checked ? sortedNotices.map(n => n.id) : []);
     };
-const handleBatchDeleteWithinBatch = async () => {
+    const handleBatchDeleteWithinBatch = async () => {
         if (selectedNoticeKeys.length === 0) {
             messageApi.warning('请至少选择一项进行删除。');
             return;
@@ -652,7 +642,7 @@ const handleBatchDeleteWithinBatch = async () => {
     const renderBatchActions = () => {
         // 定义通用的按钮样式
         const btnStyle = isMobile ? { width: '100%', marginBottom: 8 } : {};
-        const containerStyle = isMobile 
+        const containerStyle = isMobile
             ? { padding: '16px', display: 'flex', flexDirection: 'column' }
             : { marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', gap: '16px' };
 
@@ -713,24 +703,20 @@ const handleBatchDeleteWithinBatch = async () => {
                     key={batch.batchId}
                     header={
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                           <ProfileOutlined style={{ fontSize: isMobile ? '20px' : '24px', color: props.token.colorPrimary, marginRight: 12 }} />
-                           <div style={{ flex: 1 }}>
+                            <ProfileOutlined style={{ fontSize: isMobile ? '20px' : '24px', color: props.token.colorPrimary, marginRight: 12 }} />
+                            <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <Text strong style={{ fontSize: isMobile ? '14px' : '16px' }}>{titleText}</Text>
-                                    {/* 排序按钮 (仅在展开且非移动端或移动端空间足够时显示，这里简化为只在PC显示排序，移动端节省空间) */}
-                                    {!isMobile && batch.notices.length > 1 && (
-                                        <Space size="small">
-                                            <Tooltip title="升序"><Button type={sortOrder === 'asc' ? 'primary' : 'text'} size="small" icon={<SortAscendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('asc'); }} /></Tooltip>
-                                            <Tooltip title="降序"><Button type={sortOrder === 'desc' ? 'primary' : 'text'} size="small" icon={<SortDescendingOutlined />} onClick={(e) => { e.stopPropagation(); handleSort('desc'); }} /></Tooltip>
-                                        </Space>
-                                    )}
+                                    <Text strong style={{ fontSize: isMobile ? '14px' : '16px' }}>
+                                        {batch.batchId.startsWith('BATCH-') ? `批量: ${batch.representative?.supplier?.shortCode || '未知'} - ${batch.representative?.category || '未知'}` : `${batch.representative?.supplier?.shortCode} - ${batch.representative?.category}`}
+                                    </Text>
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#888', marginTop: 4 }}>
-                                    <CalendarOutlined style={{ marginRight: 4 }}/>{createDate} 
-                                    <span style={{ margin: '0 8px' }}>|</span> 
+                                    <CalendarOutlined style={{ marginRight: 4 }} />
+                                    {batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期'}
+                                    <span style={{ margin: '0 8px' }}>|</span>
                                     共 {batch.notices.length} 项
                                 </div>
-                           </div>
+                            </div>
                         </div>
                     }
                 >
