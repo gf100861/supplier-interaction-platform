@@ -185,7 +185,7 @@ const Historical8DDisplay = ({ notice }) => {
                     <Text type="secondary">数量 (Qty):</Text>
                     <div>{details.quantity || 'N/A'}</div>
                 </Col>
-                 <Col xs={24} md={12}>
+                <Col xs={24} md={12}>
                     <Text type="secondary">供应商(Supplier):</Text>
                     <div>{notice?.supplier?.shortCode || 'N/A'}</div>
                 </Col>
@@ -477,7 +477,7 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
         <div style={actionAreaStyle}>
             <Title level={5}><SolutionOutlined /> 提交行动计划</Title>
 
-            <Space style={{ marginBottom: 16,width: '100%' }} direction={isMobile ? "vertical" : "horizontal"}>
+            <Space style={{ marginBottom: 16, width: '100%' }} direction={isMobile ? "vertical" : "horizontal"}>
                 <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate} block={isMobile}>
                     下载模板
                 </Button>
@@ -511,12 +511,12 @@ const PlanSubmissionForm = ({ onFinish, form, actionAreaStyle, notice }) => {
                                     <Form.Item {...field} name={[field.name, 'plan']} label="行动方案" rules={[{ required: true, message: '请输入行动方案' }]}>
                                         <TextArea autoSize={{ minRows: 3, maxRows: 9 }} />
                                     </Form.Item>
-                                    <Space wrap align="baseline" direction={isMobile ? "vertical" : "horizontal"} style={{width: '100%'}}>
-                                        <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]} style={{width: isMobile ? '100%' : 'auto'}}>
+                                    <Space wrap align="baseline" direction={isMobile ? "vertical" : "horizontal"} style={{ width: '100%' }}>
+                                        <Form.Item {...field} name={[field.name, 'responsible']} label="负责人" rules={[{ required: true, message: '请输入负责人' }]} style={{ width: isMobile ? '100%' : 'auto' }}>
                                             <Input />
                                         </Form.Item>
-                                        <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]} style={{width: isMobile ? '100%' : 'auto'}}>
-                                            <DatePicker style={{width: '100%'}}/>
+                                        <Form.Item {...field} name={[field.name, 'deadline']} label="完成日期" rules={[{ required: true, message: '请选择日期' }]} style={{ width: isMobile ? '100%' : 'auto' }}>
+                                            <DatePicker style={{ width: '100%' }} />
                                         </Form.Item>
                                     </Space>
                                 </Card>
@@ -969,6 +969,13 @@ export const NoticeDetailModal = ({
         return { text: typeMap[h.type] || "执行了操作", color: colorMap[key] || 'grey' };
     };
 
+    // 1. 定义一个获取时间的辅助变量 (放在 return 之前)
+    // 逻辑：优先取 JSON 里的 createTime，取不到就取 planSubmitTime，最后取数据库的根时间
+    const displayTime = notice?.sdNotice?.createTime
+        || notice?.sdNotice?.planSubmitTime
+        || notice?.created_at
+        || notice?.createdAt
+        || new Date(); // 最后的兜底
 
     return (
         <Modal
@@ -1011,7 +1018,15 @@ export const NoticeDetailModal = ({
                         </div>
                     )}
                     <Divider style={{ margin: '8px 0' }} />
-                    <Text type="secondary">由 {notice?.creator?.username || 'SD'} 于 {dayjs(notice?.sdNotice?.createTime).format('YYYY-MM-DD HH:mm')} 发起给 {notice?.supplier?.shortCode}</Text>
+
+                    <Text type="secondary">
+                        由 {notice?.creator?.username || 'SD'} 于 {dayjs(displayTime).format('YYYY-MM-DD HH:mm')} 发起给 {notice?.supplier?.shortCode}
+                    </Text>
+                    {console.log('Mobile Debug:', {
+                        id: notice?.id,
+                        jsonCreateTime: notice?.sdNotice?.createTime,
+                        rootCreatedAt: notice?.created_at
+                    })}
                 </Card>
             )}
 
@@ -1093,7 +1108,7 @@ export const NoticeDetailModal = ({
             {/* 核心修改：如果是 Historical 8D，不显示操作区域，因为它是已完成状态 */}
             {notice.category !== 'Historical 8D' && renderActionArea()}
 
-            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel} width={isMobile ? '100%' : undefined} style={isMobile ? {top: 20} : {}}>
+            <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel} width={isMobile ? '100%' : undefined} style={isMobile ? { top: 20 } : {}}>
                 <img alt="example" style={{ width: '100%' }} src={previewImage} />
             </Modal>
         </Modal>

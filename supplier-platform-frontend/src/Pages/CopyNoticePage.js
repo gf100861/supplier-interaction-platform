@@ -1,4 +1,275 @@
-   const handleBatchDeleteWithinBatch = async () => {
+import React, { useState, useMemo, useEffect } from 'react';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload, Grid, Card, Dropdown } from 'antd';
+import {
+    FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined,
+    SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined,
+    MoreOutlined, CalendarOutlined, UserOutlined
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
+import { useNotices } from '../../contexts/NoticeContext';
+import { useNotification } from '../../contexts/NotificationContext';
+import * as ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+
+const { Text, Paragraph } = Typography;
+const { useBreakpoint } = Grid;
+
+// ... (HighlightText, getStatusTag, toPlainText functions remain unchanged)
+const HighlightText = ({ text, keyword }) => {
+    const strText = String(text || '');
+    if (!keyword || !keyword.trim()) {
+        return <>{strText}</>;
+    }
+    const keywords = keyword.toLowerCase().split(/[；;@,，\s]+/).filter(k => k.trim());
+    if (keywords.length === 0) return <>{strText}</>;
+    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(${escapedKeywords.join('|')})`, 'gi');
+    const parts = strText.split(regex);
+    return (
+        <span>
+            {parts.map((part, i) =>
+                regex.test(part) ? (
+                    <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
+                        {part}
+                    </span>
+                ) : part
+            )}
+        </span>
+    );
+};
+
+const getStatusTag = (status) => {
+    let color;
+    switch (status) {
+        case '待提交Action Plan':
+        case '待供应商处理': color = 'processing'; break;
+        case '待供应商关闭': color = 'warning'; break;
+        case '待SD确认actions': color = 'red'; break;
+        case '待SD关闭evidence' || '待SD审核关闭': color = 'orange'; break;
+        case '待SD审核计划': color = 'purple'; break;
+        case '已完成': color = 'success'; break;
+        case '已作废': color = 'default'; break;
+        default: color = 'default';
+    }
+    return <Tag color={color} style={{ marginRight: 0 }}>{status}</Tag>;
+};
+
+const toPlainText = (val) => {
+    if (val == null) return '';
+    if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
+    if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
+    if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
+    return String(val);
+};
+
+// --- SingleNoticeItem (Unchanged) ---
+const SingleNoticeItem = ({
+    item,
+    getActionsForItem,
+    showDetailsModal,
+    handleReviewToggle,
+    token,
+    currentUser,
+    noticeCategoryDetails,
+    selectable = false,
+    selected = false,
+    onSelectChange = () => { },
+    searchTerm = ''
+}) => {
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
+    const getChineseOnly = (text = '') => text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
+    const plainTitle = toPlainText(item.title);
+    const chineseTitle = getChineseOnly(plainTitle)?.trim();
+    const rawTitle = item.category === 'Historical 8D' && chineseTitle.length > 0 ? chineseTitle : plainTitle;
+
+    const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
+        ? noticeCategoryDetails[item.category]
+        : { id: 'N/A', color: 'orange' };
+
+    const plainDetails = toPlainText(item.details?.rootCause || item.sdNotice?.details?.finding || item.sdNotice?.description);
+    const highlightText = item.category === 'Historical 8D' && getChineseOnly(plainDetails) ? getChineseOnly(plainDetails) : plainDetails;
+
+    const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
+
+    if (isMobile) {
+        return (
+            <div style={{
+                padding: '12px',
+                borderBottom: '1px solid #f0f0f0',
+                backgroundColor: '#fff',
+                position: 'relative'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 8 }}>
+                    {(selectable || isReviewable) && (
+                        <Checkbox
+                            checked={selectable ? selected : item.isReviewed}
+                            onChange={(e) => selectable ? onSelectChange(item.id, e.target.checked) : handleReviewToggle(item, e)}
+                            style={{ marginTop: 4, marginRight: 12 }}
+                        />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                            <Text strong style={{ fontSize: '15px', lineHeight: 1.4, marginRight: 8 }} ellipsis={{ rows: 2 }}>
+                                <HighlightText text={rawTitle} keyword={searchTerm} />
+                            </Text>
+                            <div style={{ flexShrink: 0, transform: 'scale(0.9)', transformOrigin: 'top right' }}>
+                                {getStatusTag(item.status)}
+                            </div>
+                        </div>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                            <HighlightText text={item.noticeCode} keyword={searchTerm} />
+                        </Text>
+                    </div>
+                </div>
+                <div style={{ marginBottom: 8, paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
+                    <Paragraph type="secondary" ellipsis={{ rows: 2, expandable: false }} style={{ fontSize: '13px', margin: 0 }}>
+                        <HighlightText text={highlightText} keyword={searchTerm} />
+                    </Paragraph>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
+                    <Tag color={categoryInfo.color} style={{ fontSize: '12px', lineHeight: '20px' }}>
+                        {item.category || '未分类'}
+                    </Tag>
+                    <div style={{ display: 'flex' }}>
+                        {/* 使用 filter 过滤掉 key 为 'edit' (修改) 和 'correct' (修正/撤回) 的按钮 */}
+                        {getActionsForItem(item).filter(action =>
+                            action.key !== 'edit' && action.key !== 'correct'
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <List.Item
+            actions={getActionsForItem(item)}
+            style={{
+                padding: '12px 24px',
+                alignItems: 'center',
+                display: 'flex'
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
+                {(selectable || isReviewable) && (
+                    <Checkbox
+                        checked={selectable ? selected : item.isReviewed}
+                        onChange={(e) => selectable ? onSelectChange(item.id, e.target.checked) : handleReviewToggle(item, e)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ marginRight: '16px' }}
+                    />
+                )}
+                <FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary, marginRight: '16px', flexShrink: 0 }} />
+                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <a onClick={() => showDetailsModal(item)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Text strong><HighlightText text={rawTitle} keyword={searchTerm} /></Text>
+                        </a>
+                        {item.isReviewed && <Tag color="green" icon={<EyeOutlined />} style={{ margin: 0 }}>已审阅</Tag>}
+                        <Text type="secondary" style={{ fontSize: '12px', flexShrink: 0 }}>
+                            (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
+                        </Text>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+                        <div style={{
+                            color: 'rgba(0, 0, 0, 0.45)',
+                            fontSize: '14px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            flex: 1
+                        }}>
+                            <HighlightText text={highlightText} keyword={searchTerm} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                            <Tag color={categoryInfo.color} style={{ margin: 0 }}>{item.category || '未分类'}</Tag>
+                            {getStatusTag(item.status)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </List.Item>
+    );
+};
+
+const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
+    const [sortOrder, setSortOrder] = useState('default');
+    const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
+    const category = batch.representative?.category || '未知类型';
+    const sdNotice = batch.representative?.sdNotice;
+    const createDate = sdNotice?.createTime
+        ? dayjs(sdNotice.createTime).format('YYYY-MM-DD')
+        : sdNotice?.planSubmitTime
+            ? sdNotice.planSubmitTime.slice(0, 10)
+            : '未知日期';
+
+    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
+    const isRealBatch = batch.batchId.startsWith('BATCH-');
+
+    // 移动端简化标题
+    const titleText = isRealBatch
+        ? `批量: ${supplierShortCode} - ${category}`
+        : `${supplierShortCode} - ${category}`;
+
+    const { deleteMultipleNotices, updateNotice } = useNotices();
+    const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]);
+    const [isDeletingBatchItems, setIsDeletingBatchItems] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const { messageApi } = useNotification();
+
+    // ... (toPlainText 保持不变) ...
+    const toPlainText = (val) => {
+        if (val == null) return '';
+        if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
+        if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
+        if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
+        return String(val);
+    };
+
+    // ... (allowBatchActions, allowBatchEvidenceUpload, allowDeletion useMemos 保持不变) ...
+    const allowBatchActions = useMemo(() => {
+        const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
+        return allPending && currentUser.role === 'Supplier';
+    }, [batch.notices, currentUser]);
+
+    const allowBatchEvidenceUpload = useMemo(() => {
+        const allPendingEvidence = batch.notices.every(notice => notice.status === '待供应商关闭');
+        return allPendingEvidence && currentUser.role === 'Supplier';
+    }, [batch.notices, currentUser]);
+
+    const allowDeletion = useMemo(() => {
+        const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
+        return allPending && ['SD', 'Manager', 'Admin'].includes(currentUser.role);
+    }, [batch.notices, currentUser]);
+
+    // ... (sortedNotices, handleSort, handleSelectChange, handleSelectAll 保持不变) ...
+    const sortedNotices = useMemo(() => {
+        const noticesToSort = [...batch.notices];
+        if (sortOrder === 'asc') return noticesToSort.sort((a, b) => (toPlainText(a.title) || '').localeCompare(toPlainText(b.title) || ''));
+        if (sortOrder === 'desc') return noticesToSort.sort((a, b) => (toPlainText(b.title) || '').localeCompare(toPlainText(a.title) || ''));
+        return noticesToSort;
+    }, [batch.notices, sortOrder]);
+
+    const handleSort = (order) => {
+        setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
+    };
+
+    const handleSelectChange = (noticeId, checked) => {
+        setSelectedNoticeKeys(prevKeys =>
+            checked ? [...prevKeys, noticeId] : prevKeys.filter(key => key !== noticeId)
+        );
+    };
+
+    const handleSelectAll = (e) => {
+        const checked = e.target.checked;
+        setSelectedNoticeKeys(checked ? sortedNotices.map(n => n.id) : []);
+    };
+    const handleBatchDeleteWithinBatch = async () => {
         if (selectedNoticeKeys.length === 0) {
             messageApi.warning('请至少选择一项进行删除。');
             return;
@@ -123,17 +394,6 @@
                     const planText = toPlainText(rawPlanValue)?.toString() || '';
                     const responsible = toPlainText(rawResponsibleValue)?.toString() || '';
                     const deadlineValue = rawDeadlineValue; // 日期对象或字符串
-
-                    // --- 3. 添加日志：打印解析后的每行数据 ---
-                    //  console.log(`[Action Upload] Row ${rowNumber}:`, {
-                    //     noticeId: noticeId,
-                    //     rawPlan: rawPlanValue,
-                    //     parsedPlan: planText.trim(),
-                    //     rawResp: rawResponsibleValue,
-                    //     parsedResp: responsible.trim(),
-                    //     rawDeadline: deadlineValue,
-                    //     isPlanValid: !!(noticeId && planText.trim()) // <-- 修正后的逻辑
-                    // });
 
                     // --- 4. 核心修正：仅要求 Action Plan 必填 ---
                     if (noticeId && planText.trim() && responsible.trim() && deadlineValue) {
@@ -374,3 +634,165 @@
         reader.readAsArrayBuffer(file);
         return false;
     };
+
+    const isAllSelected = sortedNotices.length > 0 && selectedNoticeKeys.length === sortedNotices.length;
+    const isIndeterminate = selectedNoticeKeys.length > 0 && selectedNoticeKeys.length < sortedNotices.length;
+
+    // --- 批量操作按钮渲染函数 (响应式适配) ---
+    const renderBatchActions = () => {
+        // 定义通用的按钮样式
+        const btnStyle = isMobile ? { width: '100%', marginBottom: 8 } : {};
+        const containerStyle = isMobile
+            ? { padding: '16px', display: 'flex', flexDirection: 'column' }
+            : { marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', gap: '16px' };
+
+        if (allowBatchActions) {
+            return (
+                <div style={containerStyle}>
+                    <Button icon={<DownloadOutlined />} onClick={handleActionDownloadTemplate} style={btnStyle}>
+                        下载行动计划模板
+                    </Button>
+                    <Upload
+                        beforeUpload={handleActionExcelUpload}
+                        showUploadList={false}
+                        accept=".xlsx, .xls"
+                        disabled={isUploading}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                    >
+                        <Button type="primary" icon={<FileExcelOutlined />} loading={isUploading} style={btnStyle} block={isMobile}>
+                            上传行动计划
+                        </Button>
+                    </Upload>
+                </div>
+            );
+        }
+
+        if (allowBatchEvidenceUpload) {
+            return (
+                <div style={containerStyle}>
+                    <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate} style={btnStyle}>
+                        下载证据模板
+                    </Button>
+                    <Upload
+                        beforeUpload={handleEvidenceExcelUpload}
+                        showUploadList={false}
+                        accept=".xlsx, .xls"
+                        disabled={isUploading}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                    >
+                        <Button type="primary" icon={<FileExcelOutlined />} loading={isUploading} style={btnStyle} block={isMobile}>
+                            上传证据 (仅文本)
+                        </Button>
+                    </Upload>
+                </div>
+            );
+        }
+        return null;
+    };
+
+    return (
+        <List.Item style={{ display: 'block', padding: 0, marginBottom: 16 }}>
+            <Collapse
+                bordered={false}
+                style={{ width: '100%', backgroundColor: props.token.colorBgLayout, borderRadius: 8 }}
+                expandIconPosition="end"
+                activeKey={activeCollapseKeys}
+                onChange={(keys) => setActiveCollapseKeys(keys)}
+            >
+                <Collapse.Panel
+                    key={batch.batchId}
+                    header={
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <ProfileOutlined style={{ fontSize: isMobile ? '20px' : '24px', color: props.token.colorPrimary, marginRight: 12 }} />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <Text strong style={{ fontSize: isMobile ? '14px' : '16px' }}>
+                                        {batch.batchId.startsWith('BATCH-') ? `批量: ${batch.representative?.supplier?.shortCode || '未知'} - ${batch.representative?.category || '未知'}` : `${batch.representative?.supplier?.shortCode} - ${batch.representative?.category}`}
+                                    </Text>
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#888', marginTop: 4 }}>
+                                    <CalendarOutlined style={{ marginRight: 4 }} />
+                                    {batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期'}
+                                    <span style={{ margin: '0 8px' }}>|</span>
+                                    共 {batch.notices.length} 项
+                                </div>
+                            </div>
+                        </div>
+                    }
+                >
+                    {/* 批量删除 (SD/Manager/Admin) */}
+                    {allowDeletion && (
+                        <div style={{ padding: '0 16px 16px', borderBottom: '1px solid #eee' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Checkbox
+                                    indeterminate={isIndeterminate}
+                                    onChange={handleSelectAll}
+                                    checked={isAllSelected}
+                                >
+                                    全选
+                                </Checkbox>
+                                <Space>
+                                    {selectedNoticeKeys.length > 0 && <Text type="secondary" style={{ fontSize: '12px' }}>已选 {selectedNoticeKeys.length}</Text>}
+                                    <Popconfirm
+                                        title={`删除 ${selectedNoticeKeys.length} 项?`}
+                                        onConfirm={handleBatchDeleteWithinBatch}
+                                        okText="是"
+                                        cancelText="否"
+                                        disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
+                                    >
+                                        <Button
+                                            danger
+                                            size="small"
+                                            icon={<DeleteOutlined />}
+                                            disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
+                                            loading={isDeletingBatchItems}
+                                        >
+                                            删除
+                                        </Button>
+                                    </Popconfirm>
+                                </Space>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 批量操作区域 (下载/上传) */}
+                    {renderBatchActions()}
+
+                    <List
+                        dataSource={sortedNotices}
+                        renderItem={notice => (
+                            <SingleNoticeItem
+                                item={notice}
+                                {...props}
+                                selectable={allowDeletion}
+                                selected={selectedNoticeKeys.includes(notice.id)}
+                                onSelectChange={handleSelectChange}
+                            />
+                        )}
+                    />
+                </Collapse.Panel>
+            </Collapse>
+        </List.Item>
+    );
+};
+
+// --- 主组件 ---
+export const NoticeList = (props) => {
+    // 提示：父组件(NoticePage)应该负责处理 filter 的UI (如 DatePicker)
+    // 这里仅负责展示列表。
+    // 如果 props.data 是空，显示 Empty 状态
+    return (
+        <List
+            dataSource={props.data}
+            pagination={props.pagination}
+            split={false} // 移除默认分割线，使用组件内部的 border/margin
+            renderItem={item => (
+                item.isBatch
+                    ? <NoticeBatchItem batch={item} {...props} searchTerm={props.searchTerm} />
+                    : <SingleNoticeItem item={item} selectable={false} {...props} searchTerm={props.searchTerm} />
+            )}
+            locale={{ emptyText: '暂无相关通知单' }}
+            style={{ backgroundColor: 'transparent' }} // 列表背景透明
+        />
+    );
+};
