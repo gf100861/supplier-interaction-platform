@@ -474,7 +474,6 @@ const NoticePage = () => {
         // 使用 (notice.history || []) 来确保我们总是在操作一个数组
         const lastPlanSubmission = [...(notice.history || [])].reverse().find(h => h.type === 'supplier_plan_submission');
 
-        console.log(notice.history)
         if (!lastPlanSubmission) {
             messageApi.error("无法找到供应商提交的行动计划，操作失败！");
             return;

@@ -221,7 +221,6 @@ async function generateWithFallback(client, messages, preferredModel) {
 
     for (const model of tryModels) {
         try {
-            console.log(`[Smart Search] Attempting model: ${model}...`);
             const response = await client.chat.completions.create({
                 model: model,
                 messages: messages,
@@ -290,7 +289,6 @@ module.exports = async (req, res) => {
             getEmbedding(rawQuery, model)
         ]);
 
-        console.log("Search Intent:", intentData);
 
         // --- Step 2: 精确统计 ---
         let statsInfo = "";

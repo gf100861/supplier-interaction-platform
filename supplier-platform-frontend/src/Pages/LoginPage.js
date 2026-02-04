@@ -308,8 +308,6 @@ const LoginPage = () => {
                 if (setSessionError) {
                     console.error("前端设置 Session 失败:", setSessionError);
                     // 可以选择抛出错误，或者继续（但刷新后会掉登录）
-                } else {
-                    console.log("前端 Session 同步成功！");
                 }
             }
 
@@ -331,7 +329,6 @@ const LoginPage = () => {
             });
 
             messageApi.success('登录成功!');
-            console.log('Logged in user data:', userData);
             localStorage.setItem('user', JSON.stringify(userData));
 
             navigate('/');

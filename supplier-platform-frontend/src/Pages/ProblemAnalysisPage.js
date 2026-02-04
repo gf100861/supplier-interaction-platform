@@ -220,9 +220,6 @@ const ProblemAnalysisPage = () => {
 
             // 3. 触发邮件发送 (真实调用)
             await sendSecurityEmail(managersAndAdmins, supplierCount);
-
-            console.log('Security alert processed.');
-
         } catch (error) {
             console.error('Failed to trigger security alert:', error);
             messageApi.error('警报系统异常，请联系管理员。');

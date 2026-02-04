@@ -548,7 +548,6 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
 
                 // --- 5. 添加日志：打印表头 ---
                 const headers = worksheet.getRow(6).values;
-                console.log('[Evidence Upload] Excel Headers (Row 6):', JSON.stringify(headers));
 
                 worksheet.eachRow((row, rowNumber) => {
                     if (rowNumber <= 6) return;
@@ -561,12 +560,6 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                     // --- 6. 添加日志：打印原始单元格数据 ---
                     const rawEvidenceValue = row.getCell(6).value;
                     const evidenceDescription = toPlainText(rawEvidenceValue)?.toString() || '';
-
-                    console.log(`[Evidence Upload] Row ${rowNumber}:`, {
-                        noticeId: noticeId,
-                        rawEvidence: rawEvidenceValue,
-                        parsedEvidence: evidenceDescription.trim(),
-                    });
 
                     // --- 7. 核心修正：仅要求 Evidence Description 必填 ---
                     if (noticeId && evidenceDescription.trim()) {

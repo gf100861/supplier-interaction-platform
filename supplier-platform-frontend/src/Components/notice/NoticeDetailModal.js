@@ -1022,11 +1022,6 @@ export const NoticeDetailModal = ({
                     <Text type="secondary">
                         由 {notice?.creator?.username || 'SD'} 于 {dayjs(displayTime).format('YYYY-MM-DD HH:mm')} 发起给 {notice?.supplier?.shortCode}
                     </Text>
-                    {console.log('Mobile Debug:', {
-                        id: notice?.id,
-                        jsonCreateTime: notice?.sdNotice?.createTime,
-                        rootCreatedAt: notice?.created_at
-                    })}
                 </Card>
             )}
 
