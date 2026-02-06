@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carousel, Image, Divider, Spin } from 'antd';
-import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useRef } from 'react';
+import { Typography, Divider } from 'antd';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, Hexagon, Globe, Sun, Moon } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 import './LoginPage.css';
 
-const { Title, Paragraph, Text, Link } = Typography;
+const { Text, Link } = Typography;
 
 // --- 🔧 新增：定义后端 API 基础地址 ---
 
@@ -15,6 +15,39 @@ const isDev = window.location.hostname === 'localhost' || window.location.hostna
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'  // 本地开发环境
     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+
+
+// --- 1. 多语言字典配置 ---
+const TRANSLATIONS = {
+    zh: {
+        sloganTitle: "量化工作价值，驱动供应链卓越表现。",
+        sloganDesc: "专为 SDE 与 Buyer 打造的智能化工作台。记录每一次拜访，追踪每一个 RFQ，让数据说话。",
+        welcome: "欢迎回来",
+        subWelcome: "请输入您的企业账号以访问工作台",
+        emailLabel: "邮箱",
+        emailPlace: "请输入注册邮箱",
+        pwdLabel: "密码",
+        pwdPlace: "请输入密码",
+        forgot: "忘记密码?",
+        loginBtn: "登录系统",
+        loggingIn: "登录中...",
+        footer: "© 2024 Supplier Development System."
+    },
+    en: {
+        sloganTitle: "Quantify Value, Drive Supply Chain Excellence.",
+        sloganDesc: "Intelligent workspace for SDEs & Buyers. Track every visit, trace every RFQ, let data speak.",
+        welcome: "Welcome Back",
+        subWelcome: "Please enter your enterprise account to access.",
+        emailLabel: "Email",
+        emailPlace: "Enter your email",
+        pwdLabel: "Password",
+        pwdPlace: "Enter password",
+        forgot: "Forgot Password?",
+        loginBtn: "Sign In",
+        loggingIn: "Signing in...",
+        footer: "© 2024 Supplier Development System."
+    }
+};
 // --- 错误翻译函数 (保持不变) ---
 const translateError = (errorMsg) => {
     const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
@@ -79,7 +112,7 @@ const logSystemEvent = async (params) => {
             referrer: document.referrer
         };
 
-        // ✅ 修改点 1: 使用 API_BASE_URL 拼接完整路径
+        //  使用 API_BASE_URL 拼接完整路径
         await fetch(`${targetUrl}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -103,109 +136,65 @@ const logSystemEvent = async (params) => {
     }
 };
 
-// --- Custom Hook: Typing Effect (保持不变) ---
-const useTypingEffect = (textToType, speed = 50) => {
-    const [displayedText, setDisplayedText] = useState("");
-    const [index, setIndex] = useState(0);
+
+
+
+
+// --- 1. 定义轮播的句子数组 ---
+const SLOGAN_SENTENCES = [
+    "打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。",
+    "通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。",
+    "自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。",
+    "连接每一个环节，实现智能决策。"
+];
+
+// --- 2. 新增：高级打字机 Hook (支持数组循环 + 删除效果) ---
+const useTypewriterLoop = (sentences, typeSpeed = 100, deleteSpeed = 50, pauseTime = 2000) => {
+    const [text, setText] = useState('');
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [loopNum, setLoopNum] = useState(0);
+    const [typingSpeed, setTypingSpeed] = useState(typeSpeed);
 
     useEffect(() => {
-        setDisplayedText("");
-        setIndex(0);
-    }, [textToType]);
+        let timer;
 
-    useEffect(() => {
-        if (index < textToType.length) {
-            const timeout = setTimeout(() => {
-                setDisplayedText((prev) => prev + textToType.charAt(index));
-                setIndex((prevIndex) => prevIndex + 1);
-            }, speed);
-            return () => clearTimeout(timeout);
-        }
-    }, [index, textToType, speed]);
+        const handleType = () => {
+            const i = loopNum % sentences.length;
+            const fullText = sentences[i];
 
-    return displayedText;
-};
+            setText(isDeleting
+                ? fullText.substring(0, text.length - 1)
+                : fullText.substring(0, text.length + 1)
+            );
 
-// --- LoginCarousel (保持不变) ---
-const LoginCarousel = () => {
-    const [currentIndex, setCurrentIndex] = useState(0);
+            // 动态调整速度
+            setTypingSpeed(isDeleting ? deleteSpeed : typeSpeed);
 
-    const carouselItems = useMemo(() => [
-        {
-            src: '/images/Carousel1.jpg',
-            title: '协同 · 无界',
-            description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
-            bgColor: '#e0f2fe',
-            cardBgColor: 'rgba(240, 249, 255, 0.7)',
-        },
-        {
-            src: '/images/Carousel2.jpg',
-            title: '数据 · 驱动',
-            description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
-            bgColor: '#f0fdf4',
-            cardBgColor: 'rgba(240, 253, 244, 0.7)',
-        },
-        {
-            src: '/images/Carousel3.jpg',
-            title: '效率 · 提升',
-            description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
-            bgColor: '#f5f3ff',
-            cardBgColor: 'rgba(245, 243, 255, 0.75)',
-        },
-    ], []);
-
-    const currentItem = carouselItems[currentIndex];
-    const typedDescription = useTypingEffect(currentItem.description);
-
-    useEffect(() => {
-        document.body.style.backgroundColor = currentItem.bgColor;
-        document.body.style.transition = 'background-color 0.5s ease-in-out';
-        return () => {
-            document.body.style.backgroundColor = '';
-            document.body.style.transition = '';
+            // 逻辑判断
+            if (!isDeleting && text === fullText) {
+                // 打字完成，停顿一下，准备删除
+                setTypingSpeed(pauseTime);
+                setIsDeleting(true);
+            } else if (isDeleting && text === '') {
+                // 删除完成，切换到下一句，开始打字
+                setIsDeleting(false);
+                setLoopNum(loopNum + 1);
+                setTypingSpeed(500); // 稍微停顿一下再开始打下一句
+            }
         };
-    }, [currentItem]);
 
-    return (
-        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-            <Carousel
-                autoplay
-                autoplaySpeed={5000}
-                dots={false}
-                fade
-                style={{ width: '100%', maxWidth: '500px' }}
-                afterChange={(current) => setCurrentIndex(current)}
-            >
-                {carouselItems.map((item, index) => (
-                    <div key={index}>
-                        <Image
-                            src={item.src}
-                            preview={false}
-                            placeholder={<div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5' }}><Spin /></div>}
-                            style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }}
-                        />
-                    </div>
-                ))}
-            </Carousel>
+        timer = setTimeout(handleType, typingSpeed);
 
-            <Card
-                style={{ marginTop: '-60px', width: '90%', maxWidth: '450px', zIndex: 10, backdropFilter: 'blur(10px)', backgroundColor: currentItem.cardBgColor, border: '1px solid rgba(255, 255, 255, 0.2)', transition: 'background-color 0.5s ease-in-out' }}
-            >
-                <Title level={3}>{currentItem.title}</Title>
-                <div className="typing-text-container" style={{ position: 'relative', minHeight: '72px' }}>
-                    <Paragraph type="secondary" style={{ visibility: 'hidden', marginBottom: 0 }}>{currentItem.description}</Paragraph>
-                    <Paragraph type="secondary" style={{ position: 'absolute', top: 0, left: 0, width: '100%', margin: 0 }}>
-                        {typedDescription}<span className="typing-cursor">|</span>
-                    </Paragraph>
-                </div>
-            </Card>
-        </div>
-    );
+        return () => clearTimeout(timer);
+    }, [text, isDeleting, loopNum, sentences, typeSpeed, deleteSpeed, pauseTime]);
+
+    return text;
 };
 
 // --- Main Login Page ---
 const LoginPage = () => {
     const navigate = useNavigate();
+    const [showPassword, setShowPassword] = useState(false);
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
 
@@ -213,6 +202,34 @@ const LoginPage = () => {
     const pageInitTime = useRef(Date.now());
     // 记录表单交互
     const [isAutoFill, setIsAutoFill] = useState(false);
+
+
+    // --- 2. 新增状态：深色模式 & 语言 ---
+    // 优先读取本地缓存，如果没有则默认 'zh' 和 false
+    const [lang, setLang] = useState(() => localStorage.getItem('app_lang') || 'zh');
+    const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('app_theme') === 'dark');
+
+    // 获取当前语言的文本
+    const t = TRANSLATIONS[lang];
+
+    // --- 3. 处理深色模式切换 ---
+    useEffect(() => {
+        const root = window.document.documentElement;
+        if (isDarkMode) {
+            root.classList.add('dark');
+            localStorage.setItem('app_theme', 'dark');
+        } else {
+            root.classList.remove('dark');
+            localStorage.setItem('app_theme', 'light');
+        }
+    }, [isDarkMode]);
+
+    // --- 4. 处理语言切换 ---
+    const toggleLang = () => {
+        const newLang = lang === 'zh' ? 'en' : 'zh';
+        setLang(newLang);
+        localStorage.setItem('app_lang', newLang);
+    };
 
     useEffect(() => {
         // 全局错误监听
@@ -257,6 +274,20 @@ const LoginPage = () => {
         if (Date.now() - pageInitTime.current < 500) {
             setIsAutoFill(true);
         }
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault(); // 1. 阻止浏览器默认刷新页面的行为
+
+        // 2. 从表单中提取数据
+        const formData = new FormData(e.currentTarget);
+        const values = {
+            email: formData.get('email'),
+            password: formData.get('password'),
+        };
+
+        // 3. 手动调用你原本的逻辑
+        onFinish(values);
     };
 
     const onFinish = async (values) => {
@@ -357,81 +388,218 @@ const LoginPage = () => {
         }
     };
 
+    const typedSlogan = useTypewriterLoop(SLOGAN_SENTENCES);
+
     return (
-        <Layout style={{ minHeight: '100vh' }}>
-            <Row justify="center" align="middle" style={{ flex: 1 }}>
-                <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-                    <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                        <Title level={2} style={{ marginTop: '16px', color: '#1f2937' }}>供应商与SD信息交换平台</Title>
-                        <Paragraph type="secondary" style={{ fontSize: '16px', maxWidth: '450px' }}>
-                            连接供应链的每一个环节，实现数据驱动的智能决策。
-                        </Paragraph>
-                    </div>
-                    <div style={{ maxWidth: '500px', width: '100%' }}>
-                        <LoginCarousel />
-                    </div>
-                </Col>
 
-                <Col xs={22} sm={16} md={12} lg={10} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    <Card style={{ width: '100%', maxWidth: 400, boxShadow: '0 4px 20px 0 rgba(0, 0, 0, 0.1)', borderRadius: '12px' }}>
-                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                            <Avatar size={64} icon={<ApartmentOutlined />} style={{ backgroundColor: '#1890ff' }} />
-                            <Title level={3} style={{ marginTop: '16px' }}>欢迎回来</Title>
-                            <Text type="secondary">请登录您的账户</Text>
+
+
+        <div className="flex min-h-screen w-full bg-white">
+
+            {/* --- ✨ 右上角悬浮控制栏 (UI 协调的核心) --- */}
+            <div className="absolute top-6 right-6 z-50 flex items-center gap-3">
+                {/* 语言切换按钮 */}
+                <button
+                    onClick={toggleLang}
+                    className="flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 backdrop-blur-md border border-slate-200/20 shadow-sm hover:bg-slate-100/20 transition-all text-slate-600 dark:text-slate-300 dark:hover:text-white"
+                >
+                    <Globe className="w-4 h-4" />
+                    <span className="text-xs font-medium uppercase">{lang}</span>
+                </button>
+
+                {/* 深色模式切换按钮 */}
+                <button
+                    onClick={() => setIsDarkMode(!isDarkMode)}
+                    className="p-2 rounded-full bg-white/10 backdrop-blur-md border border-slate-200/20 shadow-sm hover:bg-slate-100/20 transition-all text-slate-600 dark:text-yellow-400"
+                >
+                    {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                </button>
+            </div>
+            {/* --- 左侧：视觉装饰区 (Desktop Only) --- */}
+            <div className="hidden lg:flex w-1/2 bg-slate-900 relative overflow-hidden flex-col justify-between p-12 text-white">
+                {/* 背景装饰：动态感的圆环/光晕 */}
+
+                <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none overflow-hidden">
+                    {/* 1. 蓝色光晕 - 增加呼吸动画 */}
+                    <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600 rounded-full blur-3xl mix-blend-screen animate-blob"></div>
+
+                    {/* 2. 紫色光晕 - 增加呼吸动画 + 延迟 */}
+                    <div className="absolute top-1/3 left-1/2 w-[500px] h-[500px] bg-purple-600 rounded-full blur-3xl mix-blend-screen -translate-x-1/2 animate-blob animation-delay-2000"></div>
+
+                    {/* 3. (可选) 新增一个青色光晕在底部，增加层次感 */}
+                    <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-cyan-600 rounded-full blur-3xl mix-blend-screen animate-blob animation-delay-4000"></div>
+                </div>
+
+                {/* 顶部 Logo 区域 */}
+                <div className="relative z-10 flex items-center gap-2">
+                    <div className="bg-blue-600 p-2 rounded-lg">
+                        <Hexagon className="w-6 h-6 text-white fill-current" />
+                    </div>
+                    <span className="text-xl font-bold tracking-tight">Action Portal</span>
+                </div>
+
+                {/* 中间 Slogan */}
+                <div className="relative z-10 max-w-lg">
+                    <h2 className="text-4xl font-bold leading-tight mb-6">
+                        协作共赢，<br />
+                        驱动供应链卓越表现
+                    </h2>
+
+                    {/* 👇 替换原本静态的 <p> 标签 */}
+                    <div className="h-24"> {/* 给一个固定高度，防止文字换行时页面抖动 */}
+                        <p className="text-slate-400 text-lg leading-relaxed font-mono">
+                            {typedSlogan}
+                            {/* 光标闪烁效果 */}
+                            <span className="animate-pulse border-r-2 border-blue-500 ml-1"></span>
+                        </p>
+                    </div>
+                </div>
+
+                {/* 底部版权/信息 */}
+                <div className="relative z-10 text-sm text-slate-500">
+                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved.
+                </div>
+            </div>
+
+            {/* --- 右侧：登录表单区 --- */}
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative overflow-hidden">
+                <div className="w-full max-w-md space-y-8">
+                    {/* 光斑 1：蓝色 (左上) */}
+                    <div className="absolute top-0 left-0 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+
+                    {/* 光斑 2：紫色 (右上) - 延迟2秒 */}
+                    <div className="absolute top-0 right-0 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+
+                    {/* 光斑 3：粉色 (底部) - 延迟4秒 */}
+                    <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+
+
+                    {/* 移动端 Logo (仅在手机显示) */}
+                    <div className="flex lg:hidden items-center gap-2 mb-8">
+                        <div className="bg-blue-600 p-2 rounded-lg">
+                            <Hexagon className="w-6 h-6 text-white fill-current" />
                         </div>
+                        <span className="text-xl font-bold text-slate-900">Action Portal</span>
+                    </div>
 
-                        <Form
-                            name="login_form"
-                            onFinish={onFinish}
-                            onValuesChange={handleFormChange}
-                            layout="vertical"
-                            autoComplete="off"
-                        >
-                            <Form.Item label="登录邮箱" name="email" rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}>
-                                <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" size="large" />
-                            </Form.Item>
+                    {/* 欢迎语 */}
+                    <div>
+                        <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+                            欢迎回来
+                        </h2>
+                        <p className="mt-2 text-sm text-slate-600">
+                            请输入您的账号以访问工作台
+                        </p>
+                    </div>
 
-                            <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码!' }]}>
-                                <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
-                            </Form.Item>
 
-                            <Form.Item>
-                                <div style={{ textAlign: 'right' }}>
+                    <form
+                        className="mt-8 space-y-6"
+                        onSubmit={handleSubmit}      // ✅ 正确：绑定原生提交事件
+                        onChange={handleFormChange}  // ✅ 正确：原生监听输入变化用 onChange
+                        autoComplete="off"
+                    >
+                        <div className="space-y-5">
+
+                            {/* 邮箱输入 */}
+                            <div>
+                                <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+                                    邮箱
+                                </label>
+                                <div className="mt-1 relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Mail className="h-5 w-5 text-slate-400" />
+                                    </div>
+                                    <input
+                                        id="email"
+                                        name="email"
+                                        type="email"
+                                        required
+                                        className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        placeholder="请输入注册邮箱"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 密码输入 */}
+                            <div>
+                                <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+                                    密码
+                                </label>
+                                <div className="mt-1 relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Lock className="h-5 w-5 text-slate-400" />
+                                    </div>
+                                    <input
+                                        id="password"
+                                        name="password"
+                                        type={showPassword ? "text" : "password"}
+                                        required
+                                        className="block w-full pl-10 pr-10 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        placeholder="请输入密码"
+                                    />
+                                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="text-slate-400 hover:text-slate-600 focus:outline-none"
+                                        >
+                                            {showPassword ? (
+                                                <EyeOff className="h-5 w-5" />
+                                            ) : (
+                                                <Eye className="h-5 w-5" />
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-end mt-2">
                                     <Link href="/forgot-password" target="_blank">忘记密码？</Link>
                                 </div>
-                            </Form.Item>
-
-                            <Form.Item>
-                                <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">登 录</Button>
-                            </Form.Item>
-
-                            <div style={{ textAlign: 'center' }}>
-                                <Text type="secondary" style={{ fontSize: '12px' }}>
-                                    如遇登录问题，请联系：
-                                    <Link href="mailto:louis.xin@volvo.com" style={{ fontSize: '12px', marginLeft: '4px' }}>louis.xin@volvo.com</Link>
-                                </Text>
                             </div>
-                        </Form>
-
-                        <Divider style={{ margin: '16px 0' }} />
-
-                        <div style={{ textAlign: 'center' }}>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                                <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>帮助中心</Link>
-                                <Divider type="vertical" />
-                                <Link href="/privacy-settings" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
-                            </Text>
                         </div>
-                    </Card>
-                </Col>
-            </Row>
 
-            <Layout.Footer style={{ textAlign: 'center', background: 'transparent' }}>
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved.
-                </Text>
-            </Layout.Footer>
-        </Layout>
+                        {/* 登录按钮 */}
+                        <button
+                            type="primary"
+                            disabled={loading}
+                            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                            {loading ? (
+                                <span className="flex items-center gap-2">
+                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    登录中...
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-2">
+                                    登录系统 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                </span>
+                            )}
+                        </button>
+                    </form>
+                    <p className="mt-2 text-center text-sm text-slate-600">
+                        还没有账号?{" "}
+                        <Link href="mailto:louis.xin@volvo.com" className="font-medium text-blue-600 hover:text-blue-400">
+                            联系管理员开通
+                        </Link>
+                    </p>
+
+                    <Divider style={{ margin: '10px 0' }} />
+
+                    <div style={{ textAlign: 'center', marginTop: '12px' }} >
+                        <Text type="secondary" style={{ fontSize: '12px' }} className="font-medium text-blue-600 hover:text-blue-500">
+                            <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>帮助中心</Link>
+                            <Divider type="vertical" />
+                            <Link href="/privacy-settings" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
+                        </Text>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
     );
 };
 

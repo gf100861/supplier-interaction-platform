@@ -1,798 +1,438 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload, Grid, Card, Dropdown } from 'antd';
-import {
-    FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined,
-    SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined,
-    MoreOutlined, CalendarOutlined, UserOutlined
-} from '@ant-design/icons';
-import dayjs from 'dayjs';
-import { useNotices } from '../../contexts/NoticeContext';
-import { useNotification } from '../../contexts/NotificationContext';
-import * as ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Form, Input, Button, Card, Layout, Row, Col, Typography, Avatar, Carousel, Image, Divider, Spin } from 'antd';
+import { UserOutlined, LockOutlined, ApartmentOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext';
+import { supabase } from '../supabaseClient';
+import './LoginPage.css';
 
-const { Text, Paragraph } = Typography;
-const { useBreakpoint } = Grid;
+const { Title, Paragraph, Text, Link } = Typography;
 
-// ... (HighlightText, getStatusTag, toPlainText functions remain unchanged)
-const HighlightText = ({ text, keyword }) => {
-    const strText = String(text || '');
-    if (!keyword || !keyword.trim()) {
-        return <>{strText}</>;
+// --- 🔧 新增：定义后端 API 基础地址 ---
+
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001'  // 本地开发环境
+    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+// --- 错误翻译函数 (保持不变) ---
+const translateError = (errorMsg) => {
+    const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
+    if (msg.includes('Invalid login credentials')) return '登录凭证无效或已过期，请尝试重新登录';
+    if (msg.includes('User not found')) return '用户不存在';
+    if (msg.includes('JWT expired')) return '登录会话已过期，请刷新页面';
+    if (msg.includes('Failed to fetch')) return '无法连接到服务器，请确认后端服务(Port 3001)已启动';
+    return msg;
+};
+
+// --- 工具函数：获取或生成 Session ID ---
+const getSessionId = () => {
+    let sid = sessionStorage.getItem('app_session_id');
+    if (!sid) {
+        sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        sessionStorage.setItem('app_session_id', sid);
     }
-    const keywords = keyword.toLowerCase().split(/[；;@,，\s]+/).filter(k => k.trim());
-    if (keywords.length === 0) return <>{strText}</>;
-    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(`(${escapedKeywords.join('|')})`, 'gi');
-    const parts = strText.split(regex);
+    return sid;
+};
+
+// --- IP 获取 ---
+let cachedIpAddress = null;
+const getClientIp = async () => {
+    if (cachedIpAddress) return cachedIpAddress;
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        cachedIpAddress = data.ip;
+        return data.ip;
+    } catch (error) {
+        return 'unknown';
+    }
+};
+
+// --- [API] 通用系统日志上报函数 ---
+const logSystemEvent = async (params) => {
+    const {
+        category = 'SYSTEM',
+        eventType,
+        severity = 'INFO',
+        message,
+        email = null,
+        userId = null,
+        meta = {}
+    } = params;
+
+    try {
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
+        const clientIp = await getClientIp();
+        const sessionId = getSessionId();
+
+        const environmentInfo = {
+            ip_address: clientIp,
+            session_id: sessionId,
+            userAgent: navigator.userAgent,
+            language: navigator.language,
+            platform: navigator.platform,
+            screenResolution: `${window.screen.width}x${window.screen.height}`,
+            windowSize: `${window.innerWidth}x${window.innerHeight}`,
+            url: window.location.href,
+            referrer: document.referrer
+        };
+
+        // ✅ 修改点 1: 使用 API_BASE_URL 拼接完整路径
+        await fetch(`${targetUrl}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                category,
+                event_type: eventType,
+                severity,
+                message,
+                user_email: email,
+                user_id: userId,
+                metadata: {
+                    ...environmentInfo,
+                    ...meta,
+                    timestamp_client: new Date().toISOString()
+                }
+            })
+        });
+
+    } catch (e) {
+        console.warn("Logger exception:", e);
+    }
+};
+
+// --- Custom Hook: Typing Effect (保持不变) ---
+const useTypingEffect = (textToType, speed = 50) => {
+    const [displayedText, setDisplayedText] = useState("");
+    const [index, setIndex] = useState(0);
+
+    useEffect(() => {
+        setDisplayedText("");
+        setIndex(0);
+    }, [textToType]);
+
+    useEffect(() => {
+        if (index < textToType.length) {
+            const timeout = setTimeout(() => {
+                setDisplayedText((prev) => prev + textToType.charAt(index));
+                setIndex((prevIndex) => prevIndex + 1);
+            }, speed);
+            return () => clearTimeout(timeout);
+        }
+    }, [index, textToType, speed]);
+
+    return displayedText;
+};
+
+// --- LoginCarousel (保持不变) ---
+const LoginCarousel = () => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const carouselItems = useMemo(() => [
+        {
+            src: '/images/Carousel1.jpg',
+            title: '协同 · 无界',
+            description: '打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。',
+            bgColor: '#e0f2fe',
+            cardBgColor: 'rgba(240, 249, 255, 0.7)',
+        },
+        {
+            src: '/images/Carousel2.jpg',
+            title: '数据 · 驱动',
+            description: '通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。',
+            bgColor: '#f0fdf4',
+            cardBgColor: 'rgba(240, 253, 244, 0.7)',
+        },
+        {
+            src: '/images/Carousel3.jpg',
+            title: '效率 · 提升',
+            description: '自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。',
+            bgColor: '#f5f3ff',
+            cardBgColor: 'rgba(245, 243, 255, 0.75)',
+        },
+    ], []);
+
+    const currentItem = carouselItems[currentIndex];
+    const typedDescription = useTypingEffect(currentItem.description);
+
+    useEffect(() => {
+        document.body.style.backgroundColor = currentItem.bgColor;
+        document.body.style.transition = 'background-color 0.5s ease-in-out';
+        return () => {
+            document.body.style.backgroundColor = '';
+            document.body.style.transition = '';
+        };
+    }, [currentItem]);
+
     return (
-        <span>
-            {parts.map((part, i) =>
-                regex.test(part) ? (
-                    <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
-                        {part}
-                    </span>
-                ) : part
-            )}
-        </span>
-    );
-};
-
-const getStatusTag = (status) => {
-    let color;
-    switch (status) {
-        case '待提交Action Plan':
-        case '待供应商处理': color = 'processing'; break;
-        case '待供应商关闭': color = 'warning'; break;
-        case '待SD确认actions': color = 'red'; break;
-        case '待SD关闭evidence' || '待SD审核关闭': color = 'orange'; break;
-        case '待SD审核计划': color = 'purple'; break;
-        case '已完成': color = 'success'; break;
-        case '已作废': color = 'default'; break;
-        default: color = 'default';
-    }
-    return <Tag color={color} style={{ marginRight: 0 }}>{status}</Tag>;
-};
-
-const toPlainText = (val) => {
-    if (val == null) return '';
-    if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
-    if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
-    if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
-    return String(val);
-};
-
-// --- SingleNoticeItem (Unchanged) ---
-const SingleNoticeItem = ({
-    item,
-    getActionsForItem,
-    showDetailsModal,
-    handleReviewToggle,
-    token,
-    currentUser,
-    noticeCategoryDetails,
-    selectable = false,
-    selected = false,
-    onSelectChange = () => { },
-    searchTerm = ''
-}) => {
-    const screens = useBreakpoint();
-    const isMobile = !screens.md;
-
-    const getChineseOnly = (text = '') => text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
-    const plainTitle = toPlainText(item.title);
-    const chineseTitle = getChineseOnly(plainTitle)?.trim();
-    const rawTitle = item.category === 'Historical 8D' && chineseTitle.length > 0 ? chineseTitle : plainTitle;
-
-    const categoryInfo = (noticeCategoryDetails && noticeCategoryDetails[item.category])
-        ? noticeCategoryDetails[item.category]
-        : { id: 'N/A', color: 'orange' };
-
-    const plainDetails = toPlainText(item.details?.rootCause || item.sdNotice?.details?.finding || item.sdNotice?.description);
-    const highlightText = item.category === 'Historical 8D' && getChineseOnly(plainDetails) ? getChineseOnly(plainDetails) : plainDetails;
-
-    const isReviewable = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager') && item.status === '待SD确认证据' && !selectable;
-
-    if (isMobile) {
-        return (
-            <div style={{
-                padding: '12px',
-                borderBottom: '1px solid #f0f0f0',
-                backgroundColor: '#fff',
-                position: 'relative'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 8 }}>
-                    {(selectable || isReviewable) && (
-                        <Checkbox
-                            checked={selectable ? selected : item.isReviewed}
-                            onChange={(e) => selectable ? onSelectChange(item.id, e.target.checked) : handleReviewToggle(item, e)}
-                            style={{ marginTop: 4, marginRight: 12 }}
+        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <Carousel
+                autoplay
+                autoplaySpeed={5000}
+                dots={false}
+                fade
+                style={{ width: '100%', maxWidth: '500px' }}
+                afterChange={(current) => setCurrentIndex(current)}
+            >
+                {carouselItems.map((item, index) => (
+                    <div key={index}>
+                        <Image
+                            src={item.src}
+                            preview={false}
+                            placeholder={<div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5' }}><Spin /></div>}
+                            style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }}
                         />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                            <Text strong style={{ fontSize: '15px', lineHeight: 1.4, marginRight: 8 }} ellipsis={{ rows: 2 }}>
-                                <HighlightText text={rawTitle} keyword={searchTerm} />
-                            </Text>
-                            <div style={{ flexShrink: 0, transform: 'scale(0.9)', transformOrigin: 'top right' }}>
-                                {getStatusTag(item.status)}
-                            </div>
-                        </div>
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                            <HighlightText text={item.noticeCode} keyword={searchTerm} />
-                        </Text>
                     </div>
-                </div>
-                <div style={{ marginBottom: 8, paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
-                    <Paragraph type="secondary" ellipsis={{ rows: 2, expandable: false }} style={{ fontSize: '13px', margin: 0 }}>
-                        <HighlightText text={highlightText} keyword={searchTerm} />
+                ))}
+            </Carousel>
+
+            <Card
+                style={{ marginTop: '-60px', width: '90%', maxWidth: '450px', zIndex: 10, backdropFilter: 'blur(10px)', backgroundColor: currentItem.cardBgColor, border: '1px solid rgba(255, 255, 255, 0.2)', transition: 'background-color 0.5s ease-in-out' }}
+            >
+                <Title level={3}>{currentItem.title}</Title>
+                <div className="typing-text-container" style={{ position: 'relative', minHeight: '72px' }}>
+                    <Paragraph type="secondary" style={{ visibility: 'hidden', marginBottom: 0 }}>{currentItem.description}</Paragraph>
+                    <Paragraph type="secondary" style={{ position: 'absolute', top: 0, left: 0, width: '100%', margin: 0 }}>
+                        {typedDescription}<span className="typing-cursor">|</span>
                     </Paragraph>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: (selectable || isReviewable) ? 28 : 0 }}>
-                    <Tag color={categoryInfo.color} style={{ fontSize: '12px', lineHeight: '20px' }}>
-                        {item.category || '未分类'}
-                    </Tag>
-                    <div style={{ display: 'flex' }}>
-                        {/* 使用 filter 过滤掉 key 为 'edit' (修改) 和 'correct' (修正/撤回) 的按钮 */}
-                        {getActionsForItem(item).filter(action =>
-                            action.key !== 'edit' && action.key !== 'correct'
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <List.Item
-            actions={getActionsForItem(item)}
-            style={{
-                padding: '12px 24px',
-                alignItems: 'center',
-                display: 'flex'
-            }}
-        >
-            <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
-                {(selectable || isReviewable) && (
-                    <Checkbox
-                        checked={selectable ? selected : item.isReviewed}
-                        onChange={(e) => selectable ? onSelectChange(item.id, e.target.checked) : handleReviewToggle(item, e)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ marginRight: '16px' }}
-                    />
-                )}
-                <FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary, marginRight: '16px', flexShrink: 0 }} />
-                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <a onClick={() => showDetailsModal(item)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            <Text strong><HighlightText text={rawTitle} keyword={searchTerm} /></Text>
-                        </a>
-                        {item.isReviewed && <Tag color="green" icon={<EyeOutlined />} style={{ margin: 0 }}>已审阅</Tag>}
-                        <Text type="secondary" style={{ fontSize: '12px', flexShrink: 0 }}>
-                            (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
-                        </Text>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                        <div style={{
-                            color: 'rgba(0, 0, 0, 0.45)',
-                            fontSize: '14px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            flex: 1
-                        }}>
-                            <HighlightText text={highlightText} keyword={searchTerm} />
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                            <Tag color={categoryInfo.color} style={{ margin: 0 }}>{item.category || '未分类'}</Tag>
-                            {getStatusTag(item.status)}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </List.Item>
+            </Card>
+        </div>
     );
 };
 
-const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...props }) => {
-    const screens = useBreakpoint();
-    const isMobile = !screens.md;
-
-    const [sortOrder, setSortOrder] = useState('default');
-    const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
-    const category = batch.representative?.category || '未知类型';
-    const sdNotice = batch.representative?.sdNotice;
-    const createDate = sdNotice?.createTime
-        ? dayjs(sdNotice.createTime).format('YYYY-MM-DD')
-        : sdNotice?.planSubmitTime
-            ? sdNotice.planSubmitTime.slice(0, 10)
-            : '未知日期';
-
-    const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-    const isRealBatch = batch.batchId.startsWith('BATCH-');
-
-    // 移动端简化标题
-    const titleText = isRealBatch
-        ? `批量: ${supplierShortCode} - ${category}`
-        : `${supplierShortCode} - ${category}`;
-
-    const { deleteMultipleNotices, updateNotice } = useNotices();
-    const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]);
-    const [isDeletingBatchItems, setIsDeletingBatchItems] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
+// --- Main Login Page ---
+const LoginPage = () => {
+    const navigate = useNavigate();
     const { messageApi } = useNotification();
+    const [loading, setLoading] = useState(false);
 
-    // ... (toPlainText 保持不变) ...
-    const toPlainText = (val) => {
-        if (val == null) return '';
-        if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
-        if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
-        if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
-        return String(val);
-    };
+    // 记录页面初始化时间
+    const pageInitTime = useRef(Date.now());
+    // 记录表单交互
+    const [isAutoFill, setIsAutoFill] = useState(false);
 
-    // ... (allowBatchActions, allowBatchEvidenceUpload, allowDeletion useMemos 保持不变) ...
-    const allowBatchActions = useMemo(() => {
-        const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
-        return allPending && currentUser.role === 'Supplier';
-    }, [batch.notices, currentUser]);
+    useEffect(() => {
+        // 全局错误监听
+        const handleRuntimeError = (event) => {
+            logSystemEvent({
+                category: 'RUNTIME',
+                eventType: 'JS_ERROR',
+                severity: 'ERROR',
+                message: event.message,
+                meta: { filename: event.filename, lineno: event.lineno, stack: event.error?.stack }
+            });
+        };
+        const handleUnhandledRejection = (event) => {
+            logSystemEvent({
+                category: 'RUNTIME',
+                eventType: 'UNHANDLED_PROMISE',
+                severity: 'ERROR',
+                message: event.reason?.message || 'Unknown Promise Error',
+                meta: { reason: JSON.stringify(event.reason) }
+            });
+        };
 
-    const allowBatchEvidenceUpload = useMemo(() => {
-        const allPendingEvidence = batch.notices.every(notice => notice.status === '待供应商关闭');
-        return allPendingEvidence && currentUser.role === 'Supplier';
-    }, [batch.notices, currentUser]);
+        window.addEventListener('error', handleRuntimeError);
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
 
-    const allowDeletion = useMemo(() => {
-        const allPending = batch.notices.every(notice => notice.status === '待提交Action Plan' || notice.status === '待供应商处理');
-        return allPending && ['SD', 'Manager', 'Admin'].includes(currentUser.role);
-    }, [batch.notices, currentUser]);
+        // 页面访问埋点
+        logSystemEvent({
+            category: 'INTERACTION',
+            eventType: 'PAGE_VIEW',
+            severity: 'INFO',
+            message: 'User visited Login Page'
+        });
 
-    // ... (sortedNotices, handleSort, handleSelectChange, handleSelectAll 保持不变) ...
-    const sortedNotices = useMemo(() => {
-        const noticesToSort = [...batch.notices];
-        if (sortOrder === 'asc') return noticesToSort.sort((a, b) => (toPlainText(a.title) || '').localeCompare(toPlainText(b.title) || ''));
-        if (sortOrder === 'desc') return noticesToSort.sort((a, b) => (toPlainText(b.title) || '').localeCompare(toPlainText(a.title) || ''));
-        return noticesToSort;
-    }, [batch.notices, sortOrder]);
+        return () => {
+            window.removeEventListener('error', handleRuntimeError);
+            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+        };
+    }, []);
 
-    const handleSort = (order) => {
-        setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
-    };
-
-    const handleSelectChange = (noticeId, checked) => {
-        setSelectedNoticeKeys(prevKeys =>
-            checked ? [...prevKeys, noticeId] : prevKeys.filter(key => key !== noticeId)
-        );
-    };
-
-    const handleSelectAll = (e) => {
-        const checked = e.target.checked;
-        setSelectedNoticeKeys(checked ? sortedNotices.map(n => n.id) : []);
-    };
-    const handleBatchDeleteWithinBatch = async () => {
-        if (selectedNoticeKeys.length === 0) {
-            messageApi.warning('请至少选择一项进行删除。');
-            return;
+    // 监听输入框变化
+    const handleFormChange = (changedValues) => {
+        if (Date.now() - pageInitTime.current < 500) {
+            setIsAutoFill(true);
         }
-        setIsDeletingBatchItems(true);
+    };
+
+    const onFinish = async (values) => {
+        setLoading(true);
+        const submitTime = Date.now();
+        const stayDuration = submitTime - pageInitTime.current;
+
+        // 1. 记录尝试
+        logSystemEvent({
+            category: 'AUTH',
+            eventType: 'LOGIN_ATTEMPT',
+            severity: 'INFO',
+            message: 'User attempting to login',
+            email: values.email,
+            meta: { stay_duration_ms: stayDuration, is_likely_autofill: isAutoFill }
+        });
+
         try {
-            await deleteMultipleNotices(selectedNoticeKeys);
-            messageApi.success(`成功删除了 ${selectedNoticeKeys.length} 条通知单。`);
-            setSelectedNoticeKeys([]);
+            // ✅ 修改点 2: 使用 API_BASE_URL 拼接完整路径
+            // 后端对应 server.js 中的 app.post('/api/auth/login', ...)
+            const apiPath = isDev ? '/api/auth/login' : '/api/auth/login';
+            const targetUrl = `${BACKEND_URL}${apiPath}`;
+            const response = await fetch(`${targetUrl}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: values.email,
+                    password: values.password
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                // 如果后端返回错误，抛出异常
+                throw new Error(result.error || '登录失败');
+            }
+
+            // result 应该包含 { user: ..., session: ... }
+            const userData = result.user;
+            const sessionData = result.session; // 👈 获取后端返回的 session
+
+            if (sessionData) {
+                const { error: setSessionError } = await supabase.auth.setSession({
+                    access_token: sessionData.access_token,
+                    refresh_token: sessionData.refresh_token,
+                });
+
+                if (setSessionError) {
+                    console.error("前端设置 Session 失败:", setSessionError);
+                    // 可以选择抛出错误，或者继续（但刷新后会掉登录）
+                }
+            }
+
+            const apiDuration = Date.now() - submitTime;
+
+            // 2. 记录成功
+            logSystemEvent({
+                category: 'AUTH',
+                eventType: 'LOGIN_SUCCESS',
+                severity: 'INFO',
+                message: 'Login successful',
+                email: values.email,
+                userId: userData.id,
+                meta: {
+                    api_duration_ms: apiDuration,
+                    role: userData.role,
+                    stay_duration_ms: stayDuration
+                }
+            });
+
+            messageApi.success('登录成功!');
+            localStorage.setItem('user', JSON.stringify(userData));
+
+            navigate('/');
+
         } catch (error) {
-            messageApi.error(`批量删除失败: ${error.message}`);
+            const apiDuration = Date.now() - submitTime;
+            const translatedMsg = translateError(error.message);
+            messageApi.error(translatedMsg);
+
+            // 3. 记录失败
+            logSystemEvent({
+                category: 'AUTH',
+                eventType: 'LOGIN_FAILED',
+                severity: 'WARN',
+                message: translatedMsg,
+                email: values.email,
+                meta: {
+                    original_error: error.message,
+                    api_duration_ms: apiDuration,
+                    stay_duration_ms: stayDuration,
+                    is_likely_autofill: isAutoFill,
+                }
+            });
         } finally {
-            setIsDeletingBatchItems(false);
+            setLoading(false);
         }
-    };
-
-    // --- 下载行动计划模板 ---
-    const handleActionDownloadTemplate = async () => {
-        messageApi.loading({ content: '正在生成模板...', key: 'template' });
-        try {
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Batch Action Plan');
-
-            worksheet.mergeCells('A1:F1');
-            worksheet.getCell('A1').value = '批量行动计划模板';
-            worksheet.getCell('A1').font = { bold: true, size: 16 };
-
-            worksheet.mergeCells('A2:F2');
-            worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
-
-            worksheet.mergeCells('A3:F3');
-            worksheet.getCell('A3').value = {
-                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C 列！请在 D, E, F 列填写内容。如有多个行动项，您可以复制并粘贴 A, B, C 列的内容到新行。' }]
-            };
-
-            worksheet.getRow(5).values = [
-                'Notice ID (请勿修改)',
-                'Process/Question (问题项)',
-                'Finding/Deviation (问题描述)',
-                'Action Plan (请填写)',
-                'Responsible (请填写)',
-                'Deadline (YYYY-MM-DD 请填写)'
-            ];
-            worksheet.getRow(5).font = { bold: true };
-            // worksheet.getRow(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
-
-            const grayHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } }; // 深灰色
-            const blueHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } }; // 浅蓝色
-
-            worksheet.getCell('A5').fill = grayHeaderFill;
-            worksheet.getCell('B5').fill = grayHeaderFill;
-            worksheet.getCell('C5').fill = grayHeaderFill;
-            worksheet.getCell('D5').fill = blueHeaderFill;
-            worksheet.getCell('E5').fill = blueHeaderFill;
-            worksheet.getCell('F5').fill = blueHeaderFill;
-            worksheet.columns = [
-                { key: 'id', width: 38 },
-                { key: 'process', width: 40 },
-                { key: 'finding', width: 40 },
-                { key: 'plan', width: 40 },
-                { key: 'responsible', width: 20 },
-                { key: 'deadline', width: 20 },
-            ];
-
-            const grayDataFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // 浅灰色
-
-            batch.notices.forEach(notice => {
-                const processText = toPlainText(notice.title) || 'N/A';
-                const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description) || 'N/A';
-
-
-                worksheet.addRow({
-                    id: notice.id,
-                    process: processText,
-                    finding: findingText,
-                    plan: '',
-                    responsible: '',
-                    deadline: ''
-                });
-            });
-
-            const buffer = await workbook.xlsx.writeBuffer();
-            saveAs(new Blob([buffer]), `BatchPlan_${supplierShortCode}_${category}.xlsx`);
-            messageApi.success({ content: '模板已开始下载。', key: 'template' });
-
-        } catch (error) {
-            console.error("生成模板失败:", error);
-            messageApi.error({ content: '模板生成失败，请重试。', key: 'template' });
-        }
-    };
-
-    // --- 处理行动计划批量上传 ---
-    const handleActionExcelUpload = (file) => {
-        setIsUploading(true);
-        messageApi.loading({ content: '正在解析并批量提交行动计划...', key: 'excelRead' });
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const buffer = e.target.result;
-                const workbook = new ExcelJS.Workbook();
-                await workbook.xlsx.load(buffer);
-                const worksheet = workbook.getWorksheet(1);
-
-                const plansByNoticeId = {};
-                let processedCount = 0;
-
-                // --- 1. 添加日志：打印表头 ---
-                const headers = worksheet.getRow(5).values;
-                console.log('[Action Upload] Excel Headers (Row 5):', JSON.stringify(headers));
-
-                worksheet.eachRow((row, rowNumber) => {
-                    if (rowNumber <= 5) return; // 跳过表头
-
-                    const noticeId = row.getCell(1).value?.toString();
-
-                    // --- 2. 添加日志：打印原始单元格数据 ---
-                    const rawPlanValue = row.getCell(4).value;
-                    const rawResponsibleValue = row.getCell(5).value;
-                    const rawDeadlineValue = row.getCell(6).value;
-
-                    // 使用 toPlainText 确保能处理富文本
-                    const planText = toPlainText(rawPlanValue)?.toString() || '';
-                    const responsible = toPlainText(rawResponsibleValue)?.toString() || '';
-                    const deadlineValue = rawDeadlineValue; // 日期对象或字符串
-
-                    // --- 4. 核心修正：仅要求 Action Plan 必填 ---
-                    if (noticeId && planText.trim() && responsible.trim() && deadlineValue) {
-                        if (!plansByNoticeId[noticeId]) {
-                            plansByNoticeId[noticeId] = [];
-                        }
-
-                        plansByNoticeId[noticeId].push({
-                            plan: planText.trim(),
-                            responsible: responsible.trim(), // 允许为空
-                            deadline: dayjs(deadlineValue).format('YYYY-MM-DD')// 允许为空
-                        });
-                        processedCount++;
-                    }
-                });
-
-                console.log(`[Action Upload] Total processed rows: ${processedCount}`);
-
-                if (processedCount === 0) {
-                    messageApi.warning({ content: '未在Excel中找到有效的行动计划数据（请确保 "Action Plan","Responsable"和"Deadline" 列已填写）。', key: 'excelRead', duration: 4 });
-                    setIsUploading(false);
-                    return;
-                }
-
-                // --- 批量更新 Notice ---
-                const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
-                    const notice = batch.notices.find(n => n.id === noticeId);
-                    if (!notice) {
-                        console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
-                        return null;
-                    }
-
-                    const newHistory = {
-                        type: 'supplier_plan_submission',
-                        submitter: currentUser.name || currentUser.username,
-                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-                        description: '供应商已批量提交行动计划。',
-                        actionPlans: plansByNoticeId[noticeId]
-                    };
-                    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-
-                    return updateNotice(noticeId, {
-                        status: '待SD确认actions',
-                        history: [...currentHistory, newHistory]
-                    });
-                });
-
-                await Promise.all(updatePromises.filter(Boolean));
-
-                messageApi.success({ content: `成功处理 ${processedCount} 条行动计划，已提交 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
-                setActiveCollapseKeys([]);
-
-            } catch (error) {
-                console.error("解析或提交Excel失败:", error);
-                messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
-            } finally {
-                setIsUploading(false);
-            }
-        };
-        reader.onerror = (error) => {
-            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
-            setIsUploading(false);
-        };
-        reader.readAsArrayBuffer(file);
-        return false;
-    };
-
-    // --- 下载证据模板 ---
-    const handleDownloadEvidenceTemplate = async () => {
-        messageApi.loading({ content: '正在生成证据模板...', key: 'evidenceTemplate' });
-        try {
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Batch Evidence Template');
-
-            worksheet.mergeCells('A1:F1');
-            worksheet.getCell('A1').value = '批量证据提交模板';
-            worksheet.getCell('A1').font = { bold: true, size: 16 };
-            worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF8E6' } };
-
-            worksheet.mergeCells('A2:F2');
-            worksheet.getCell('A2').value = `批量任务ID: ${batch.batchId}`;
-
-            worksheet.mergeCells('A3:F3');
-            worksheet.getCell('A3').value = {
-                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '请勿修改 A, B, C, D, E 列！请仅在 F 列填写“完成情况说明”。' }]
-            };
-            worksheet.mergeCells('A4:F4');
-            worksheet.getCell('A4').value = {
-                richText: [{ font: { bold: true, color: { argb: 'FFFF0000' } }, text: '图片和附件仍需进入通知单详情页单独上传。' }]
-            };
-
-            worksheet.getRow(6).values = [
-                'Notice ID (请勿修改)',
-                'Problem Finding (供参考)',
-                'Approved Action Plan (供参考)',
-                'Responsible (供参考)',
-                'Deadline (供参考)',
-                'Evidence Description (请填写)'
-            ];
-            worksheet.getRow(6).font = { bold: true };
-            worksheet.getRow(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F7FF' } };
-            worksheet.columns = [
-                { key: 'id', width: 38 },
-                { key: 'finding', width: 40 },
-                { key: 'plan', width: 40 },
-                { key: 'responsible', width: 20 },
-                { key: 'deadline', width: 20 },
-                { key: 'evidence', width: 50 },
-            ];
-
-            batch.notices.forEach(notice => {
-                const lastApprovedPlan = [...(notice.history || [])].reverse().find(h => h.type === 'sd_plan_approval');
-                if (lastApprovedPlan && lastApprovedPlan.actionPlans) {
-                    const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description || notice.title) || 'N/A';
-                    lastApprovedPlan.actionPlans.forEach(plan => {
-                        worksheet.addRow({
-                            id: notice.id,
-                            finding: findingText,
-                            plan: toPlainText(plan.plan),
-                            responsible: plan.responsible,
-                            deadline: dayjs(plan.deadline).format('YYYY-MM-DD'),
-                            evidence: ''
-                        });
-                    });
-                }
-            });
-
-            const buffer = await workbook.xlsx.writeBuffer();
-            saveAs(new Blob([buffer]), `BatchEvidence_${supplierShortCode}_${category}.xlsx`);
-            messageApi.success({ content: '证据模板已开始下载。', key: 'evidenceTemplate' });
-
-        } catch (error) {
-            console.error("生成证据模板失败:", error);
-            messageApi.error({ content: '模板生成失败，请重试。', key: 'evidenceTemplate' });
-        }
-    };
-
-    // --- 处理证据批量上传 ---
-    const handleEvidenceExcelUpload = (file) => {
-        setIsUploading(true);
-        messageApi.loading({ content: '正在解析并批量提交证据...', key: 'excelRead' });
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const buffer = e.target.result;
-                const workbook = new ExcelJS.Workbook();
-                await workbook.xlsx.load(buffer);
-                const worksheet = workbook.getWorksheet(1);
-
-                const plansByNoticeId = {};
-                let processedCount = 0;
-
-                // --- 5. 添加日志：打印表头 ---
-                const headers = worksheet.getRow(6).values;
-                console.log('[Evidence Upload] Excel Headers (Row 6):', JSON.stringify(headers));
-
-                worksheet.eachRow((row, rowNumber) => {
-                    if (rowNumber <= 6) return;
-
-                    const noticeId = row.getCell(1).value?.toString();
-                    const planText = row.getCell(3).value?.toString() || '';
-                    const responsible = row.getCell(4).value?.toString() || '';
-                    const deadlineValue = row.getCell(5).value;
-
-                    // --- 6. 添加日志：打印原始单元格数据 ---
-                    const rawEvidenceValue = row.getCell(6).value;
-                    const evidenceDescription = toPlainText(rawEvidenceValue)?.toString() || '';
-
-                    console.log(`[Evidence Upload] Row ${rowNumber}:`, {
-                        noticeId: noticeId,
-                        rawEvidence: rawEvidenceValue,
-                        parsedEvidence: evidenceDescription.trim(),
-                    });
-
-                    // --- 7. 核心修正：仅要求 Evidence Description 必填 ---
-                    if (noticeId && evidenceDescription.trim()) {
-                        if (!plansByNoticeId[noticeId]) {
-                            plansByNoticeId[noticeId] = [];
-                        }
-                        plansByNoticeId[noticeId].push({
-                            plan: planText,
-                            responsible: responsible.trim() || '',
-                            deadline: deadlineValue ? dayjs(deadlineValue).format('YYYY-MM-DD') : null,
-                            evidenceDescription: evidenceDescription.trim(),
-                            evidenceImages: [],
-                            evidenceAttachments: []
-                        });
-                        processedCount++;
-                    }
-                });
-
-                console.log(`[Evidence Upload] Total processed rows: ${processedCount}`);
-
-                if (processedCount === 0) {
-                    messageApi.warning({ content: '未在Excel中找到有效的证据说明数据（请确保 "Evidence Description" 列已填写）。', key: 'excelRead', duration: 4 });
-                    setIsUploading(false);
-                    return;
-                }
-
-                const updatePromises = Object.keys(plansByNoticeId).map(noticeId => {
-                    const notice = batch.notices.find(n => n.id === noticeId);
-                    if (!notice) {
-                        console.warn(`未在批次中找到 Notice ID: ${noticeId}，跳过。`);
-                        return null;
-                    }
-
-                    const newHistory = {
-                        type: 'supplier_evidence_submission',
-                        submitter: currentUser.name || currentUser.username,
-                        time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-                        description: '供应商已批量提交完成证据。',
-                        actionPlans: plansByNoticeId[noticeId]
-                    };
-                    const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-
-                    return updateNotice(noticeId, {
-                        status: '待SD关闭evidence',
-                        history: [...currentHistory, newHistory]
-                    });
-                });
-
-                await Promise.all(updatePromises.filter(Boolean));
-
-                messageApi.success({ content: `成功处理 ${processedCount} 条证据，已更新 ${Object.keys(plansByNoticeId).length} 张通知单！`, key: 'excelRead', duration: 4 });
-                setActiveCollapseKeys([]);
-
-            } catch (error) {
-                console.error("解析或提交Excel失败:", error);
-                messageApi.error({ content: `处理失败: ${error.message}`, key: 'excelRead', duration: 4 });
-            } finally {
-                setIsUploading(false);
-            }
-        };
-        reader.onerror = (error) => {
-            messageApi.error({ content: `文件读取失败: ${error.message}`, key: 'excelRead' });
-            setIsUploading(false);
-        };
-        reader.readAsArrayBuffer(file);
-        return false;
-    };
-
-    const isAllSelected = sortedNotices.length > 0 && selectedNoticeKeys.length === sortedNotices.length;
-    const isIndeterminate = selectedNoticeKeys.length > 0 && selectedNoticeKeys.length < sortedNotices.length;
-
-    // --- 批量操作按钮渲染函数 (响应式适配) ---
-    const renderBatchActions = () => {
-        // 定义通用的按钮样式
-        const btnStyle = isMobile ? { width: '100%', marginBottom: 8 } : {};
-        const containerStyle = isMobile
-            ? { padding: '16px', display: 'flex', flexDirection: 'column' }
-            : { marginBottom: '16px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', gap: '16px' };
-
-        if (allowBatchActions) {
-            return (
-                <div style={containerStyle}>
-                    <Button icon={<DownloadOutlined />} onClick={handleActionDownloadTemplate} style={btnStyle}>
-                        下载行动计划模板
-                    </Button>
-                    <Upload
-                        beforeUpload={handleActionExcelUpload}
-                        showUploadList={false}
-                        accept=".xlsx, .xls"
-                        disabled={isUploading}
-                        style={{ width: isMobile ? '100%' : 'auto' }}
-                    >
-                        <Button type="primary" icon={<FileExcelOutlined />} loading={isUploading} style={btnStyle} block={isMobile}>
-                            上传行动计划
-                        </Button>
-                    </Upload>
-                </div>
-            );
-        }
-
-        if (allowBatchEvidenceUpload) {
-            return (
-                <div style={containerStyle}>
-                    <Button icon={<DownloadOutlined />} onClick={handleDownloadEvidenceTemplate} style={btnStyle}>
-                        下载证据模板
-                    </Button>
-                    <Upload
-                        beforeUpload={handleEvidenceExcelUpload}
-                        showUploadList={false}
-                        accept=".xlsx, .xls"
-                        disabled={isUploading}
-                        style={{ width: isMobile ? '100%' : 'auto' }}
-                    >
-                        <Button type="primary" icon={<FileExcelOutlined />} loading={isUploading} style={btnStyle} block={isMobile}>
-                            上传证据 (仅文本)
-                        </Button>
-                    </Upload>
-                </div>
-            );
-        }
-        return null;
     };
 
     return (
-        <List.Item style={{ display: 'block', padding: 0, marginBottom: 16 }}>
-            <Collapse
-                bordered={false}
-                style={{ width: '100%', backgroundColor: props.token.colorBgLayout, borderRadius: 8 }}
-                expandIconPosition="end"
-                activeKey={activeCollapseKeys}
-                onChange={(keys) => setActiveCollapseKeys(keys)}
-            >
-                <Collapse.Panel
-                    key={batch.batchId}
-                    header={
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <ProfileOutlined style={{ fontSize: isMobile ? '20px' : '24px', color: props.token.colorPrimary, marginRight: 12 }} />
-                            <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <Text strong style={{ fontSize: isMobile ? '14px' : '16px' }}>
-                                        {batch.batchId.startsWith('BATCH-') ? `批量: ${batch.representative?.supplier?.shortCode || '未知'} - ${batch.representative?.category || '未知'}` : `${batch.representative?.supplier?.shortCode} - ${batch.representative?.category}`}
-                                    </Text>
-                                </div>
-                                <div style={{ fontSize: '12px', color: '#888', marginTop: 4 }}>
-                                    <CalendarOutlined style={{ marginRight: 4 }} />
-                                    {batch.representative?.sdNotice?.createTime ? dayjs(batch.representative.sdNotice.createTime).format('YYYY-MM-DD') : '未知日期'}
-                                    <span style={{ margin: '0 8px' }}>|</span>
-                                    共 {batch.notices.length} 项
-                                </div>
-                            </div>
-                        </div>
-                    }
-                >
-                    {/* 批量删除 (SD/Manager/Admin) */}
-                    {allowDeletion && (
-                        <div style={{ padding: '0 16px 16px', borderBottom: '1px solid #eee' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Checkbox
-                                    indeterminate={isIndeterminate}
-                                    onChange={handleSelectAll}
-                                    checked={isAllSelected}
-                                >
-                                    全选
-                                </Checkbox>
-                                <Space>
-                                    {selectedNoticeKeys.length > 0 && <Text type="secondary" style={{ fontSize: '12px' }}>已选 {selectedNoticeKeys.length}</Text>}
-                                    <Popconfirm
-                                        title={`删除 ${selectedNoticeKeys.length} 项?`}
-                                        onConfirm={handleBatchDeleteWithinBatch}
-                                        okText="是"
-                                        cancelText="否"
-                                        disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
-                                    >
-                                        <Button
-                                            danger
-                                            size="small"
-                                            icon={<DeleteOutlined />}
-                                            disabled={selectedNoticeKeys.length === 0 || isDeletingBatchItems}
-                                            loading={isDeletingBatchItems}
-                                        >
-                                            删除
-                                        </Button>
-                                    </Popconfirm>
-                                </Space>
-                            </div>
-                        </div>
-                    )}
+        <Layout style={{ minHeight: '100vh' }}>
+            <Row justify="center" align="middle" style={{ flex: 1 }}>
+                <Col xs={0} sm={0} md={12} lg={14} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                        <Title level={2} style={{ marginTop: '16px', color: '#1f2937' }}>供应商与SD信息交换平台</Title>
+                        <Paragraph type="secondary" style={{ fontSize: '16px', maxWidth: '450px' }}>
+                            连接供应链的每一个环节，实现数据驱动的智能决策。
+                        </Paragraph>
+                    </div>
+                    <div style={{ maxWidth: '500px', width: '100%' }}>
+                        <LoginCarousel />
+                    </div>
+                </Col>
 
-                    {/* 批量操作区域 (下载/上传) */}
-                    {renderBatchActions()}
+                <Col xs={22} sm={16} md={12} lg={10} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <Card style={{ width: '100%', maxWidth: 400, boxShadow: '0 4px 20px 0 rgba(0, 0, 0, 0.1)', borderRadius: '12px' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                            <Avatar size={64} icon={<ApartmentOutlined />} style={{ backgroundColor: '#1890ff' }} />
+                            <Title level={3} style={{ marginTop: '16px' }}>欢迎回来</Title>
+                            <Text type="secondary">请登录您的账户</Text>
+                        </div>
 
-                    <List
-                        dataSource={sortedNotices}
-                        renderItem={notice => (
-                            <SingleNoticeItem
-                                item={notice}
-                                {...props}
-                                selectable={allowDeletion}
-                                selected={selectedNoticeKeys.includes(notice.id)}
-                                onSelectChange={handleSelectChange}
-                            />
-                        )}
-                    />
-                </Collapse.Panel>
-            </Collapse>
-        </List.Item>
+                        <Form
+                            name="login_form"
+                            onFinish={onFinish}
+                            onValuesChange={handleFormChange}
+                            layout="vertical"
+                            autoComplete="off"
+                        >
+                            <Form.Item label="登录邮箱" name="email" rules={[{ required: true, message: '请输入您的邮箱地址!' }, { type: 'email', message: '请输入有效的邮箱格式!' }]}>
+                                <Input prefix={<UserOutlined />} placeholder="请输入注册邮箱" size="large" />
+                            </Form.Item>
+
+                            <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码!' }]}>
+                                <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" size="large" />
+                            </Form.Item>
+
+                            <Form.Item>
+                                <div style={{ textAlign: 'right' }}>
+                                    <Link href="/forgot-password" target="_blank">忘记密码？</Link>
+                                </div>
+                            </Form.Item>
+
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" style={{ width: '100%' }} loading={loading} size="large">登 录</Button>
+                            </Form.Item>
+
+                            <div style={{ textAlign: 'center' }}>
+                                <Text type="secondary" style={{ fontSize: '12px' }}>
+                                    如遇登录问题，请联系：
+                                    <Link href="mailto:louis.xin@volvo.com" style={{ fontSize: '12px', marginLeft: '4px' }}>louis.xin@volvo.com</Link>
+                                </Text>
+                            </div>
+                        </Form>
+
+                        <Divider style={{ margin: '16px 0' }} />
+
+                        <div style={{ textAlign: 'center' }}>
+                            <Text type="secondary" style={{ fontSize: '12px' }}>
+                                <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>帮助中心</Link>
+                                <Divider type="vertical" />
+                                <Link href="/privacy-settings" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
+                            </Text>
+                        </div>
+                    </Card>
+                </Col>
+            </Row>
+
+            <Layout.Footer style={{ textAlign: 'center', background: 'transparent' }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved.
+                </Text>
+            </Layout.Footer>
+        </Layout>
     );
 };
 
-// --- 主组件 ---
-export const NoticeList = (props) => {
-    // 提示：父组件(NoticePage)应该负责处理 filter 的UI (如 DatePicker)
-    // 这里仅负责展示列表。
-    // 如果 props.data 是空，显示 Empty 状态
-    return (
-        <List
-            dataSource={props.data}
-            pagination={props.pagination}
-            split={false} // 移除默认分割线，使用组件内部的 border/margin
-            renderItem={item => (
-                item.isBatch
-                    ? <NoticeBatchItem batch={item} {...props} searchTerm={props.searchTerm} />
-                    : <SingleNoticeItem item={item} selectable={false} {...props} searchTerm={props.searchTerm} />
-            )}
-            locale={{ emptyText: '暂无相关通知单' }}
-            style={{ backgroundColor: 'transparent' }} // 列表背景透明
-        />
-    );
-};
+export default LoginPage;

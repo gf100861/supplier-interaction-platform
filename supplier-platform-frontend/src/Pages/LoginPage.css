@@ -19,3 +19,35 @@
     color: #1890ff; /* Ant Design primary color, change if you like */
     font-weight: bold;
 }
+
+
+/* src/LoginPage.css */
+
+/* 定义呼吸/漂浮动画 */
+@keyframes blob-bounce {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+/* 应用动画的类 */
+.animate-blob {
+  animation: blob-bounce 7s infinite;
+}
+
+/* 设置不同的延迟，让它们不要同步运动，看起来更自然 */
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+.animation-delay-4000 {
+  animation-delay: 4s;
+}

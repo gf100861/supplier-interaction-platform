@@ -1,3 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- 🔧 修复 Ant Design 与 Tailwind 的冲突 --- */
+/* Tailwind 的 preflight 会把按钮背景设为透明，这里强制改回 Antd 的默认行为 */
+.ant-btn-primary {
+  background-color: #1677ff; /* Antd 默认主色 */
+}
+
+/* 修复图片在 Tailwind 下默认 block 的行为，防止 Antd 图标错位 */
+img, svg, video, canvas, audio, iframe, embed, object {
+  display: inline-block; 
+  vertical-align: middle;
+}
+img {
+  display: block; /* 恢复 img 的 block 属性，Antd Image 组件需要 */
+}
+
+/* --- 全局样式 --- */
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -11,24 +31,20 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
-/* 你可以把这段 CSS 放在 src/index.css 或 src/App.css 文件里 */
 
-/* 请将此段 CSS 添加到 src/index.css 或 src/App.css */
-
-/* --- 这是新的样式，请用它替换旧的 --- */
+/* --- 你的自定义卡片样式 --- */
 .custom-card-container {
   position: relative;
 }
 
 .custom-controls {
-  position: absolute; /* 绝对定位 */
-  bottom: 20px;       /* 定位在卡片底部 */
-  right: 24px;      /* 定位在卡片右侧 */
-  z-index: 10;        /* 确保在最上层 */
-  opacity: 1;         /* 直接设置为不透明，让它一直显示 */
+  position: absolute;
+  bottom: 20px;
+  right: 24px;
+  z-index: 10;
+  opacity: 1;
 }
 
-/* 按钮美化样式保持不变 */
 .custom-controls .ant-btn {
   background-color: rgba(255, 255, 255, 0.5) !important;
   border: 1px solid rgba(0, 0, 0, 0.1) !important;
@@ -40,14 +56,3 @@ code {
   background-color: rgba(255, 255, 255, 0.8) !important;
   transform: scale(1.1);
 }
-
-/* --- 暗黑模式兼容性修复 --- */
-
-/* 1. 目标：让暗黑模式下的卡片内部的列表背景变为透明。
-  选择器 .ant-card .ant-list 表示“在 .ant-card 元素内部的任何 .ant-list 元素”。
-*/
-/* --- 暗黑模式兼容性修复 --- */
-
-/* 1. 目标：让暗黑模式下的卡片内部的列表背景变为透明。
-  选择器 .ant-card .ant-list 表示“在 .ant-card 元素内部的任何 .ant-list 元素”。
-*/
