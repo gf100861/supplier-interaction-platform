@@ -18,8 +18,8 @@ const { useBreakpoint } = Grid; // 引入断点钩子
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
-  ? 'http://localhost:3001'
-  : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001'
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 // 辅助函数
 const normFile = (e) => {
@@ -38,67 +38,67 @@ const LS_API_KEY_KEY = 'gemini_api_key_local_storage';
 
 // --- 日志系统工具函数 (复用逻辑) ---
 const getSessionId = () => {
-  let sid = sessionStorage.getItem('app_session_id');
-  if (!sid) {
-    sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-    sessionStorage.setItem('app_session_id', sid);
-  }
-  return sid;
+    let sid = sessionStorage.getItem('app_session_id');
+    if (!sid) {
+        sid = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        sessionStorage.setItem('app_session_id', sid);
+    }
+    return sid;
 };
 
 let cachedIpAddress = null;
 const getClientIp = async () => {
-  if (cachedIpAddress) return cachedIpAddress;
-  try {
-    const response = await fetch('https://api.ipify.org?format=json');
-    const data = await response.json();
-    cachedIpAddress = data.ip;
-    return data.ip;
-  } catch (error) {
-    return 'unknown';
-  }
+    if (cachedIpAddress) return cachedIpAddress;
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        cachedIpAddress = data.ip;
+        return data.ip;
+    } catch (error) {
+        return 'unknown';
+    }
 };
 
 const logSystemEvent = async (params) => {
-  const {
-    category = 'SYSTEM',
-    eventType,
-    severity = 'INFO',
-    message,
-    userId = null,
-    meta = {}
-  } = params;
+    const { 
+        category = 'SYSTEM', 
+        eventType, 
+        severity = 'INFO', 
+        message, 
+        userId = null, 
+        meta = {} 
+    } = params;
 
-  try {
-    const apiPath = isDev ? '/api/system-log' : '/api/system-log';
-    const targetUrl = `${BACKEND_URL}${apiPath}`;
-    const clientIp = await getClientIp();
-    const sessionId = getSessionId();
+    try {
+        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
+        const targetUrl = `${BACKEND_URL}${apiPath}`;
+        const clientIp = await getClientIp();
+        const sessionId = getSessionId();
 
-    await fetch(`${targetUrl}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        category,
-        event_type: eventType,
-        severity,
-        message,
-        user_id: userId,
-        metadata: {
-          ip_address: clientIp,
-          session_id: sessionId,
-          userAgent: navigator.userAgent,
-          url: window.location.href,
-          page: 'FileUploadPage',
-          ...meta,
-          timestamp_client: new Date().toISOString()
-        }
-      })
-    });
+        await fetch(`${targetUrl}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+            category,
+            event_type: eventType,
+            severity,
+            message,
+            user_id: userId,
+            metadata: {
+                ip_address: clientIp,
+                session_id: sessionId,
+                userAgent: navigator.userAgent,
+                url: window.location.href,
+                page: 'FileUploadPage',
+                ...meta,
+                timestamp_client: new Date().toISOString()
+            }
+            })
+        });
 
-  } catch (e) {
-    console.error("Logger exception:", e);
-  }
+    } catch (e) {
+        console.error("Logger exception:", e);
+    }
 };
 
 
@@ -174,16 +174,16 @@ const FileUploadPage = () => {
       return result.embedding;
     } catch (error) {
       console.error("生成向量失败:", error);
-
+      
       logSystemEvent({
-        category: 'AI',
-        eventType: 'EMBEDDING_FAILED',
-        severity: 'WARN',
-        message: `Backend Embedding generation failed: ${error.message}`,
-        userId: currentUser?.id,
-        meta: { text_length: cleanText.length }
+          category: 'AI',
+          eventType: 'EMBEDDING_FAILED',
+          severity: 'WARN',
+          message: `Backend Embedding generation failed: ${error.message}`,
+          userId: currentUser?.id,
+          meta: { text_length: cleanText.length }
       });
-
+      
       return null;
     }
   };
@@ -191,12 +191,12 @@ const FileUploadPage = () => {
   // --- 记录页面访问 ---
   useEffect(() => {
     if (currentUser) {
-      logSystemEvent({
-        category: 'INTERACTION',
-        eventType: 'PAGE_VIEW',
-        message: 'User visited File Upload Page (Manual Entry)',
-        userId: currentUser.id
-      });
+        logSystemEvent({
+            category: 'INTERACTION',
+            eventType: 'PAGE_VIEW',
+            message: 'User visited File Upload Page (Manual Entry)',
+            userId: currentUser.id
+        });
     }
   }, [currentUser]);
 
@@ -225,17 +225,7 @@ const FileUploadPage = () => {
 
   const handleCancel = () => setPreviewOpen(false);
 
-  const handlePreview = async (file) => {
-    if (!file.url && !file.preview) {
-      file.preview = await getBase64(file.originFileObj);
-    }
-    setPreviewImage(file.url || file.preview);
-    setPreviewOpen(true);
-    setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
-  };
-
-
-  // ✅ 修改：调用后端获取历史标签
+// ✅ 修改：调用后端获取历史标签
   const handleSupplierChange = async (supplierId) => {
     setSelectedSupplierId(supplierId);
 
@@ -266,12 +256,12 @@ const FileUploadPage = () => {
     } catch (error) {
       messageApi.error(`加载历史标签失败: ${error.message}`);
       logSystemEvent({
-        category: 'DATA',
-        eventType: 'LOAD_HISTORY_TAGS_FAILED',
-        severity: 'ERROR',
-        message: `Failed to load history tags: ${error.message}`,
-        userId: currentUser?.id,
-        meta: { supplierId: supplierId }
+          category: 'DATA',
+          eventType: 'LOAD_HISTORY_TAGS_FAILED',
+          severity: 'ERROR',
+          message: `Failed to load history tags: ${error.message}`,
+          userId: currentUser?.id,
+          meta: { supplierId: supplierId }
       });
     } finally {
       setLoadingHistory(false);
@@ -289,13 +279,13 @@ const FileUploadPage = () => {
           </Form.Item>
           <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true, message: '请输入 SEM Parameter！' }]} >
             <TextArea
-              autoSize={{ minRows: 3, maxRows: 5 }}
+              autoSize={{ minRows: 3, maxRows: 5 }} 
               placeholder="请输入 SEM Parameter"
             />
           </Form.Item>
           <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true, message: '请输入 Gap description！' }]} >
             <TextArea
-              autoSize={{ minRows: 3, maxRows: 6 }}
+              autoSize={{ minRows: 3, maxRows: 6 }} 
               placeholder="请输入 Gap description"
             />
           </Form.Item>
@@ -324,7 +314,7 @@ const FileUploadPage = () => {
             rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}
           >
             <TextArea
-              autoSize={{ minRows: 3, maxRows: 8 }}
+              autoSize={{ minRows: 3, maxRows: 8 }} 
               placeholder="请输入FINDINGS/DEVIATIONS"
             />
           </Form.Item>
@@ -342,70 +332,70 @@ const FileUploadPage = () => {
       type: 'loading',
       content: '正在处理数据并上传...',
       key: 'submitting',
-      duration: 0,
+      duration: 0, 
     });
 
     try {
-      const processFiles = async (fileList) => {
-        if (!fileList || fileList.length === 0) return [];
-
-        const processed = await Promise.all(
-          fileList.map(async (file) => {
-            if (file.originFileObj) {
-              try {
-                const base64Url = await getBase64(file.originFileObj);
+        const processFiles = async (fileList) => {
+          if (!fileList || fileList.length === 0) return [];
+    
+          const processed = await Promise.all(
+            fileList.map(async (file) => {
+              if (file.originFileObj) {
+                try {
+                  const base64Url = await getBase64(file.originFileObj);
+                  return {
+                    uid: file.uid,
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    url: base64Url,
+                  };
+                } catch (error) {
+                  console.error("文件转换为 Base64 失败:", file.name, error);
+                  messageApi.open({
+                    type: 'error',
+                    content: `文件 ${file.name} 处理失败！`,
+                    key: 'submitting', 
+                    duration: 3
+                  });
+                  logSystemEvent({
+                      category: 'FILE',
+                      eventType: 'FILE_PROCESS_FAILED',
+                      severity: 'ERROR',
+                      message: `File process failed: ${file.name}`,
+                      userId: currentUser?.id,
+                      meta: { error: error.message }
+                  });
+                  return null; 
+                }
+              }
+              if (file.url) {
                 return {
                   uid: file.uid,
                   name: file.name,
-                  type: file.type,
-                  size: file.size,
-                  url: base64Url,
+                  url: file.url,
                 };
-              } catch (error) {
-                console.error("文件转换为 Base64 失败:", file.name, error);
-                messageApi.open({
-                  type: 'error',
-                  content: `文件 ${file.name} 处理失败！`,
-                  key: 'submitting',
-                  duration: 3
-                });
-                logSystemEvent({
-                  category: 'FILE',
-                  eventType: 'FILE_PROCESS_FAILED',
-                  severity: 'ERROR',
-                  message: `File process failed: ${file.name}`,
-                  userId: currentUser?.id,
-                  meta: { error: error.message }
-                });
-                return null;
               }
-            }
-            if (file.url) {
-              return {
-                uid: file.uid,
-                name: file.name,
-                url: file.url,
-              };
-            }
-            return null;
-          })
-        );
-        return processed.filter(Boolean);
-      };
+              return null;
+            })
+          );
+          return processed.filter(Boolean);
+        };
+    
+        const processedImages = await processFiles(values.images);
+        const processedAttachments = await processFiles(values.attachments);
+    
+        const selectedSupplierInfo = suppliers.find(s => s.id === values.supplierId);
+        const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    
+        // --- 1. 构建用于生成向量的文本 (语义指纹) ---
+        const problemSource = values.problem_source || '';
+        const cause = values.cause || '';
+        const processOrTitle = values.details.process || values.details.criteria || '';
+        const findingOrDesc = values.details.finding || values.details.description || '';
 
-      const processedImages = await processFiles(values.images);
-      const processedAttachments = await processFiles(values.attachments);
-
-      const selectedSupplierInfo = suppliers.find(s => s.id === values.supplierId);
-      const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-
-      // --- 1. 构建用于生成向量的文本 (语义指纹) ---
-      const problemSource = values.problem_source || '';
-      const cause = values.cause || '';
-      const processOrTitle = values.details.process || values.details.criteria || '';
-      const findingOrDesc = values.details.finding || values.details.description || '';
-
-      const textToEmbed = `
+        const textToEmbed = `
     [Category]: ${values.category}
     [Supplier]: ${selectedSupplierInfo?.name || ''}
     [Title]: ${processOrTitle}
@@ -414,66 +404,66 @@ const FileUploadPage = () => {
     [RootCause]: ${cause}
 `.trim();
 
-      // 2. ✅ 调用后端生成向量
-      messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
-      const embeddingVector = await getBackendEmbedding(textToEmbed);
-
-      const newNoticeToInsert = {
-        notice_code: noticeCode,
-        category: values.category,
-        title: values.details.process || values.details.parameter || values.details.criteria || 'New Notice',
-        assigned_supplier_id: values.supplierId,
-        assigned_supplier_name: selectedSupplierInfo?.name || '',
-        status: '待提交Action Plan',
-        creator_id: currentUser.id,
-        embedding: embeddingVector,
-        sd_notice: {
-          creatorId: currentUser.id,
-          creator: currentUser.name,
-          createTime: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
-          images: processedImages,
-          attachments: processedAttachments,
-          details: values.details,
-          problem_source: values.problem_source || null,
-          cause: values.cause || null,
-        },
-        history: [],
-      };
-
-      await addNotices([newNoticeToInsert]);
-
-      messageApi.open({
-        type: 'success',
-        content: `提报成功！编号为：${noticeCode}`,
-        key: 'submitting',
-        duration: 2.5
-      });
-
-      logSystemEvent({
-        category: 'DATA',
-        eventType: 'SUBMIT_NOTICE_SUCCESS',
-        severity: 'INFO',
-        message: `Successfully submitted manual notice: ${noticeCode}`,
-        userId: currentUser.id,
-        meta: {
-          noticeCode,
+        // 2. ✅ 调用后端生成向量
+        messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
+        const embeddingVector = await getBackendEmbedding(textToEmbed);
+    
+        const newNoticeToInsert = {
+          notice_code: noticeCode,
           category: values.category,
-          supplierId: values.supplierId
-        }
-      });
+          title: values.details.process || values.details.parameter || values.details.criteria || 'New Notice',
+          assigned_supplier_id: values.supplierId,
+          assigned_supplier_name: selectedSupplierInfo?.name || '',
+          status: '待提交Action Plan',
+          creator_id: currentUser.id,
+          embedding: embeddingVector,
+          sd_notice: {
+            creatorId: currentUser.id,
+            creator: currentUser.name,
+            createTime: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
+            images: processedImages,
+            attachments: processedAttachments,
+            details: values.details,
+            problem_source: values.problem_source || null,
+            cause: values.cause || null,
+          },
+          history: [],
+        };
 
-      const headerValues = {
-        category: form.getFieldValue('category'),
-        supplierId: form.getFieldValue('supplierId'),
-        date: form.getFieldValue('date'),
-      };
-      form.resetFields();
-      form.setFieldsValue(headerValues);
-      setSelectedCategory(headerValues.category);
-      setSelectedSource(null);
-      setHistoricalTags({});
-
-      await new Promise(resolve => setTimeout(resolve, 1500));
+        await addNotices([newNoticeToInsert]);
+    
+        messageApi.open({
+          type: 'success',
+          content: `提报成功！编号为：${noticeCode}`,
+          key: 'submitting',
+          duration: 2.5
+        });
+        
+        logSystemEvent({
+            category: 'DATA',
+            eventType: 'SUBMIT_NOTICE_SUCCESS',
+            severity: 'INFO',
+            message: `Successfully submitted manual notice: ${noticeCode}`,
+            userId: currentUser.id,
+            meta: { 
+                noticeCode, 
+                category: values.category, 
+                supplierId: values.supplierId 
+            }
+        });
+    
+        const headerValues = {
+          category: form.getFieldValue('category'),
+          supplierId: form.getFieldValue('supplierId'),
+          date: form.getFieldValue('date'),
+        };
+        form.resetFields();
+        form.setFieldsValue(headerValues);
+        setSelectedCategory(headerValues.category);
+        setSelectedSource(null);
+        setHistoricalTags({});
+    
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
     } catch (error) {
       console.error("提交失败:", error);
@@ -483,7 +473,7 @@ const FileUploadPage = () => {
         key: 'submitting',
         duration: 3
       });
-
+      
       logSystemEvent({
         category: 'DATA',
         eventType: 'SUBMIT_NOTICE_FAILED',
@@ -492,11 +482,52 @@ const FileUploadPage = () => {
         userId: currentUser.id,
         meta: { category: values.category, supplierId: values.supplierId }
       });
-
+      
       await new Promise(resolve => setTimeout(resolve, 1500));
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
+  };
+
+  const [fileType, setFileType] = useState(''); // 新增：用于区分是图片还是视频
+
+  // --- 1. 处理预览逻辑 (同时支持图片和视频) ---
+  const handlePreview = async (file) => {
+    if (!file.url && !file.preview) {
+      file.preview = await getBase64(file.originFileObj);
+    }
+
+    setPreviewImage(file.url || file.preview);
+    setPreviewOpen(true);
+    setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
+    
+    // 记录文件类型，用于 Modal 渲染
+    setFileType(file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'));
+  };
+
+  // 辅助函数：转 Base64
+  const getBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+
+  const beforeUpload = (file) => {
+    const isImageOrVideo = file.type.startsWith('image/') || file.type.startsWith('video/');
+    if (!isImageOrVideo) {
+      messageApi.error('只能上传图片或视频文件!');
+      return Upload.LIST_IGNORE;
+    }
+    
+    // 限制 50MB (视频容易超大)
+    const isLt50M = file.size / 1024 / 1024 < 50;
+    if (!isLt50M) {
+      messageApi.error('文件必须小于 50MB!');
+      return Upload.LIST_IGNORE;
+    }
+    return false; // 阻止自动上传，手动控制
   };
 
   return (
@@ -540,7 +571,7 @@ const FileUploadPage = () => {
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-
+            
             <Col span={24}>
               <Card
                 type="inner"
@@ -554,7 +585,7 @@ const FileUploadPage = () => {
                 }}
               >
                 {!selectedSupplierId && <div style={{ marginBottom: 16, color: '#faad14' }}>请先选择上面的供应商以加载数据</div>}
-
+                
                 <Row gutter={[16, 16]}>
                   <Col xs={24} md={12}>
                     <Form.Item name="problem_source" label="产品">
@@ -601,29 +632,48 @@ const FileUploadPage = () => {
 
           <Divider />
 
-
-
-          <Form.Item label="图片/视频证据 (移动端可拍摄/录像)">
-            <Form.Item name="images" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
-              <Dragger
-                multiple
-                listType="picture"
-                beforeUpload={() => false}
-                onPreview={handlePreview}
-                // 修改 accept 属性，允许视频格式
-                accept="image/*,video/*"
-                // 这里的关键：通过自定义属性穿透给底层的 input 标签
-                // 注意：在 Antd 的 Upload 中，有些版本支持直接写 capture，
-                // 如果不支持，可以使用下面这个自定义属性方案
-                {...(isMobile ? { capture: "camera" } : {})}
-                height={150}
-              >
-                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                <p className="ant-upload-text">点击或拖拽上传</p>
-                {isMobile && <p className="ant-upload-hint">移动端点击可调起相机或录像机</p>}
-              </Dragger>
-            </Form.Item>
-          </Form.Item>
+          <Form.Item label="证据上传 (图片/视频)">
+        <Form.Item name="images" valuePropName="fileList" getValueFromEvent={(e) => Array.isArray(e) ? e : e?.fileList} noStyle>
+          <Dragger
+            multiple
+            listType="picture"
+            beforeUpload={beforeUpload}
+            onPreview={handlePreview}
+            // ✅ 关键修改在这里：
+            accept="image/*,video/*" 
+            // 如果你想强制移动端直接打开摄像头录像（不选相册），加 capture="environment"
+            // 但通常建议不加 capture，让用户自己选是“拍照”还是“相册”
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">点击上传图片或录制视频</p>
+            <p className="ant-upload-hint">支持 jpg, png, mp4 (最大50MB)</p>
+          </Dragger>
+        </Form.Item>
+      </Form.Item>
+      {/* --- 3. 升级预览弹窗 (支持视频播放) --- */}
+      <Modal
+        open={previewOpen}
+        title={previewTitle}
+        footer={null}
+        onCancel={() => setPreviewOpen(false)}
+        width={600} // 视频宽一点体验更好
+        centered
+      >
+        {fileType.startsWith('video/') ? (
+          <video 
+            src={previewImage} 
+            controls 
+            style={{ width: '100%', maxHeight: '80vh' }} 
+            className="rounded-lg bg-black"
+          />
+        ) : (
+          <img 
+            alt="example" 
+            style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain' }} 
+            src={previewImage} 
+          />
+        )}
+      </Modal>
 
           <Form.Item label="补充附件 (可选)">
             <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
@@ -654,12 +704,12 @@ const FileUploadPage = () => {
           </Collapse>
 
           <Form.Item style={{ marginTop: 24, textAlign: isMobile ? 'center' : 'right' }}>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={loading}
-              size="large"
-              block={isMobile} // 移动端全宽按钮，更易点击
+            <Button 
+                type="primary" 
+                htmlType="submit" 
+                loading={loading} 
+                size="large"
+                block={isMobile} // 移动端全宽按钮，更易点击
             >
               确认提交
             </Button>
