@@ -138,6 +138,8 @@ const AdminPage = () => {
                 systemNoticesRes.ok ? systemNoticesRes.json() : []
             ]);
 
+            console.log('Fetched Data:', { usersData });
+
             setUsers(usersData);
             setAllSuppliers((suppliersData || []).map(s => ({
                 ...s,
@@ -352,9 +354,19 @@ const AdminPage = () => {
             messageApi.error(`更新失败: ${error.message}`);
         }
     };
-
-    const showManageModal = (user) => { setManagingUser(user); setTargetSupplierKeys(user.managed_suppliers.map(ms => ms.supplier_id)); setIsManageModalVisible(true); };
-
+    const showManageModal = (user) => {
+    setManagingUser(user);
+    
+    // 1. 检查 managed_suppliers 是否存在
+    // 2. 提取所有的 supplier_id 组成一个数组 [ID1, ID2, ...]
+    // 3. 赋值给 TargetKeys，这样 Transfer 组件的右侧才会显示已分配的供应商
+    const currentKeys = user.managed_suppliers 
+        ? user.managed_suppliers.map(ms => ms.supplier_id) 
+        : [];
+        
+    setTargetSupplierKeys(currentKeys);
+    setIsManageModalVisible(true);
+};
     // 7. 管理供应商分配 (需要新增 API: /api/admin/manage-assignments)
     const handleManageSuppliers = async () => {
         try {
@@ -369,12 +381,12 @@ const AdminPage = () => {
 
             if (!response.ok) throw new Error('Assignment failed');
 
-            message.success('供应商分配更新成功!');
+            messageApi.success('供应商分配更新成功!');
             setIsManageModalVisible(false);
             setManagingUser(null);
             fetchData();
         } catch (error) {
-            message.error(`分配失败: ${error.message}`);
+            messageApi.error(`分配失败: ${error.message}`);
         }
     };
 

@@ -36,15 +36,15 @@ module.exports = async (req, res) => {
 
         const { supplierId, action, includeManaged } = req.query;
 
-        if (req.method === 'GET') {
-            // 获取用户 ID 和 Supplier ID (用于 Notice 上下文)
-            const { data, error } = await supabaseAdmin
-                .from('users')
-                .select('id, supplier_id, username'); // 按需只取这俩字段
+        // if (req.method === 'GET') {
+        //     // 获取用户 ID 和 Supplier ID (用于 Notice 上下文)
+        //     const { data, error } = await supabaseAdmin
+        //         .from('users')
+        //         .select('id, supplier_id, username,role'); // 按需只取这俩字段
 
-            if (error) throw error;
-            return res.json(data);
-        }
+        //     if (error) throw error;
+        //     return res.json(data);
+        // }
 
         // 场景 1: AdminPage 获取完整用户列表 (带管理供应商信息)
         // 对应前端 fetch: /api/users?includeManaged=true
@@ -65,7 +65,7 @@ module.exports = async (req, res) => {
         if (supplierId) {
             const { data, error } = await supabaseAdmin
                 .from('users')
-                .select('id, email, username')
+                .select('id, email, username, role')
                 .eq('supplier_id', supplierId);
             
             if (error) throw error;
