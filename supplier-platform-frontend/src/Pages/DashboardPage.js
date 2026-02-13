@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-    Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip, 
+import {
+    Card, Row, Col, Statistic, Typography, List, Empty, Avatar, Tooltip,
     Button, Divider, Space, Select, Popconfirm, Tour, Skeleton, Tag, message,
     Grid // 1. 引入 Grid
 } from 'antd';
-import { 
-    ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined, 
-    CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined, 
-    UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined, 
-    FileTextOutlined, QuestionCircleOutlined 
+import {
+    ClockCircleOutlined, CheckCircleOutlined, StarOutlined, UserOutlined,
+    CalendarOutlined, AuditOutlined, TeamOutlined, ReconciliationOutlined,
+    UndoOutlined, DeleteOutlined, WarningOutlined, ScheduleOutlined,
+    FileTextOutlined, QuestionCircleOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import minMax from 'dayjs/plugin/minMax';
@@ -28,7 +28,7 @@ const { useBreakpoint } = Grid; // 2. 获取断点 Hook
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 // --- 辅助函数 ---
 const getPlanIcon = (type) => {
@@ -42,16 +42,16 @@ const getPlanIcon = (type) => {
 
 // --- 重构后的组件: PlanItem (修复溢出问题 + 移动端隐藏按钮) ---
 const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) => {
-    const [targetDateStr, setTargetDateStr] = useState(null); 
-    
+    const [targetDateStr, setTargetDateStr] = useState(null);
+
     // 3. 响应式检测
     const screens = useBreakpoint();
-    const isMobile = !screens.md; 
+    const isMobile = !screens.md;
 
     const handleConfirmReschedule = () => {
         if (targetDateStr) {
             const [year, month] = targetDateStr.split('-').map(Number);
-            onReschedule(plan, month, year); 
+            onReschedule(plan, month, year);
             setTargetDateStr(null);
         }
     };
@@ -87,17 +87,17 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
     );
 
     const itemContent = (
-        <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between', 
-            width: '100%', 
-            padding: '8px 12px', 
-            border: '1px solid #f0f0f0', 
-            borderRadius: '6px', 
-            marginBottom: '8px', 
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            padding: '8px 12px',
+            border: '1px solid #f0f0f0',
+            borderRadius: '6px',
+            marginBottom: '8px',
             backgroundColor: '#fff',
-            overflow: 'hidden' 
+            overflow: 'hidden'
         }}>
             {/* 左侧信息区域：自适应宽度 */}
             <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 }}>
@@ -116,10 +116,10 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
 
             {/* 右侧操作按钮：固定宽度，不被压缩 */}
             <div style={{ flexShrink: 0, display: 'flex', gap: '4px' }}>
-                 <Tooltip title="查找相关通知单">
+                <Tooltip title="查找相关通知单">
                     <Button type="text" size="small" icon={<FileTextOutlined />} style={{ color: '#595959' }} onClick={(e) => { e.stopPropagation(); onNavigate(plan); }} />
                 </Tooltip>
-                
+
                 {/* 4. 移动端隐藏重分配按钮 */}
                 {!isMobile && (
                     <Tooltip title="调整计划月份">
@@ -141,13 +141,13 @@ const PlanItem = ({ plan, onMarkComplete, onDelete, onNavigate, onReschedule }) 
                         <Button type="text" size="small" icon={plan.status === 'pending' ? <CheckCircleOutlined style={{ color: 'grey' }} /> : <UndoOutlined />} style={{ color: plan.status === 'pending' ? '#1890ff' : '#8c8c8c' }} />
                     </Popconfirm>
                 </Tooltip>
-                
-                 {/* 5. 移动端隐藏删除按钮 */}
-                 {!isMobile && (
+
+                {/* 5. 移动端隐藏删除按钮 */}
+                {!isMobile && (
                     <Popconfirm title="确定删除?" onConfirm={() => onDelete(plan.id)}>
                         <Button type="text" size="small" danger icon={<DeleteOutlined />} />
                     </Popconfirm>
-                 )}
+                )}
             </div>
         </div>
     );
@@ -184,6 +184,15 @@ const DashboardPage = () => {
     const refHighlights = useRef(null);
     const [openTour, setOpenTour] = useState(false);
 
+    const { refreshSuppliers } = useSuppliers(); 
+
+    // 2. 添加一个 useEffect，当进入页面 时，强制刷新一次供应商列表
+    useEffect(() => {
+        refreshSuppliers();
+    }, [refreshSuppliers]);
+    //获取Token
+    const token = localStorage.getItem('access_token');
+
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
         if (currentUser.role === 'Manager' || currentUser.role === 'Admin') {
@@ -197,18 +206,19 @@ const DashboardPage = () => {
         return [];
     }, [currentUser, suppliers]);
 
+
     // --- API Handlers ---
     const handleMarkAsComplete = async (id, currentStatus) => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
         const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
-        
+
         try {
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    id, 
-                    updates: { status: newStatus, completion_date: completionDate } 
+                body: JSON.stringify({
+                    id,
+                    updates: { status: newStatus, completion_date: completionDate }
                 })
             });
             if (!response.ok) throw new Error('Update failed');
@@ -266,9 +276,9 @@ const DashboardPage = () => {
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    id: item.id, 
-                    updates: { planned_month: newMonth, year: newYear } 
+                body: JSON.stringify({
+                    id: item.id,
+                    updates: { planned_month: newMonth, year: newYear }
                 })
             });
             if (!response.ok) throw new Error('Reschedule failed');
@@ -283,23 +293,54 @@ const DashboardPage = () => {
         }
     };
 
-    // --- Effects ---
+
+
     useEffect(() => {
+        // 1. 在 useEffect 内部进行安全检查
+        if (!token) {
+            messageApi.error('登录凭证丢失，请重新登录');
+            navigate('/login');
+            return; // 这里的 return 只是结束当前 effect 函数，不会影响组件渲染结构
+        }
+
+        // 2. 定义 Fetch 函数
         const fetchUsers = async () => {
             setUsersLoading(true);
             try {
-                const response = await fetch(`${BACKEND_URL}/api/users?action=all_users`);
+                // 在这里定义 headers，确保只有在有 token 时才创建
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                };
+
+                const response = await fetch(`${BACKEND_URL}/api/users?action=all_users`, { headers });
+
+                // 处理 Token 失效的情况 (401)
+                if (response.status === 401) {
+                    throw new Error('UNAUTHORIZED');
+                }
+
                 if (!response.ok) throw new Error('Fetch users failed');
+
                 const data = await response.json();
                 setAllUsers(data || []);
             } catch (error) {
                 console.error("Dashboard: Fetch users failed", error);
+
+                // 如果是 Token 失效，也可以在这里跳转
+                if (error.message === 'UNAUTHORIZED') {
+                    messageApi.error('登录已过期');
+                    navigate('/login');
+                }
             } finally {
                 setUsersLoading(false);
             }
         };
+
+        // 3. 执行 Fetch
         fetchUsers();
-    }, []);
+
+    }, [token]); // ✅ 把 token 加入依赖数组，当 token 变化时重新执行
 
     useEffect(() => {
         const fetchCategories = async () => {
@@ -372,7 +413,7 @@ const DashboardPage = () => {
         const now = dayjs();
         const currentMonthStart = now.startOf('month');
         const nextMonthStart = now.add(1, 'month').startOf('month');
-        
+
         let overduePastPlansCount = 0;
         let pendingCurrentMonthPlansCount = 0;
         const currentAndPastPlansList = [];
@@ -438,16 +479,16 @@ const DashboardPage = () => {
         const thirtyDaysFromNow = now.add(30, 'day');
 
         const baseDataWithDeadline = baseData.map(notice => {
-             const history = Array.isArray(notice.history) ? notice.history : [];
-             const latestPlanSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
-             let latestDeadline = 'N/A';
-             if (latestPlanSubmission) {
-                 const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
-                 if (deadlines.length > 0) {
-                     latestDeadline = dayjs.max(deadlines).format('YYYY-MM-DD');
-                 }
-             }
-             return { ...notice, deadline: latestDeadline };
+            const history = Array.isArray(notice.history) ? notice.history : [];
+            const latestPlanSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission' && h.actionPlans && h.actionPlans.length > 0);
+            let latestDeadline = 'N/A';
+            if (latestPlanSubmission) {
+                const deadlines = latestPlanSubmission.actionPlans.map(p => dayjs(p.deadline)).filter(d => d.isValid());
+                if (deadlines.length > 0) {
+                    latestDeadline = dayjs.max(deadlines).format('YYYY-MM-DD');
+                }
+            }
+            return { ...notice, deadline: latestDeadline };
         });
 
         const closedThisMonth = baseDataWithDeadline.filter(n => {

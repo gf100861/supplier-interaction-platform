@@ -121,47 +121,92 @@ const toPlainText = (val) => {
     return String(val);
 };
 
-// --- 新增：Historical 8D 专用显示组件 ---
+
+
 const Historical8DDisplay = ({ notice }) => {
     const details = notice?.sdNotice?.details || {};
     const { messageApi } = useNotification();
 
-    // 在组件内部添加状态
     const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState(null);
 
     const getChineseOnly = (text = '') =>
         text.match(/[\u4e00-\u9fa5]/g)?.join('') || '';
 
+    // --- 1. 获取文件 MIME 类型 ---
+    const getMimeType = (base64Data) => {
+        if (!base64Data || typeof base64Data !== 'string') return '';
+        // 匹配 data:application/pdf;base64 中的 application/pdf
+        const match = base64Data.match(/:(.*?);/); 
+        return match ? match[1] : '';
+    };
+
+    // --- 2. 判断是否支持预览 (白名单机制：只允许 PDF 和 图片) ---
+    const mimeType = getMimeType(details.fileContent);
+    const canPreview = mimeType.includes('pdf') || mimeType.startsWith('image/');
+
+    // Base64 转 Blob (保持不变)
+    const base64ToBlob = (base64Data) => {
+        try {
+            const arr = base64Data.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while (n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+            }
+            return new Blob([u8arr], { type: mime });
+        } catch (e) {
+            console.error("Base64 转换失败", e);
+            return null;
+        }
+    };
+
     // 打开预览
     const handlePreviewReport = () => {
-        setIsPreviewVisible(true);
-    };
-    // 下载报告
+        if (!details?.fileContent) return;
 
+        if (previewUrl) {
+            setIsPreviewVisible(true);
+            return;
+        }
+
+        const blob = base64ToBlob(details.fileContent);
+        if (blob) {
+            const url = URL.createObjectURL(blob);
+            setPreviewUrl(url);
+            setIsPreviewVisible(true);
+        }
+    };
+
+    const handleCancelPreview = () => {
+        setIsPreviewVisible(false);
+    };
+
+    // 下载报告
     const handleDownloadReport = () => {
-        // 1. 检查是否有 Base64 内容
         if (!details?.fileContent) {
             messageApi.warning('未找到文件内容');
             return;
         }
-
         try {
             messageApi.loading({ content: '正在准备下载...', key: 'download' });
-
-            // 2. 创建一个临时的 <a> 标签
             const link = document.createElement('a');
-
-            // 3. 直接将 Base64 字符串赋值给 href
             link.href = details.fileContent;
+            // 如果能获取到后缀名最好，如果没有，根据 mimeType 猜测后缀
+            let extension = '.pdf';
+            if (mimeType.includes('word')) extension = '.doc';
+            if (mimeType.includes('excel') || mimeType.includes('sheet')) extension = '.xlsx';
+            if (mimeType.startsWith('image/')) extension = '.' + mimeType.split('/')[1];
 
-            // 4. 设置下载文件名
-            link.download = details.originalFileName || `${notice?.noticeCode || 'Report'}.pdf`;
-
-            // 5. 触发点击并清理
+            // 优先使用原始文件名，否则使用默认名 + 后缀
+            const fileName = details.originalFileName || `${notice?.noticeCode || 'Report'}${extension}`;
+            
+            link.download = fileName;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
             messageApi.success({ content: '下载已触发', key: 'download' });
         } catch (error) {
             console.error('下载出错:', error);
@@ -171,8 +216,8 @@ const Historical8DDisplay = ({ notice }) => {
 
     return (
         <Card type="inner" title={<Space><HistoryOutlined /> 历史 8D 归档详情</Space>} style={{ marginTop: 16, backgroundColor: '#f9f9f9' }}>
-            {/* 响应式修改：xs=24 占满一行, md=12 占一半 */}
             <Row gutter={[16, 16]}>
+                {/* ... 其他字段保持不变 ... */}
                 <Col xs={24} md={12}>
                     <Text type="secondary">零件号 (Part No):</Text>
                     <div><Text strong>{details.partNumber || 'N/A'}</Text></div>
@@ -182,29 +227,34 @@ const Historical8DDisplay = ({ notice }) => {
                     <div><Text strong>{details.partName || 'N/A'}</Text></div>
                 </Col>
                 <Col xs={24} md={12}>
-                    <Text type="secondary">数量 (Qty):</Text>
-                    <div>{details.quantity || 'N/A'}</div>
+                     <Text type="secondary">数量 (Qty):</Text>
+                     <div>{details.quantity || 'N/A'}</div>
                 </Col>
                 <Col xs={24} md={12}>
-                    <Text type="secondary">供应商(Supplier):</Text>
-                    <div>{notice?.supplier?.shortCode || 'N/A'}</div>
+                     <Text type="secondary">供应商(Supplier):</Text>
+                     <div>{notice?.supplier?.shortCode || 'N/A'}</div>
                 </Col>
+
                 <Col xs={24} md={12}>
-                    <Text type="secondary">原始报告:</Text>
+                    {/* 根据文件类型动态修改标题 */}
+                    <Text type="secondary">
+                        原始报告 {canPreview ? '' : '(该格式不支持预览，请下载)'}:
+                    </Text>
                     <div style={{ marginTop: 8 }}>
                         {details.fileContent ? (
                             <Space>
-                                {/* 预览按钮 */}
-                                <Button
-                                    type="default"
-                                    size="small"
-                                    icon={<EyeOutlined />}
-                                    onClick={handlePreviewReport}
-                                >
-                                    在线预览
-                                </Button>
+                                {/* --- 3. 只有 PDF 或 图片 才渲染这个按钮 --- */}
+                                {canPreview && (
+                                    <Button
+                                        type="default"
+                                        size="small"
+                                        icon={<EyeOutlined />}
+                                        onClick={handlePreviewReport}
+                                    >
+                                        在线预览
+                                    </Button>
+                                )}
 
-                                {/* 下载按钮 */}
                                 <Button
                                     type="primary"
                                     ghost
@@ -219,23 +269,22 @@ const Historical8DDisplay = ({ notice }) => {
                             <Text disabled>无附件</Text>
                         )}
 
-                        {/* 预览弹窗 */}
-
+                        {/* Modal 只在允许预览时才有意义，不过放在这里也没关系 */}
                         <Modal
                             title="报告预览"
                             open={isPreviewVisible}
-                            onCancel={() => setIsPreviewVisible(false)}
-                            width="95%" // 移动端更宽
+                            onCancel={handleCancelPreview}
+                            width="90%"
                             style={{ top: 20 }}
                             footer={null}
-                            destroyOnClose
+                            destroyOnClose={false}
                             bodyStyle={{ height: '80vh', padding: 0 }}
                         >
-                            {details?.fileContent ? (
+                            {previewUrl ? (
                                 <iframe
-                                    src={details.fileContent}
+                                    src={previewUrl}
                                     style={{ width: '100%', height: '100%', border: 'none' }}
-                                    title="PDF Preview"
+                                    title="File Preview"
                                 />
                             ) : (
                                 <div style={{ padding: 20, textAlign: 'center' }}>无法加载预览内容</div>
@@ -246,7 +295,8 @@ const Historical8DDisplay = ({ notice }) => {
             </Row>
 
             <Divider style={{ margin: '16px 0' }} />
-
+            
+            {/* D2/D4/D5 内容保持不变 */}
             <Title level={5} style={{ fontSize: 14 }}>问题描述 (D2)</Title>
             <Paragraph style={{ whiteSpace: 'pre-wrap', background: '#fff', padding: 12, borderRadius: 4, border: '1px solid #f0f0f0' }}>
                 {getChineseOnly(details.finding || notice.description) || '无详细描述'}
@@ -266,7 +316,6 @@ const Historical8DDisplay = ({ notice }) => {
         </Card>
     );
 };
-
 const categoryColumnConfig = {
     'SEM': [
         { title: 'Criteria n°', dataIndex: 'criteria' },

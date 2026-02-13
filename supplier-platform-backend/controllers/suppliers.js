@@ -37,6 +37,27 @@ module.exports = async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
+          // ============================================================
+        // 🔒 安全验证逻辑开始
+        // ============================================================
+        
+        // 1. 获取 Authorization 头
+        const authHeader = req.headers.authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+        }
+
+        // 2. 提取 Token
+        const token = authHeader.split(' ')[1];
+
+        // 3. 验证 Token 有效性 (获取用户信息)
+        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+        if (authError || !user) {
+            return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+        }
+
         // 查询数据库
         const { data, error } = await supabaseAdmin
             .from('suppliers')

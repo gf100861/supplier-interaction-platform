@@ -31,7 +31,7 @@ const TRANSLATIONS = {
         forgot: "忘记密码?",
         loginBtn: "登录系统",
         loggingIn: "登录中...",
-        footer: "© 2024 Supplier Development System."
+        footer: "© 2026 Supplier Development System."
     },
     en: {
         sloganTitle: "Quantify Value, Drive Supply Chain Excellence.",
@@ -45,7 +45,7 @@ const TRANSLATIONS = {
         forgot: "Forgot Password?",
         loginBtn: "Sign In",
         loggingIn: "Signing in...",
-        footer: "© 2024 Supplier Development System."
+        footer: "© 2026 Supplier Development System."
     }
 };
 // --- 错误翻译函数 (保持不变) ---
@@ -54,7 +54,7 @@ const translateError = (errorMsg) => {
     if (msg.includes('Invalid login credentials')) return '登录凭证无效或已过期，请尝试重新登录';
     if (msg.includes('User not found')) return '用户不存在';
     if (msg.includes('JWT expired')) return '登录会话已过期，请刷新页面';
-    if (msg.includes('Failed to fetch')) return '无法连接到服务器，请确认后端服务(Port 3001)已启动';
+    if (msg.includes('Failed to fetch')) return '无法连接到服务器，请联系Louis';
     return msg;
 };
 
@@ -340,6 +340,8 @@ const LoginPage = () => {
                     console.error("前端设置 Session 失败:", setSessionError);
                     // 可以选择抛出错误，或者继续（但刷新后会掉登录）
                 }
+
+                localStorage.setItem('access_token', sessionData.access_token);
             }
 
             const apiDuration = Date.now() - submitTime;

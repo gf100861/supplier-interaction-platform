@@ -85,7 +85,7 @@ const AdminPage = () => {
     const filteredUsers = useMemo(() => {
         return users.filter(user => {
             // const statusMatch = statusFilter === '全部' || user.status === statusFilter || (statusFilter === '待处理' && user.status.includes('待'));
-            
+
             const searchMatch = searchTerm === '' ||
                 (user.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (user.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -121,15 +121,36 @@ const AdminPage = () => {
         try {
             // 我们需要创建一个聚合接口 /api/admin/dashboard-data 或者分别调用
             // 这里为了简单，复用已有的 api/users, api/suppliers，并新增 feedback 和 system_notices 接口
+            const token = localStorage.getItem('access_token');
+            console.log('Fetching data with token:', token);
+
+            // 安全检查：如果没有 Token，强制登出
+            if (!token) {
+                messageApi.error('登录凭证丢失，请重新登录');
+                navigate('/login');
+                return;
+            }
+
+            // 2. 封装统一的请求头 (Header)
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // ✅ 关键：携带 Bearer Token
+            };
 
             // A. 获取用户
-            const usersRes = await fetch(`${BACKEND_URL}/api/users?includeManaged=true`); // 需要后端支持 includeManaged 参数
+            const usersRes = await fetch(`${BACKEND_URL}/api/users?includeManaged=true`, { headers }); // 需要后端支持 includeManaged 参数
             // B. 获取供应商
-            const suppliersRes = await fetch(`${BACKEND_URL}/api/suppliers`);
+            const suppliersRes = await fetch(`${BACKEND_URL}/api/suppliers`, { headers });
             // C. 获取反馈 (需要新增 API)
-            const feedbackRes = await fetch(`${BACKEND_URL}/api/admin/feedback`);
+            const feedbackRes = await fetch(`${BACKEND_URL}/api/admin/feedback`, { headers });
             // D. 获取系统公告 (需要新增 API)
-            const systemNoticesRes = await fetch(`${BACKEND_URL}/api/admin/system-notices`);
+            const systemNoticesRes = await fetch(`${BACKEND_URL}/api/admin/system-notices`, { headers });
+
+            // 4. 处理 Token 过期 (401 Unauthorized)
+            // 如果后端验证 Token 失败，通常会返回 401 状态码
+            if (usersRes.status === 401 || suppliersRes.status === 401) {
+                throw new Error('UNAUTHORIZED'); // 抛出特定错误以便 catch 捕获
+            }
 
             const [usersData, suppliersData, feedbackData, systemNoticesData] = await Promise.all([
                 usersRes.ok ? usersRes.json() : [],
@@ -166,7 +187,17 @@ const AdminPage = () => {
 
         } catch (error) {
             console.error(error);
-            messageApi.error(`数据加载失败: ${error.message}`);
+            if (error.message === 'UNAUTHORIZED') {
+                messageApi.error('登录已过期，请重新登录');
+                localStorage.removeItem('user');
+                localStorage.removeItem('access_token'); // 清理 Token
+                navigate('/login');
+            } else {
+
+                messageApi.error(`数据加载失败: ${error.message}`);
+            }
+
+
         } finally {
             setLoading(false);
             setFeedbackLoading(false);
@@ -355,18 +386,18 @@ const AdminPage = () => {
         }
     };
     const showManageModal = (user) => {
-    setManagingUser(user);
-    
-    // 1. 检查 managed_suppliers 是否存在
-    // 2. 提取所有的 supplier_id 组成一个数组 [ID1, ID2, ...]
-    // 3. 赋值给 TargetKeys，这样 Transfer 组件的右侧才会显示已分配的供应商
-    const currentKeys = user.managed_suppliers 
-        ? user.managed_suppliers.map(ms => ms.supplier_id) 
-        : [];
-        
-    setTargetSupplierKeys(currentKeys);
-    setIsManageModalVisible(true);
-};
+        setManagingUser(user);
+
+        // 1. 检查 managed_suppliers 是否存在
+        // 2. 提取所有的 supplier_id 组成一个数组 [ID1, ID2, ...]
+        // 3. 赋值给 TargetKeys，这样 Transfer 组件的右侧才会显示已分配的供应商
+        const currentKeys = user.managed_suppliers
+            ? user.managed_suppliers.map(ms => ms.supplier_id)
+            : [];
+
+        setTargetSupplierKeys(currentKeys);
+        setIsManageModalVisible(true);
+    };
     // 7. 管理供应商分配 (需要新增 API: /api/admin/manage-assignments)
     const handleManageSuppliers = async () => {
         try {

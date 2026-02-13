@@ -115,6 +115,7 @@ const AuditPlanPage = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
+            
             const eventsRes = await fetch(`${BACKEND_URL}/api/audit-plans?year=${currentYear}`);
             if (!eventsRes.ok) throw new Error('Fetch audit plans failed');
             const eventsData = await eventsRes.json();
