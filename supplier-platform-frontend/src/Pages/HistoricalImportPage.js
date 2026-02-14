@@ -411,10 +411,12 @@ const HistoricalImportPage = () => {
 
             const supplierName = suppliers.find(s => s.id === values.supplierId)?.name || '';
 
+              const token = localStorage.getItem('access_token');
+
             // 调用后端
             const response = await fetch(`${BACKEND_URL}/api/notices/archive-historical`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json','Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     values: {
                         ...values,
@@ -464,6 +466,12 @@ const HistoricalImportPage = () => {
         let successCount = 0;
         let failCount = 0;
 
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+        messageApi.error('登录凭证丢失');
+        return;
+      }
+
         for (const item of itemsToArchive) {
             try {
                 const values = item.data;
@@ -482,7 +490,7 @@ const HistoricalImportPage = () => {
 
                 const response = await fetch(`${BACKEND_URL}/api/notices/archive-historical`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json','Authorization': `Bearer ${token}`}, // ✅ 现场组装 Header },
                     body: JSON.stringify({
                         values: {
                             ...values,

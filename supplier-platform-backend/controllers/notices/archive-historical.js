@@ -1,15 +1,22 @@
-// supplier-platform-backend/controllers/notices/archive-historical.js
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cors = require('cors');
 
-// 初始化 Gemini 用于后端生成向量 (假设使用 backend 环境变量的 Key)
-// 如果你想用前端传来的 Key 生成向量，可以动态初始化
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.EXTERNAL_API_SECRET); // 这里的 Key 配置要注意
+// 1. 初始化 Gemini 客户端
+// 优先使用环境变量中的 Key，如果没有则回退（但不建议在后端代码硬编码 Key）
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
 
+// 2. 初始化 Supabase Admin (用于验证用户身份)
+const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// 3. CORS 配置
 const corsMiddleware = cors({
     origin: true,
     methods: ['POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
 });
 
@@ -22,26 +29,34 @@ function runMiddleware(req, res, fn) {
     });
 }
 
-// 辅助：后端生成向量
-async function getEmbedding(text, apiKey) {
+// 辅助：后端生成向量 (带降维处理)
+async function getEmbedding(text) {
     if (!text) return null;
     try {
-        // 如果环境变量没配，尝试用传进来的
-        const client = apiKey ? new GoogleGenerativeAI(apiKey) : genAI;
-        const model = client.getGenerativeModel({ model: "text-embedding-004" });
-        const result = await model.embedContent(text.substring(0, 9000));
+        // ✅ 修正模型名称：使用 embedding-001
+        const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+        
+        // 简单清洗文本
+        const cleanText = text.replace(/\n/g, ' ').substring(0, 9000);
+
+        const result = await model.embedContent({
+            content: { parts: [{ text: cleanText }] },
+            outputDimensionality: 768 // ✅ 强制降维到 768，匹配数据库
+        });
+        
         return result.embedding.values;
     } catch (e) {
         console.error("Embedding Error:", e.message);
-        return null; // 降级处理，不存向量
+        return null; // 降级处理：生成失败返回 null，不阻塞归档流程
     }
 }
 
 module.exports = async (req, res) => {
+    // [Step A] 手动设置 CORS 头
     const requestOrigin = req.headers.origin || '*';
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // ✅ 必须包含 Authorization
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     if (req.method === 'OPTIONS') return res.status(200).end();
@@ -49,23 +64,42 @@ module.exports = async (req, res) => {
     try {
         await runMiddleware(req, res, corsMiddleware);
 
-        const supabaseAdmin = createClient(
-            process.env.SUPABASE_URL,
-            process.env.SUPABASE_SERVICE_ROLE_KEY
-        );
+        // ============================================================
+        // 🔒 1. 安全验证 (Token Check) - 新增部分
+        // ============================================================
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Unauthorized: Missing token' });
+        }
 
+        const token = authHeader.split(' ')[1];
+        
+        // 验证 Supabase Token
+        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+        if (authError || !user) {
+            return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+        }
+
+        // ============================================================
+        // 📂 2. 业务逻辑：归档历史数据
+        // ============================================================
         if (req.method === 'POST') {
             const { 
                 values, 
-                currentUser, 
+                currentUser, // 注意：这里的 currentUser 是前端传来的，最好改用 Token 解析出来的 user.id
                 supplierName, 
                 aiContext, 
                 base64File, 
-                fileName,
-                apiKey // 可选：用于生成向量的 key
+                fileName
             } = req.body;
 
-            // 1. 构建向量文本
+            // 简单校验
+            if (!values || !values.title || !values.supplierId) {
+                return res.status(400).json({ error: 'Missing required fields' });
+            }
+
+            // 1. 构建向量文本 (Rich Context)
             const textToEmbed = `
 [Category]: Historical 8D
 [Supplier]: ${supplierName}
@@ -75,23 +109,27 @@ module.exports = async (req, res) => {
 [Cause]: ${values.rootCause}
             `.trim();
 
-            // 2. 生成向量
-            const embeddingVector = await getEmbedding(textToEmbed, apiKey);
+            // 2. 生成向量 (调用辅助函数)
+            const embeddingVector = await getEmbedding(textToEmbed);
 
             // 3. 构建数据库对象
+            // ⚠️ 安全建议：creator_id 最好使用 user.id (从 Token 获取)，而不是完全信任前端传来的 currentUser.id
+            // 这里为了兼容你现有的前端逻辑，我先保留了 currentUser.id，但建议后续优化
+            const creatorId = user.id; 
+
             const newNotice = {
                 title: values.title,
                 notice_code: values.reportNo || `HIST-${Date.now()}`,
                 assigned_supplier_id: values.supplierId,
                 assigned_supplier_name: supplierName,
-                status: '已完成',
+                status: '已完成', // 历史归档默认已完成
                 category: 'Historical 8D',
-                creator_id: currentUser.id,
-                created_at: values.date, // 前端传来的应该是 ISO string
-                embedding: embeddingVector,
+                creator_id: creatorId,
+                created_at: values.date || new Date().toISOString(),
+                embedding: embeddingVector, // 存入 768 维向量
                 sd_notice: {
-                    creatorId: currentUser.id,
-                    creator: currentUser.username,
+                    creatorId: creatorId,
+                    creator: currentUser?.username || user.email,
                     description: aiContext,
                     createTime: values.date,
                     details: {
@@ -101,8 +139,10 @@ module.exports = async (req, res) => {
                         finding: values.summary,
                         root_cause: values.rootCause,
                         action_plan: values.interimAction,
-                        file_storage_type: 'inline_base64',
-                        file_content: base64File, // 注意：Base64 可能很大，确保 express.json limit 够大
+                        // 注意：如果 base64File 非常大，可能会导致 Supabase 请求体过大报错
+                        // 建议生产环境改用 Supabase Storage 上传文件并只存 URL
+                        file_storage_type: 'inline_base64', 
+                        file_content: base64File, 
                         original_file_name: fileName
                     },
                     images: [],
@@ -110,13 +150,16 @@ module.exports = async (req, res) => {
                 },
                 history: [{
                     type: 'system_import',
-                    submitter: currentUser.username,
+                    submitter: currentUser?.username || 'System',
                     time: new Date().toISOString(),
                     description: '通过历史归档模块导入(Backend)'
                 }]
             };
 
-            const { data, error } = await supabaseAdmin.from('notices').insert([newNotice]).select();
+            const { data, error } = await supabaseAdmin
+                .from('notices')
+                .insert([newNotice])
+                .select();
 
             if (error) throw error;
 
@@ -127,6 +170,7 @@ module.exports = async (req, res) => {
 
     } catch (error) {
         console.error('[Archive Historical API] Error:', error);
-        res.status(500).json({ error: error.message });
+        // 如果是 Supabase 报的错，通常会包含 details
+        res.status(500).json({ error: error.message, details: error.details || null });
     }
 };

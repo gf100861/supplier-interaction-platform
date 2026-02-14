@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-// ❌ 移除 Supabase 客户端
-// import { supabase } from '../supabaseClient'; 
-
+ 
+import { useNotification } from './NotificationContext';
 const ConfigContext = createContext();
 
 // 🔧 配置 API 基础地址 (包含环境判断)
@@ -16,14 +15,31 @@ export const ConfigProvider = ({ children }) => {
         noticeCategoryDetails: {},
     });
     const [loading, setLoading] = useState(true);
+    const { messageApi } = useNotification();
 
     useEffect(() => {
         const fetchConfig = async () => {
             try {
+
+            const token = localStorage.getItem('access_token');
+            console.log('Fetching data with token:', token);
+
+            // 安全检查：如果没有 Token，强制登出
+            if (!token) {
+                messageApi.error('登录凭证丢失，请重新登录');
+                return;
+            }
+
+            // 2. 封装统一的请求头 (Header)
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // ✅ 关键：携带 Bearer Token
+            };
+
                 // ✅ 修改点：Fetch 后端接口
                 const apiPath = isDev ? `/api/config` : `/api/config`;
                 const targetUrl = `${BACKEND_URL}${apiPath}`;
-                const response = await fetch(targetUrl);
+                const response = await fetch(targetUrl, { headers });
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);

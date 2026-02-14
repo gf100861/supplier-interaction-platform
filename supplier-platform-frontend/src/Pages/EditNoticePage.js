@@ -17,7 +17,7 @@ const { Dragger } = Upload;
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app'; 
+    : 'https://supplier-interaction-platform-backend.vercel.app';
 
 // Helper functions
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
@@ -55,14 +55,14 @@ const EditNoticePage = () => {
         const desiredOrder = ['Process Audit', 'SEM'];
         const categoryNames = Array.isArray(categories) ? categories : [];
         return [...categoryNames].sort((a, b) => {
-          const indexA = desiredOrder.indexOf(a);
-          const indexB = desiredOrder.indexOf(b);
-          if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-          if (indexA !== -1) return -1;
-          if (indexB !== -1) return 1;
-          return String(a).localeCompare(String(b));
+            const indexA = desiredOrder.indexOf(a);
+            const indexB = desiredOrder.indexOf(b);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return String(a).localeCompare(String(b));
         });
-      }, [categories]);
+    }, [categories]);
 
     useEffect(() => {
         if (editingNotice && form) {
@@ -80,8 +80,8 @@ const EditNoticePage = () => {
             handleSupplierChange(editingNotice.assignedSupplierId, editingNotice.sdNotice?.problem_source, editingNotice.sdNotice?.cause);
             setPageLoading(false);
         } else if (!editingNotice && notices.length > 0) {
-             messageApi.error("未找到指定的通知单。");
-             setPageLoading(false);
+            messageApi.error("未找到指定的通知单。");
+            setPageLoading(false);
         }
     }, [editingNotice, form, notices.length]);
 
@@ -113,18 +113,29 @@ const EditNoticePage = () => {
             const selectedSupplier = suppliers.find(s => s.id === supplierId);
             if (!selectedSupplier) return;
 
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                messageApi.error('登录凭证丢失');
+                navigate('/login');
+                return;
+            }
+
             // --- 调用后端 API ---
-            const response = await fetch(`${BACKEND_URL}/api/knowledge-base?supplierParmaId=${selectedSupplier.parma_id}`);
-            
+            const response = await fetch(`${BACKEND_URL}/api/knowledge-base?supplierParmaId=${selectedSupplier.parma_id}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                }
+            });
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Fetch tags failed');
             }
-            
+
             const data = await response.json();
 
             const tags = data.reduce((acc, { problem_source, cause }) => {
-                if (problem_source){
+                if (problem_source) {
                     if (!acc[problem_source]) acc[problem_source] = new Set();
                     if (cause) acc[problem_source].add(cause);
                 }
@@ -166,12 +177,12 @@ const EditNoticePage = () => {
 
         if (selectedCategory === 'Process Audit') {
             const processFieldName = details.hasOwnProperty('title') ? 'title'
-                                   : details.hasOwnProperty('process') ? 'process'
-                                   : details.hasOwnProperty('finding') ? 'finding'
-                                   : 'title';
+                : details.hasOwnProperty('process') ? 'process'
+                    : details.hasOwnProperty('finding') ? 'finding'
+                        : 'title';
 
             const findingFieldName = details.hasOwnProperty('description') ? 'description'
-                                    : 'finding'
+                : 'finding'
 
             return (
                 <>
@@ -237,14 +248,14 @@ const EditNoticePage = () => {
         const currentHistory = editingNotice.history || [];
         const updatedHistory = [...currentHistory, newHistoryEntry];
 
-         let noticeTitle = editingNotice.title;
-         if (values.category === 'Process Audit') {
+        let noticeTitle = editingNotice.title;
+        if (values.category === 'Process Audit') {
             noticeTitle = values.details?.title || values.details?.process || values.details?.finding || noticeTitle;
-         } else if (values.category === 'SEM') {
+        } else if (values.category === 'SEM') {
             noticeTitle = values.details?.parameter || values.details?.criteria || noticeTitle;
-         } else {
-             noticeTitle = values.details?.title || noticeTitle;
-         }
+        } else {
+            noticeTitle = values.details?.title || noticeTitle;
+        }
 
 
         const noticeUpdates = {

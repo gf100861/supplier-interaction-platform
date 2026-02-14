@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
     Button, Modal, Form, Input, Select, Tag, Typography, Card,
     Popconfirm, Space, Tooltip, Divider, Spin,
@@ -88,6 +88,7 @@ const AuditPlanPage = () => {
     const { messageApi } = useNotification();
     const navigate = useNavigate();
 
+
     const [isFullScreen, setIsFullScreen] = useState(false);
 
     // --- 筛选器 State ---
@@ -112,16 +113,37 @@ const AuditPlanPage = () => {
         return options;
     }, []);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
+        const token = localStorage.getItem('access_token');
+
+        // 安全检查
+        if (!token) {
+            // 如果是在页面初始化时没 Token，跳转登录
+            // 如果是后续操作丢失 Token，也跳转
+            // 这里可以加个判断，如果是静默刷新就不跳转，看你需求
+            // messageApi.error('登录凭证丢失');
+            navigate('/login');
+            return;
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+
         setLoading(true);
         try {
-            
-            const eventsRes = await fetch(`${BACKEND_URL}/api/audit-plans?year=${currentYear}`);
-            if (!eventsRes.ok) throw new Error('Fetch audit plans failed');
+            // 这里写你原本的请求逻辑
+            // 注意：如果在 URL 里用了 currentYear 等状态，要把它们加入到底部的依赖数组 []
+            const eventsRes = await fetch(`${BACKEND_URL}/api/audit-plans?year=${currentYear}`, { headers });
+
+            if (eventsRes.status === 401) throw new Error('UNAUTHORIZED');
+            if (!eventsRes.ok) throw new Error('Fetch failed');
+
             const eventsData = await eventsRes.json();
             setEvents(eventsData || []);
 
-            const configRes = await fetch(`${BACKEND_URL}/api/config`);
+            const configRes = await fetch(`${BACKEND_URL}/api/config`, { headers });
             if (!configRes.ok) throw new Error('Fetch config failed');
             const configData = await configRes.json();
             const categoriesData = Array.isArray(configData) ? configData : (configData.categories || []);
@@ -131,15 +153,22 @@ const AuditPlanPage = () => {
                 return (order[a.name] || Infinity) - (order[b.name] || Infinity);
             });
             setCategories(sortedCategories);
+
         } catch (error) {
             console.error(error);
-            messageApi.error(`加载规划数据失败: ${translateError(error.message)}`);
+            if (error.message === 'UNAUTHORIZED') {
+                navigate('/login');
+            } else {
+                messageApi.error('刷新数据失败');
+            }
         } finally {
             setLoading(false);
         }
-    };
+    }, [currentYear, navigate]); // ⚠️ 关键：所有在 fetchData 内部用到的外部变量（state, props）都要写在这里
 
-    useEffect(() => { fetchData(); }, [currentYear]);
+    useEffect(() => {
+        fetchData();
+    }, [currentYear]);
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -196,9 +225,22 @@ const AuditPlanPage = () => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
         const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
         try {
+            const token = localStorage.getItem('access_token');
+
+            // 安全检查
+            if (!token) {
+                messageApi.error('登录凭证丢失');
+                navigate('/login');
+                return;
+            }
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ id, updates: { status: newStatus, completion_date: completionDate } })
             });
             if (!response.ok) throw new Error('Update failed');
@@ -211,7 +253,21 @@ const AuditPlanPage = () => {
 
     const handleDeleteEvent = async (id) => {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, { method: 'DELETE' });
+
+            const token = localStorage.getItem('access_token');
+
+            // 安全检查
+            if (!token) {
+                messageApi.error('登录凭证丢失');
+                navigate('/login');
+                return;
+            }
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, { method: 'DELETE', headers });
             if (!response.ok) throw new Error('Delete failed');
             messageApi.success('事件已删除！');
             fetchData();
@@ -241,9 +297,22 @@ const AuditPlanPage = () => {
         }
         setLoading(true);
         try {
+            const token = localStorage.getItem('access_token');
+
+            // 安全检查
+            if (!token) {
+                messageApi.error('登录凭证丢失');
+                navigate('/login');
+                return;
+            }
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ id: item.id, updates: { planned_month: target.month, year: target.year } })
             });
             if (!response.ok) throw new Error('Reschedule failed');
@@ -295,9 +364,22 @@ const AuditPlanPage = () => {
         };
 
         try {
+            const token = localStorage.getItem('access_token');
+
+            // 安全检查
+            if (!token) {
+                messageApi.error('登录凭证丢失');
+                navigate('/login');
+                return;
+            }
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify(newEvent)
             });
 
@@ -479,8 +561,8 @@ const AuditPlanPage = () => {
 
     // 5. 封装渲染函数：用于复用矩阵渲染逻辑
     const renderMatrixTable = () => (
-        
-        
+
+
         <div style={matrixStyles.table}>
             <div style={matrixStyles.headerRow}>
                 <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>

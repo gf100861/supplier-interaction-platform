@@ -184,7 +184,7 @@ const DashboardPage = () => {
     const refHighlights = useRef(null);
     const [openTour, setOpenTour] = useState(false);
 
-    const { refreshSuppliers } = useSuppliers(); 
+    const { refreshSuppliers } = useSuppliers();
 
     // 2. 添加一个 useEffect，当进入页面 时，强制刷新一次供应商列表
     useEffect(() => {
@@ -212,10 +212,19 @@ const DashboardPage = () => {
         const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
         const completionDate = newStatus === 'completed' ? dayjs().format('YYYY-MM-DD') : null;
 
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            messageApi.error('登录凭证丢失');
+            navigate('/login');
+            return;
+        }
         try {
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // ✅ 现场组装 Header
+                },
                 body: JSON.stringify({
                     id,
                     updates: { status: newStatus, completion_date: completionDate }
@@ -231,7 +240,14 @@ const DashboardPage = () => {
 
     const handleDeleteEvent = async (id) => {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, { method: 'DELETE' });
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
+            const response = await fetch(`${BACKEND_URL}/api/audit-plans?id=${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             if (!response.ok) throw new Error('Delete failed');
             messageApi.success('事件已删除！');
             setAllPendingPlans(prevPlans => prevPlans.filter(p => p.id !== id));
@@ -273,9 +289,14 @@ const DashboardPage = () => {
         messageApi.loading({ content: '正在移动计划...', key });
 
         try {
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
             const response = await fetch(`${BACKEND_URL}/api/audit-plans`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // ✅ 现场组装 Header
+                },
                 body: JSON.stringify({
                     id: item.id,
                     updates: { planned_month: newMonth, year: newYear }
@@ -346,7 +367,21 @@ const DashboardPage = () => {
         const fetchCategories = async () => {
             setCategoriesLoading(true);
             try {
-                const response = await fetch(`${BACKEND_URL}/api/config`);
+            const token = localStorage.getItem('access_token');
+            console.log('Fetching data with token:', token);
+
+            // 安全检查：如果没有 Token，强制登出
+            if (!token) {
+                messageApi.error('登录凭证丢失，请重新登录');
+                return;
+            }
+
+            // 2. 封装统一的请求头 (Header)
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // ✅ 关键：携带 Bearer Token
+            };
+                const response = await fetch(`${BACKEND_URL}/api/config`, { headers });
                 if (!response.ok) throw new Error('Fetch config failed');
                 const data = await response.json();
                 const categoriesData = Array.isArray(data) ? data : (data.categories || []);
@@ -370,10 +405,16 @@ const DashboardPage = () => {
         }
 
         const fetchAllPendingPlans = async () => {
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
             setAllPlansLoading(true);
             try {
                 const currentYear = dayjs().year();
-                const response = await fetch(`${BACKEND_URL}/api/audit-plans?min_year=${currentYear}&status_neq=completed`);
+                const response = await fetch(`${BACKEND_URL}/api/audit-plans?min_year=${currentYear}&status_neq=completed`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
                 if (!response.ok) throw new Error('Fetch plans failed');
                 const data = await response.json();
 
