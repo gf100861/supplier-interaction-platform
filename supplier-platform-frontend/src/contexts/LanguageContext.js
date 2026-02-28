@@ -11,6 +11,23 @@ const translations = {
         // App Title
         'app.title': '供应商与SD信息交换平台',
         
+        // --- 新增：登录页面翻译 ---
+        'login.sloganTitle': '量化工作价值，驱动供应链卓越表现。',
+        'login.sloganDesc': '专为 SDE 与 Buyer 打造的智能化工作台。记录每一次拜访，追踪每一个 RFQ，让数据说话。',
+        'login.welcome': '欢迎回来',
+        'login.subWelcome': '请输入您的企业账号以访问工作台',
+        'login.emailLabel': '邮箱',
+        'login.emailPlace': '请输入注册邮箱',
+        'login.pwdLabel': '密码',
+        'login.pwdPlace': '请输入密码',
+        'login.forgot': '忘记密码?',
+        'login.loginBtn': '登录系统',
+        'login.loggingIn': '登录中...',
+        'login.footer': '© 2026 Volvo Construction Equipment. All Rights Reserved',
+        'login.noAccount': '没有账号？',
+        'login.contactAdmin': '联系管理员开通',
+        'login.privacy': '隐私政策',
+
         // Menu Items
         'menu.dashboard': '仪表盘',
         'menu.auditPlan': '年度计划',
@@ -35,7 +52,7 @@ const translations = {
         'common.logoutSuccess': '您已成功登出！',
         'menu.helpCenter': '帮助中心',
 
-        // --- 新增：Dashboard 专用翻译 ---
+        // --- Dashboard 专用翻译 ---
         'dashboard.myDashboard': '我的仪表盘',
         'dashboard.myDashboardDesc': '查看与您公司相关的核心问题指标。',
         'dashboard.opsDashboard': '运营仪表盘',
@@ -84,11 +101,27 @@ const translations = {
         'tour.step3.desc': '系统会自动筛选出近30天内未处理的紧急事项，点击“去处理”可快速跳转并筛选出对应供应商的通知单。',
         'tour.step4.title': '亮点展示',
         'tour.step4.desc': '展示近期获得点赞最多的优秀整改案例，供大家学习参考。',
-    
     },
     en: {
         // App Title
         'app.title': 'Supplier & SD Interaction Platform',
+
+        // --- NEW: Login Page Translations ---
+        'login.sloganTitle': 'Quantify Value, Drive Supply Chain Excellence.',
+        'login.sloganDesc': 'Intelligent workspace for SDEs & Buyers. Track every visit, trace every RFQ, let data speak.',
+        'login.welcome': 'Welcome Back',
+        'login.subWelcome': 'Please enter your enterprise account to access.',
+        'login.emailLabel': 'Email',
+        'login.emailPlace': 'Enter your email',
+        'login.pwdLabel': 'Password',
+        'login.pwdPlace': 'Enter password',
+        'login.forgot': 'Forgot Password?',
+        'login.loginBtn': 'Sign In',
+        'login.loggingIn': 'Signing in...',
+        'login.footer': '© 2026 Volvo Construction Equipment. All Rights Reserved',
+        'login.noAccount': 'No account?',
+        'login.contactAdmin': 'Contact admin',
+        'login.privacy': 'Privacy Policy',
 
         // Menu Items
         'menu.dashboard': 'Dashboard',
@@ -114,8 +147,7 @@ const translations = {
         'common.success': 'Success',
         'common.logoutSuccess': 'Logged out successfully!',
 
-
-        // --- NEW: Dashboard Translations ---
+        // --- Dashboard Translations ---
         'dashboard.myDashboard': 'My Dashboard',
         'dashboard.myDashboardDesc': 'View core issue metrics related to your company.',
         'dashboard.opsDashboard': 'Operations Dashboard',

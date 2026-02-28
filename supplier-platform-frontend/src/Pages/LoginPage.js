@@ -4,12 +4,12 @@ import { Eye, EyeOff, Lock, Mail, ArrowRight, Hexagon, Globe, Sun, Moon } from "
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
+import { useLanguage } from '../contexts/LanguageContext';
 import './LoginPage.css';
 
 const { Text, Link } = Typography;
 
 // --- 🔧 新增：定义后端 API 基础地址 ---
-
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 const BACKEND_URL = isDev
@@ -17,37 +17,6 @@ const BACKEND_URL = isDev
     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 
 
-// --- 1. 多语言字典配置 ---
-const TRANSLATIONS = {
-    zh: {
-        sloganTitle: "量化工作价值，驱动供应链卓越表现。",
-        sloganDesc: "专为 SDE 与 Buyer 打造的智能化工作台。记录每一次拜访，追踪每一个 RFQ，让数据说话。",
-        welcome: "欢迎回来",
-        subWelcome: "请输入您的企业账号以访问工作台",
-        emailLabel: "邮箱",
-        emailPlace: "请输入注册邮箱",
-        pwdLabel: "密码",
-        pwdPlace: "请输入密码",
-        forgot: "忘记密码?",
-        loginBtn: "登录系统",
-        loggingIn: "登录中...",
-        footer: "© 2026 Supplier Development System."
-    },
-    en: {
-        sloganTitle: "Quantify Value, Drive Supply Chain Excellence.",
-        sloganDesc: "Intelligent workspace for SDEs & Buyers. Track every visit, trace every RFQ, let data speak.",
-        welcome: "Welcome Back",
-        subWelcome: "Please enter your enterprise account to access.",
-        emailLabel: "Email",
-        emailPlace: "Enter your email",
-        pwdLabel: "Password",
-        pwdPlace: "Enter password",
-        forgot: "Forgot Password?",
-        loginBtn: "Sign In",
-        loggingIn: "Signing in...",
-        footer: "© 2026 Supplier Development System."
-    }
-};
 // --- 错误翻译函数 (保持不变) ---
 const translateError = (errorMsg) => {
     const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
@@ -112,7 +81,7 @@ const logSystemEvent = async (params) => {
             referrer: document.referrer
         };
 
-        //  使用 API_BASE_URL 拼接完整路径
+        // 使用 API_BASE_URL 拼接完整路径
         await fetch(`${targetUrl}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -137,28 +106,42 @@ const logSystemEvent = async (params) => {
 };
 
 
+// --- ✨ 新增：中英双语轮播句子 ---
+const SLOGAN_SENTENCES = {
+    zh: [
+        "打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。",
+        "通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。",
+        "自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。",
+        "连接每一个环节，实现智能决策。"
+    ],
+    en: [
+        "Break down departmental barriers, track the lifecycle of every issue in real-time, from discovery to resolution.",
+        "Identify recurring issues through powerful data analysis, quantify supplier performance, and drive continuous improvement.",
+        "Automate processes and streamline communication, allowing every SDE and supplier to focus on core value.",
+        "Connect every link, achieve intelligent decision-making."
+    ]
+};
 
 
-
-// --- 1. 定义轮播的句子数组 ---
-const SLOGAN_SENTENCES = [
-    "打破部门壁垒，实时追踪每一个问题的生命周期，从发现到解决。",
-    "通过强大的数据分析，识别重复问题，量化供应商表现，驱动持续改进。",
-    "自动化流程，简化沟通，让每一位SD和供应商都能聚焦于核心价值。",
-    "连接每一个环节，实现智能决策。"
-];
-
-// --- 2. 新增：高级打字机 Hook (支持数组循环 + 删除效果) ---
-const useTypewriterLoop = (sentences, typeSpeed = 100, deleteSpeed = 50, pauseTime = 2000) => {
+// --- 高级打字机 Hook (支持数组循环 + 删除效果 + 语言切换响应) ---
+const useTypewriterLoop = (sentences, typeSpeed = 100, deleteSpeed = 30, pauseTime = 2500) => {
     const [text, setText] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
     const [loopNum, setLoopNum] = useState(0);
     const [typingSpeed, setTypingSpeed] = useState(typeSpeed);
 
+    // 当传入的 sentences 数组改变时（例如切换了语言），重置打字机状态
+    useEffect(() => {
+        setText('');
+        setIsDeleting(false);
+        setLoopNum(0);
+        setTypingSpeed(typeSpeed);
+    }, [sentences, typeSpeed]);
+
     useEffect(() => {
         let timer;
-
         const handleType = () => {
+            if (!sentences || sentences.length === 0) return;
             const i = loopNum % sentences.length;
             const fullText = sentences[i];
 
@@ -197,22 +180,17 @@ const LoginPage = () => {
     const [showPassword, setShowPassword] = useState(false);
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
-
+   
     // 记录页面初始化时间
     const pageInitTime = useRef(Date.now());
     // 记录表单交互
     const [isAutoFill, setIsAutoFill] = useState(false);
 
-
-    // --- 2. 新增状态：深色模式 & 语言 ---
-    // 优先读取本地缓存，如果没有则默认 'zh' 和 false
-    const [lang, setLang] = useState(() => localStorage.getItem('app_lang') || 'zh');
+    // --- 🌍 接入全局语言和深色模式状态 ---
+    const { language: lang, toggleLanguage: toggleLang, t } = useLanguage();
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('app_theme') === 'dark');
 
-    // 获取当前语言的文本
-    const t = TRANSLATIONS[lang];
-
-    // --- 3. 处理深色模式切换 ---
+    // 处理深色模式切换
     useEffect(() => {
         const root = window.document.documentElement;
         if (isDarkMode) {
@@ -223,13 +201,6 @@ const LoginPage = () => {
             localStorage.setItem('app_theme', 'light');
         }
     }, [isDarkMode]);
-
-    // --- 4. 处理语言切换 ---
-    const toggleLang = () => {
-        const newLang = lang === 'zh' ? 'en' : 'zh';
-        setLang(newLang);
-        localStorage.setItem('app_lang', newLang);
-    };
 
     useEffect(() => {
         // 全局错误监听
@@ -277,16 +248,16 @@ const LoginPage = () => {
     };
 
     const handleSubmit = (e) => {
-        e.preventDefault(); // 1. 阻止浏览器默认刷新页面的行为
+        e.preventDefault(); // 阻止浏览器默认刷新页面的行为
 
-        // 2. 从表单中提取数据
+        // 从表单中提取数据
         const formData = new FormData(e.currentTarget);
         const values = {
             email: formData.get('email'),
             password: formData.get('password'),
         };
 
-        // 3. 手动调用你原本的逻辑
+        // 手动调用逻辑
         onFinish(values);
     };
 
@@ -306,8 +277,6 @@ const LoginPage = () => {
         });
 
         try {
-            // ✅ 修改点 2: 使用 API_BASE_URL 拼接完整路径
-            // 后端对应 server.js 中的 app.post('/api/auth/login', ...)
             const apiPath = isDev ? '/api/auth/login' : '/api/auth/login';
             const targetUrl = `${BACKEND_URL}${apiPath}`;
             const response = await fetch(`${targetUrl}`, {
@@ -328,7 +297,7 @@ const LoginPage = () => {
 
             // result 应该包含 { user: ..., session: ... }
             const userData = result.user;
-            const sessionData = result.session; // 👈 获取后端返回的 session
+            const sessionData = result.session; // 获取后端返回的 session
 
             if (sessionData) {
                 const { error: setSessionError } = await supabase.auth.setSession({
@@ -338,7 +307,6 @@ const LoginPage = () => {
 
                 if (setSessionError) {
                     console.error("前端设置 Session 失败:", setSessionError);
-                    // 可以选择抛出错误，或者继续（但刷新后会掉登录）
                 }
 
                 localStorage.setItem('access_token', sessionData.access_token);
@@ -361,7 +329,7 @@ const LoginPage = () => {
                 }
             });
 
-            messageApi.success('登录成功!');
+            messageApi.success(t('common.success'));
             localStorage.setItem('user', JSON.stringify(userData));
 
             navigate('/');
@@ -390,12 +358,11 @@ const LoginPage = () => {
         }
     };
 
-    const typedSlogan = useTypewriterLoop(SLOGAN_SENTENCES);
+    // ✨ 动态获取当前语言的句子数组进行轮播
+    const currentSentences = SLOGAN_SENTENCES[lang] || SLOGAN_SENTENCES['zh'];
+    const typedSlogan = useTypewriterLoop(currentSentences);
 
     return (
-
-
-
         <div className="flex min-h-screen w-full bg-white">
 
             {/* --- ✨ 右上角悬浮控制栏 (UI 协调的核心) --- */}
@@ -417,10 +384,10 @@ const LoginPage = () => {
                     {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
             </div>
+            
             {/* --- 左侧：视觉装饰区 (Desktop Only) --- */}
             <div className="hidden lg:flex w-1/2 bg-slate-900 relative overflow-hidden flex-col justify-between p-12 text-white">
                 {/* 背景装饰：动态感的圆环/光晕 */}
-
                 <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none overflow-hidden">
                     {/* 1. 蓝色光晕 - 增加呼吸动画 */}
                     <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600 rounded-full blur-3xl mix-blend-screen animate-blob"></div>
@@ -428,7 +395,7 @@ const LoginPage = () => {
                     {/* 2. 紫色光晕 - 增加呼吸动画 + 延迟 */}
                     <div className="absolute top-1/3 left-1/2 w-[500px] h-[500px] bg-purple-600 rounded-full blur-3xl mix-blend-screen -translate-x-1/2 animate-blob animation-delay-2000"></div>
 
-                    {/* 3. (可选) 新增一个青色光晕在底部，增加层次感 */}
+                    {/* 3. 新增一个青色光晕在底部，增加层次感 */}
                     <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-cyan-600 rounded-full blur-3xl mix-blend-screen animate-blob animation-delay-4000"></div>
                 </div>
 
@@ -442,13 +409,12 @@ const LoginPage = () => {
 
                 {/* 中间 Slogan */}
                 <div className="relative z-10 max-w-lg">
-                    <h2 className="text-4xl font-bold leading-tight mb-6">
-                        协作共赢，<br />
-                        驱动供应链卓越表现
+                    <h2 className="text-4xl font-bold leading-tight mb-6 whitespace-pre-wrap">
+                        {t('login.sloganTitle')}
                     </h2>
 
-                    {/* 👇 替换原本静态的 <p> 标签 */}
-                    <div className="h-24"> {/* 给一个固定高度，防止文字换行时页面抖动 */}
+                    {/* 打字机效果区域 */}
+                    <div className="h-28">
                         <p className="text-slate-400 text-lg leading-relaxed font-mono">
                             {typedSlogan}
                             {/* 光标闪烁效果 */}
@@ -459,25 +425,26 @@ const LoginPage = () => {
 
                 {/* 底部版权/信息 */}
                 <div className="relative z-10 text-sm text-slate-500">
-                    © {new Date().getFullYear()} Volvo Construction Equipment. All Rights Reserved.
+                    {t('login.footer')}
                 </div>
             </div>
 
             {/* --- 右侧：登录表单区 --- */}
             <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative overflow-hidden">
                 <div className="w-full max-w-md space-y-8">
+                    {/* 👇 添加 pointer-events-none 阻止光斑拦截鼠标事件 */}
                     {/* 光斑 1：蓝色 (左上) */}
-                    <div className="absolute top-0 left-0 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+                    <div className="absolute top-0 left-0 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob pointer-events-none"></div>
 
                     {/* 光斑 2：紫色 (右上) - 延迟2秒 */}
-                    <div className="absolute top-0 right-0 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+                    <div className="absolute top-0 right-0 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000 pointer-events-none"></div>
 
                     {/* 光斑 3：粉色 (底部) - 延迟4秒 */}
-                    <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+                    <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000 pointer-events-none"></div>
 
 
                     {/* 移动端 Logo (仅在手机显示) */}
-                    <div className="flex lg:hidden items-center gap-2 mb-8">
+                    <div className="flex lg:hidden items-center gap-2 mb-8 relative z-10">
                         <div className="bg-blue-600 p-2 rounded-lg">
                             <Hexagon className="w-6 h-6 text-white fill-current" />
                         </div>
@@ -485,20 +452,20 @@ const LoginPage = () => {
                     </div>
 
                     {/* 欢迎语 */}
-                    <div>
+                    <div className="relative z-10">
                         <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-                            欢迎回来
+                            {t('login.welcome')}
                         </h2>
                         <p className="mt-2 text-sm text-slate-600">
-                            请输入您的账号以访问工作台
+                            {t('login.subWelcome')}
                         </p>
                     </div>
 
 
                     <form
-                        className="mt-8 space-y-6"
-                        onSubmit={handleSubmit}      // ✅ 正确：绑定原生提交事件
-                        onChange={handleFormChange}  // ✅ 正确：原生监听输入变化用 onChange
+                        className="mt-8 space-y-6 relative z-10"
+                        onSubmit={handleSubmit}
+                        onChange={handleFormChange}
                         autoComplete="off"
                     >
                         <div className="space-y-5">
@@ -506,7 +473,7 @@ const LoginPage = () => {
                             {/* 邮箱输入 */}
                             <div>
                                 <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-                                    邮箱
+                                    {t('login.emailLabel')}
                                 </label>
                                 <div className="mt-1 relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -518,7 +485,7 @@ const LoginPage = () => {
                                         type="email"
                                         required
                                         className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                        placeholder="请输入注册邮箱"
+                                        placeholder={t('login.emailPlace')}
                                     />
                                 </div>
                             </div>
@@ -526,7 +493,7 @@ const LoginPage = () => {
                             {/* 密码输入 */}
                             <div>
                                 <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-                                    密码
+                                    {t('login.pwdLabel')}
                                 </label>
                                 <div className="mt-1 relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -538,7 +505,7 @@ const LoginPage = () => {
                                         type={showPassword ? "text" : "password"}
                                         required
                                         className="block w-full pl-10 pr-10 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                        placeholder="请输入密码"
+                                        placeholder={t('login.pwdPlace')}
                                     />
                                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                                         <button
@@ -555,14 +522,14 @@ const LoginPage = () => {
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-end mt-2">
-                                    <Link href="/forgot-password" target="_blank">忘记密码？</Link>
+                                    <Link href="/forgot-password" target="_blank">{t('login.forgot')}</Link>
                                 </div>
                             </div>
                         </div>
 
                         {/* 登录按钮 */}
                         <button
-                            type="primary"
+                            type="submit"
                             disabled={loading}
                             className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                         >
@@ -572,36 +539,36 @@ const LoginPage = () => {
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    登录中...
+                                    {t('login.loggingIn')}
                                 </span>
                             ) : (
                                 <span className="flex items-center gap-2">
-                                    登录系统 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                    {t('login.loginBtn')} <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                 </span>
                             )}
                         </button>
                     </form>
-                    <p className="mt-2 text-center text-sm text-slate-600">
-                        还没有账号?{" "}
+                    
+                    {/* 👇 添加 relative z-10 提升层级，防止被背景遮挡 */}
+                    <div className="relative z-10 mt-2 text-center text-sm text-slate-600">
+                        {t('login.noAccount')}{" "}
                         <Link href="mailto:louis.xin@volvo.com" className="font-medium text-blue-600 hover:text-blue-400">
-                            联系管理员开通
+                            {t('login.contactAdmin')}
                         </Link>
-                    </p>
+                    </div>
 
-                    <Divider style={{ margin: '10px 0' }} />
+                    <Divider style={{ margin: '10px 0' }} className="relative z-10" />
 
-                    <div style={{ textAlign: 'center', marginTop: '12px' }} >
+                    <div className="relative z-10 text-center mt-3" style={{marginTop:'10px'}}>
                         <Text type="secondary" style={{ fontSize: '12px' }} className="font-medium text-blue-600 hover:text-blue-500">
-                            <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>帮助中心</Link>
+                            <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>{t('menu.helpCenter')}</Link>
                             <Divider type="vertical" />
-                            <Link href="/privacy-settings" target="_blank" style={{ fontSize: '12px' }}>隐私政策</Link>
+                            <Link href="/privacy-settings" target="_blank" style={{ fontSize: '12px' }}>{t('login.privacy')}</Link>
                         </Text>
                     </div>
                 </div>
             </div>
         </div>
-
-
     );
 };
 
