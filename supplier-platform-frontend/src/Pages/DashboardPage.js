@@ -368,7 +368,6 @@ const DashboardPage = () => {
             setCategoriesLoading(true);
             try {
             const token = localStorage.getItem('access_token');
-            console.log('Fetching data with token:', token);
 
             // 安全检查：如果没有 Token，强制登出
             if (!token) {

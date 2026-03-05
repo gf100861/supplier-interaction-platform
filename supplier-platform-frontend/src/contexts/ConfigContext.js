@@ -22,8 +22,6 @@ export const ConfigProvider = ({ children }) => {
             try {
 
             const token = localStorage.getItem('access_token');
-            console.log('Fetching data with token:', token);
-
             // 安全检查：如果没有 Token，强制登出
             if (!token) {
                 messageApi.error('登录凭证丢失，请重新登录');

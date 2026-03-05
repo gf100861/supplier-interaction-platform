@@ -42,13 +42,13 @@ const getStatusTag = (status) => {
     let color;
     switch (status) {
         case '待提交Action Plan':
-        case '待供应商处理': color = 'processing'; break;
+        case '待供应商上传证据': color = 'processing'; break;
         case '待供应商关闭': color = 'warning'; break;
         case '待SD确认actions': color = 'red'; break;
         case '待SD关闭evidence' || '待SD审核关闭': color = 'orange'; break;
-        case '待SD审核计划': color = 'purple'; break;
+        case '待SD审核关闭': color = 'purple'; break;
         case '已完成': color = 'success'; break;
-        case '已作废': color = 'default'; break;
+        case '已作废': color = 'grey'; break;
         default: color = 'default';
     }
     return <Tag color={color} style={{ marginRight: 0 }}>{status}</Tag>;

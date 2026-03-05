@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-   Grid, Card, Typography, Tabs, Space, Button, Form, Input, Spin,  Select, Radio, Popconfirm, DatePicker, Tooltip, theme // 1. 引入 DatePicker
+    Grid, Card, Typography, Tabs, Space, Button, Form, Input, Spin, Select, Radio, Popconfirm, DatePicker, Tooltip, theme // 1. 引入 DatePicker
 } from 'antd';
 import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined, FilterOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
@@ -48,7 +48,7 @@ const HighlightText = ({ text, keyword }) => {
 
     return (
         <span>
-            {parts.map((part, i) => 
+            {parts.map((part, i) =>
                 regex.test(part) ? (
                     <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
                         {part}
@@ -77,7 +77,7 @@ const NoticePage = () => {
     const screens = useBreakpoint();
     // 这里的判断逻辑：如果没有 md (>=768px)，则认为是移动端
     // 注意：screens 初始可能为空对象，增加非 undefined 判断
-    const isMobile = screens.md === false; 
+    const isMobile = screens.md === false;
 
 
     const allPossibleStatuses = [
@@ -103,8 +103,21 @@ const NoticePage = () => {
     const [listSortOrder, setListSortOrder] = useState('desc');
 
     const [isReassigning, setIsReassigning] = useState(false);
+    const [actionLoading, setActionLoading] = useState({});
 
     const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
+    // 编写一个通用的异步点击处理函数
+    const handleActionClick = async (e, noticeId, actionName, actionFn) => {
+        e.stopPropagation(); // 阻止行点击事件（比如点按钮不小心打开了详情页）
+        const key = `${noticeId}_${actionName}`; // 例如 "123_approve"
+
+        setActionLoading(prev => ({ ...prev, [key]: true })); // 开启当前按钮动画
+        try {
+            await actionFn(); // 执行你的批准逻辑
+        } finally {
+            setActionLoading(prev => ({ ...prev, [key]: false })); // 关闭动画
+        }
+    };
 
     // --- 6. 为 Supplier 和 DateRange 添加 State ---
     const [selectedSuppliers, setSelectedSuppliers] = useState([]);
@@ -119,6 +132,8 @@ const NoticePage = () => {
             setViewMode('flat');
         }
     }, [isMobile]);
+
+
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -249,7 +264,25 @@ const NoticePage = () => {
 
     // --- 8. 更新 searchedNotices useMemo 以包含新筛选 ---
     const searchedNotices = useMemo(() => {
+        // 1. 首先根据用户角色进行初步筛选，确保 SD 只能看到自己负责的供应商的通知单
+
         let data = userVisibleNotices;
+
+        if (currentUser?.role === 'SD') {
+
+            //可能会有性能问题，后续可以优化为先筛选出 SD 负责的供应商 ID 列表，再进行一次性过滤，而不是对每条通知单都进行 some() 判断
+
+            data = userVisibleNotices.filter(n => currentUser?.managed_suppliers?.some(s => s.supplier.id === n.assignedSupplierId))
+        } else if (currentUser?.role === 'Supplier') {
+
+            data = userVisibleNotices.filter(n => n.supplier.shortCode === currentUser?.username)
+
+            console.log('非SD用户，已筛选数据量:', data);
+        } else {
+
+            data = userVisibleNotices;
+        }
+
 
         // 类别筛选
         if (selectedCategories && selectedCategories.length > 0) {
@@ -525,7 +558,7 @@ const NoticePage = () => {
     };
 
 
-   // 4. 供应商提交完成证据
+    // 4. 供应商提交完成证据
     const handleEvidenceSubmit = async (values) => {
         const notice = selectedNotice;
         if (!notice) return;
@@ -847,8 +880,42 @@ const NoticePage = () => {
         if (currentUser.role === 'SD' || currentUser.role === 'Manager') {
             // 审批计划阶段（兼容不同文案）
             if (item.status === '待SD确认actions' || item.status === '待SD确认actions计划') {
-                actions.push(<Button key="quick_approve_plan" type="link" onClick={(e) => stopPropagationAndRun(e, () => handlePlanApprove(item))}>批准计划</Button>);
-                actions.push(<Button key="quick_reject_plan" type="link" danger onClick={(e) => stopPropagationAndRun(e, () => showRejectionModal(item, handlePlanReject))}>驳回计划</Button>);
+
+                // 1. 批准计划：加入 Popconfirm 二次确认过渡，并附带专属 Loading 动画
+                actions.push(
+                    <Popconfirm
+                        key="quick_approve_plan"
+                        title="确认批准"
+                        description="确定要批准此行动计划吗？"
+                        onConfirm={(e) => handleActionClick(e, item.id, 'approve', () => handlePlanApprove(item))}
+                        onCancel={(e) => e.stopPropagation()}
+                        okText="确认"
+                        cancelText="取消"
+                    >
+                        <Button
+                            type="link"
+                            loading={actionLoading[`${item.id}_approve`]}
+                            onClick={(e) => e.stopPropagation()} // 阻止事件冒泡，交由 Popconfirm 处理
+                        >
+                            批准计划
+                        </Button>
+                    </Popconfirm>
+                );
+
+                // 2. 驳回计划：直接弹出驳回理由弹窗
+                actions.push(
+                    <Button
+                        key="quick_reject_plan"
+                        type="link"
+                        danger
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            showRejectionModal(item, handlePlanReject);
+                        }}
+                    >
+                        驳回计划
+                    </Button>
+                );
             }
             // 关闭阶段
             if (item.status === '待SD关闭evidence') {
@@ -924,7 +991,7 @@ const NoticePage = () => {
                     if (tab.key === 'historical_8d') {
                         // 如果是“历史8D”标签，筛选 category 为 'Historical 8D' 的通知单
                         filteredData = searchedNotices.filter(n => n.category === 'Historical 8D');
-                        
+
                         // 对分组数据的筛选逻辑也需要同步修改
                         // 假设 groupedNotices 中的每个 group 要么自身有属性标识 category，
                         // 要么我们需要检查其包含的 notices 是否符合条件
@@ -954,7 +1021,7 @@ const NoticePage = () => {
                         <TabPane tab={`${tab.label} (${filteredData.length})`} key={tab.key}>
                             <NoticeList
                                 data={tabGroupedData}
-                                searchTerm={searchTerm} 
+                                searchTerm={searchTerm}
                                 getActionsForItem={getActionsForItem}
                                 showDetailsModal={showDetailsModal}
                                 handleReviewToggle={handleReviewToggle}
@@ -981,12 +1048,12 @@ const NoticePage = () => {
 
     // --- 移动端专属渲染逻辑 ---
     const renderMobileView = () => {
-         return (
+        return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Title level={4} style={{ margin: 0 }}>整改通知单</Title>
                     <span style={{ color: '#999', fontSize: '12px' }}>共 {searchedNotices.length} 条</span>
-                 </div>
+                </div>
 
                 {/* 1. 搜索栏 (全宽) */}
                 <Search
@@ -1027,17 +1094,17 @@ const NoticePage = () => {
                         options={allPossibleStatuses.map(s => ({ label: s, value: s }))}
                     />
                 </div>
-                 
-                 {/* 3. 排序按钮 (可选，如果空间允许) */}
-                 <div style={{ display: 'flex', justifyContent: 'flex-end'}}>
-                     <Button 
-                         size="small"
-                         icon={listSortOrder === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
-                         onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                     >
-                         {listSortOrder === 'asc' ? '按时间: 旧→新' : '按时间: 新→旧'}
-                     </Button>
-                 </div>
+
+                {/* 3. 排序按钮 (可选，如果空间允许) */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                        size="small"
+                        icon={listSortOrder === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
+                        onClick={() => setListSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    >
+                        {listSortOrder === 'asc' ? '按时间: 旧→新' : '按时间: 新→旧'}
+                    </Button>
+                </div>
 
                 {/* 4. 列表区域 - 直接渲染 NoticeList，不使用 Tabs */}
                 {noticesLoading && notices.length === 0 ? (
@@ -1045,7 +1112,7 @@ const NoticePage = () => {
                 ) : (
                     <NoticeList
                         // 在移动端 viewMode 被强制为 flat，groupedNotices 会返回打散的列表
-                        data={groupedNotices} 
+                        data={groupedNotices}
                         searchTerm={searchTerm}
                         getActionsForItem={getActionsForItem}
                         showDetailsModal={showDetailsModal}
@@ -1064,7 +1131,7 @@ const NoticePage = () => {
                     />
                 )}
 
-                 {/* 加载更多 */}
+                {/* 加载更多 */}
                 <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 24 }}>
                     {hasMore ? (
                         <Button
@@ -1082,8 +1149,8 @@ const NoticePage = () => {
     }
 
 
-    const supplier_special_text ='若您找不到下载模板选项，请您筛选待提交ActionPlan并点击分组'
-    
+    const supplier_special_text = '若您找不到下载模板选项，请您筛选待提交ActionPlan并点击分组'
+
     return (
         <div style={{ padding: isMobile ? '12px' : '24px' }}>
             {/* 移动端 vs 桌面端 布局切换 */}
@@ -1094,7 +1161,7 @@ const NoticePage = () => {
                             <div>
                                 <Title level={4} style={{ margin: 0 }}>整改通知单</Title>
                                 <Paragraph type="secondary" style={{ margin: 0, marginTop: '4px' }}>审批，点赞和处理通知单 {currentUser.role === 'Supplier' ? supplier_special_text : ''}</Paragraph>
-                            
+
                             </div>
 
                             <Space wrap>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout, Menu, Input, Button, List, Card, Typography, Spin, Avatar, Space, Tooltip, Rate, Modal, Popconfirm, Tag, Select, Form, Tabs, message } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, LikeOutlined, DislikeOutlined, StarOutlined, PlusOutlined, DeleteOutlined, ThunderboltOutlined, MenuUnfoldOutlined, MenuFoldOutlined, LikeFilled, DislikeFilled, SettingOutlined } from '@ant-design/icons';
+import { CheckOutlined,SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, LikeOutlined, DislikeOutlined, StarOutlined, PlusOutlined, DeleteOutlined, ThunderboltOutlined, MenuUnfoldOutlined, MenuFoldOutlined, LikeFilled, DislikeFilled, SettingOutlined, CopyOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useNotices } from '../contexts/NoticeContext';
 import { NoticeDetailModal } from '../Components/notice/NoticeDetailModal';
@@ -94,6 +94,9 @@ const IntelligentSearchPage = () => {
     const [activeSessionId, setActiveSessionId] = useState(null);
     const [collapsed, setCollapsed] = useState(false);
 
+    // 在您的 Chat 组件开头（和 inputValue, messages 等 State 放在一起）
+    const [contextDocs, setContextDocs] = useState(null);
+
     // 状态
     const [isLoading, setIsLoading] = useState(false);
     const [isHistoryLoading, setIsHistoryLoading] = useState(true);
@@ -102,6 +105,8 @@ const IntelligentSearchPage = () => {
     const [liveTimer, setLiveTimer] = useState(0.0);
     const timerRef = useRef(null);
 
+    // 用于记录当前哪个消息被复制了，以便显示“打勾”动画
+    const [copiedMsgId, setCopiedMsgId] = useState(null);
 
     const { notices } = useNotices();
     const [detailsModal, setDetailsModal] = useState({ visible: false, notice: null });
@@ -117,13 +122,14 @@ const IntelligentSearchPage = () => {
     const [currentRating, setCurrentRating] = useState(0);
     const [ratingComment, setRatingComment] = useState('');
 
+
+
+    // 建议：当用户切换会话（activeSessionId 改变）或者点击“新对话”时，清空这个上下文
+    useEffect(() => { setContextDocs(null); }, [activeSessionId]);
+
     const navigate = useNavigate();
 
     const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-    // const BACKEND_URL = isDev
-    //     ? 'http://localhost:3001'  // 本地开发环境
-    //     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 
     const MODEL_OPTIONS = [
         { label: 'Google Gemini', value: 'gemini' },
@@ -160,6 +166,34 @@ const IntelligentSearchPage = () => {
     }, []);
 
 
+    // 处理复制逻辑
+    const handleCopyMessage = (msgId, content) => {
+        // 兼容处理：如果您的 content 是 JSON 字符串（比如包含 sources 等），需要提取出纯文本 answer
+        let textToCopy = content;
+        try {
+            const parsed = JSON.parse(content);
+            if (parsed.answer) {
+                textToCopy = parsed.answer;
+            }
+        } catch (e) {
+            // 如果不是 JSON，就直接复制原文
+        }
+
+        navigator.clipboard.writeText(textToCopy)
+            .then(() => {
+                setCopiedMsgId(msgId);
+                messageApi.success('已复制到剪贴板');
+                // 2秒后恢复原图标
+                setTimeout(() => {
+                    setCopiedMsgId(null);
+                }, 2000);
+            })
+            .catch(() => {
+                messageApi.error('复制失败，请重试');
+            });
+    };
+
+
 
     // --- 全局错误监听 ---
     useEffect(() => {
@@ -183,11 +217,11 @@ const IntelligentSearchPage = () => {
         const accessToken = session?.access_token;
         try {
             // ✅ 改为调用后端 GET
-            const response = await fetch(`${BACKEND_URL}/api/chat/sessions?userId=${currentUser.id}`,{
+            const response = await fetch(`${BACKEND_URL}/api/chat/sessions?userId=${currentUser.id}`, {
 
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json',  'Authorization': `Bearer ${accessToken}` }
-                
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` }
+
             });
             if (!response.ok) throw new Error('Fetch sessions failed');
 
@@ -401,10 +435,31 @@ const IntelligentSearchPage = () => {
                 {msg.sender === 'system' && !msg.isThinking && (
                     <div className="message-feedback-actions" style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start', gap: 8 }}>
                         <Tooltip title="回答有帮助">
-                            <Button type="text" size="small" icon={msg.feedback === 'like' ? <LikeFilled style={{ color: '#1890ff' }} /> : <LikeOutlined />} onClick={() => handleFeedback(msg.id, 'like')} />
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={msg.feedback === 'like' ? <LikeFilled style={{ color: '#1890ff' }} /> : <LikeOutlined />}
+                                onClick={() => handleFeedback(msg.id, 'like')}
+                            />
                         </Tooltip>
+
                         <Tooltip title="不能帮助我">
-                            <Button type="text" size="small" icon={msg.feedback === 'dislike' ? <DislikeFilled style={{ color: '#ff4d4f' }} /> : <DislikeOutlined />} onClick={() => handleFeedback(msg.id, 'dislike')} />
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={msg.feedback === 'dislike' ? <DislikeFilled style={{ color: '#ff4d4f' }} /> : <DislikeOutlined />}
+                                onClick={() => handleFeedback(msg.id, 'dislike')}
+                            />
+                        </Tooltip>
+
+                        {/* 👇 新增的复制按钮 */}
+                        <Tooltip title={copiedMsgId === msg.id ? "已复制" : "复制回答"}>
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={copiedMsgId === msg.id ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+                                onClick={() => handleCopyMessage(msg.id, msg.content)}
+                            />
                         </Tooltip>
                     </div>
                 )}
@@ -508,17 +563,19 @@ const IntelligentSearchPage = () => {
     };
 
     // --- 核心：发送消息处理 (整合版) ---
+
+    // --- 核心：发送消息处理 (整合版) ---
     const handleSendMessage = async () => {
         const userQuery = inputValue.trim();
         if (!userQuery || !currentUser?.id) {
             messageApi.warning('请输入问题');
             return;
-        };
+        }
 
         setIsLoading(true);
         setLiveTimer(0); // 重置计时器
 
-        // 1. 【新增】启动打点计时器 (每 100ms 更新一次)
+        // 1. 启动打点计时器 (每 100ms 更新一次)
         if (timerRef.current) clearInterval(timerRef.current); // 防止重复启动
         timerRef.current = setInterval(() => {
             setLiveTimer(prev => parseFloat((prev + 0.1).toFixed(1)));
@@ -527,12 +584,10 @@ const IntelligentSearchPage = () => {
         const startTime = Date.now();
 
         // 1. Session 管理
-        // 在 handleSendMessage 内部
         let currentSessionId = activeSessionId;
         if (!currentSessionId) {
             const firstTitle = userQuery.length > 8 ? `${userQuery.substring(0, 8)}...` : userQuery;
 
-            // ✅ 改为调用后端 POST 创建会话
             try {
                 const sessionRes = await fetch(`${BACKEND_URL}/api/chat/sessions`, {
                     method: 'POST',
@@ -544,12 +599,14 @@ const IntelligentSearchPage = () => {
                 });
 
                 if (!sessionRes.ok) throw new Error('Create session failed');
-                const newSession = await sessionRes.json(); // 后端返回创建的 session 对象
+                const newSession = await sessionRes.json();
 
                 currentSessionId = newSession.id;
                 setActiveSessionId(currentSessionId);
                 setSessions(prev => [newSession, ...prev]);
                 setMessages([]);
+                // 新会话时确保清空旧的上下文
+                setContextDocs(null);
             } catch (err) {
                 messageApi.error('创建会话失败');
                 setIsLoading(false);
@@ -557,12 +614,12 @@ const IntelligentSearchPage = () => {
                 return;
             }
         }
+
         // 2. 乐观 UI 更新
         const tempSystemMsgId = `temp-sys-${Date.now()}`;
         setMessages(prev => [
             ...prev,
             { id: `temp-${Date.now()}`, sender: 'user', content: userQuery, timestamp: new Date().toISOString() },
-            // isThinking: true 会触发 renderMessageContent 里的计时器界面
             { id: tempSystemMsgId, sender: 'system', content: '', isThinking: true }
         ]);
         setInputValue('');
@@ -578,20 +635,28 @@ const IntelligentSearchPage = () => {
             })
         });
 
-        // 3. 路由判断 (根据环境决定是否加 .js)
+        // 3. 路由判断
         const apiPath = isDev ? '/api/smart-search' : '/api/smart-search';
         const targetUrl = `${BACKEND_URL}${apiPath}`;
 
         console.log(`[Environment] isDev=${isDev}, Requesting: ${targetUrl}`);
 
         try {
+            // ✅ 核心修改 1：构建 payload 时，加入 contextDocs
+            const payload = {
+                query: userQuery,
+                model: currentModel
+            };
+
+            // 如果我们有上一次的搜索结果，则作为上下文传给后端
+            if (contextDocs && contextDocs.length > 0) {
+                payload.contextDocs = contextDocs;
+            }
+
             const response = await fetch(targetUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    query: userQuery,
-                    model: currentModel
-                })
+                body: JSON.stringify(payload) // 传递包含了上下文的 payload
             });
 
             if (!response.ok) {
@@ -604,16 +669,20 @@ const IntelligentSearchPage = () => {
             // 4. 请求结束，停止计时
             if (timerRef.current) clearInterval(timerRef.current);
 
+            // ✅ 核心修改 2：保存本次后端返回的源文档，供下一次连续追问使用
+            if (data.sources && data.sources.length > 0) {
+                setContextDocs(data.sources);
+            }
+
             // 构造符合前端渲染结构的数据
             const resultPayload = {
                 type: "rag_result",
                 answer: data.answer,
                 sources: data.sources.map(doc => doc.id),
-                // 优先使用后端返回的精确耗时，如果没有则计算总耗时
                 thinkingTime: data.thinkingTime,
                 meta: {
                     method: 'node-hybrid',
-                    model: 'qwen-plus',
+                    model: 'qwen3-max',
                     optimizedQuery: data.optimizedQuery,
                     duration: data.thinkingTime || ((Date.now() - startTime) / 1000).toFixed(2)
                 }
@@ -629,13 +698,13 @@ const IntelligentSearchPage = () => {
                     sessionId: currentSessionId,
                     sender: 'system',
                     content: resultString,
-                    duration: data.thinkingTime // 传递耗时
+                    duration: data.thinkingTime
                 })
             });
 
             const savedSystemMsg = await saveResponse.json();
 
-            // 更新 UI：将 isThinking 设为 false，替换为真实内容
+            // 更新 UI
             setMessages(prev => prev.map(msg =>
                 msg.id === tempSystemMsgId ? { ...savedSystemMsg } : msg
             ));
@@ -644,7 +713,6 @@ const IntelligentSearchPage = () => {
             console.error(error);
             messageApi.error(`处理失败: ${error.message}`);
 
-            // 出错也要停止计时
             if (timerRef.current) clearInterval(timerRef.current);
 
             setMessages(prev => prev.map(msg =>
@@ -654,6 +722,152 @@ const IntelligentSearchPage = () => {
             setIsLoading(false);
         }
     };
+    // const handleSendMessage = async () => {
+    //     const userQuery = inputValue.trim();
+    //     if (!userQuery || !currentUser?.id) {
+    //         messageApi.warning('请输入问题');
+    //         return;
+    //     };
+
+    //     setIsLoading(true);
+    //     setLiveTimer(0); // 重置计时器
+
+    //     // 1. 【新增】启动打点计时器 (每 100ms 更新一次)
+    //     if (timerRef.current) clearInterval(timerRef.current); // 防止重复启动
+    //     timerRef.current = setInterval(() => {
+    //         setLiveTimer(prev => parseFloat((prev + 0.1).toFixed(1)));
+    //     }, 100);
+
+    //     const startTime = Date.now();
+
+    //     // 1. Session 管理
+    //     // 在 handleSendMessage 内部
+    //     let currentSessionId = activeSessionId;
+    //     if (!currentSessionId) {
+    //         const firstTitle = userQuery.length > 8 ? `${userQuery.substring(0, 8)}...` : userQuery;
+
+    //         // ✅ 改为调用后端 POST 创建会话
+    //         try {
+    //             const sessionRes = await fetch(`${BACKEND_URL}/api/chat/sessions`, {
+    //                 method: 'POST',
+    //                 headers: { 'Content-Type': 'application/json' },
+    //                 body: JSON.stringify({
+    //                     userId: currentUser.id,
+    //                     title: firstTitle
+    //                 })
+    //             });
+
+    //             if (!sessionRes.ok) throw new Error('Create session failed');
+    //             const newSession = await sessionRes.json(); // 后端返回创建的 session 对象
+
+    //             currentSessionId = newSession.id;
+    //             setActiveSessionId(currentSessionId);
+    //             setSessions(prev => [newSession, ...prev]);
+    //             setMessages([]);
+    //         } catch (err) {
+    //             messageApi.error('创建会话失败');
+    //             setIsLoading(false);
+    //             if (timerRef.current) clearInterval(timerRef.current);
+    //             return;
+    //         }
+    //     }
+    //     // 2. 乐观 UI 更新
+    //     const tempSystemMsgId = `temp-sys-${Date.now()}`;
+    //     setMessages(prev => [
+    //         ...prev,
+    //         { id: `temp-${Date.now()}`, sender: 'user', content: userQuery, timestamp: new Date().toISOString() },
+    //         // isThinking: true 会触发 renderMessageContent 里的计时器界面
+    //         { id: tempSystemMsgId, sender: 'system', content: '', isThinking: true }
+    //     ]);
+    //     setInputValue('');
+
+    //     await fetch(`${BACKEND_URL}/api/chat/messages`, {
+    //         method: 'POST',
+    //         headers: { 'Content-Type': 'application/json' },
+    //         body: JSON.stringify({
+    //             userId: currentUser.id,
+    //             sessionId: currentSessionId,
+    //             sender: 'user',
+    //             content: userQuery
+    //         })
+    //     });
+
+    //     // 3. 路由判断 (根据环境决定是否加 .js)
+    //     const apiPath = isDev ? '/api/smart-search' : '/api/smart-search';
+    //     const targetUrl = `${BACKEND_URL}${apiPath}`;
+
+    //     console.log(`[Environment] isDev=${isDev}, Requesting: ${targetUrl}`);
+
+    //     try {
+    //         const response = await fetch(targetUrl, {
+    //             method: 'POST',
+    //             headers: { 'Content-Type': 'application/json' },
+    //             body: JSON.stringify({
+    //                 query: userQuery,
+    //                 model: currentModel
+    //             })
+    //         });
+
+    //         if (!response.ok) {
+    //             const errData = await response.json().catch(() => ({}));
+    //             throw new Error(errData.error || `Request failed with status ${response.status}`);
+    //         }
+
+    //         const data = await response.json();
+
+    //         // 4. 请求结束，停止计时
+    //         if (timerRef.current) clearInterval(timerRef.current);
+
+    //         // 构造符合前端渲染结构的数据
+    //         const resultPayload = {
+    //             type: "rag_result",
+    //             answer: data.answer,
+    //             sources: data.sources.map(doc => doc.id),
+    //             // 优先使用后端返回的精确耗时，如果没有则计算总耗时
+    //             thinkingTime: data.thinkingTime,
+    //             meta: {
+    //                 method: 'node-hybrid',
+    //                 model: 'qwen-plus',
+    //                 optimizedQuery: data.optimizedQuery,
+    //                 duration: data.thinkingTime || ((Date.now() - startTime) / 1000).toFixed(2)
+    //             }
+    //         };
+
+    //         const resultString = JSON.stringify(resultPayload);
+
+    //         const saveResponse = await fetch(`${BACKEND_URL}/api/chat/messages`, {
+    //             method: 'POST',
+    //             headers: { 'Content-Type': 'application/json' },
+    //             body: JSON.stringify({
+    //                 userId: currentUser.id,
+    //                 sessionId: currentSessionId,
+    //                 sender: 'system',
+    //                 content: resultString,
+    //                 duration: data.thinkingTime // 传递耗时
+    //             })
+    //         });
+
+    //         const savedSystemMsg = await saveResponse.json();
+
+    //         // 更新 UI：将 isThinking 设为 false，替换为真实内容
+    //         setMessages(prev => prev.map(msg =>
+    //             msg.id === tempSystemMsgId ? { ...savedSystemMsg } : msg
+    //         ));
+
+    //     } catch (error) {
+    //         console.error(error);
+    //         messageApi.error(`处理失败: ${error.message}`);
+
+    //         // 出错也要停止计时
+    //         if (timerRef.current) clearInterval(timerRef.current);
+
+    //         setMessages(prev => prev.map(msg =>
+    //             msg.id === tempSystemMsgId ? { ...msg, content: `服务出错: ${error.message}`, isThinking: false } : msg
+    //         ));
+    //     } finally {
+    //         setIsLoading(false);
+    //     }
+    // };
 
     // 替换原来的 handleRatingSubmit 函数
     const handleRatingSubmit = async () => {

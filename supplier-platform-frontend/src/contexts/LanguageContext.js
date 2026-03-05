@@ -202,11 +202,28 @@ const translations = {
 const LanguageContext = createContext();
 
 export const LanguageProvider = ({ children }) => {
-    // 默认读取本地存储，如果没有则默认为 'zh'
-    const [language, setLanguage] = useState(localStorage.getItem('app_language') || 'zh');
+    
+    // --- 🌟 核心修改：智能获取初始语言 ---
+    const getInitialLanguage = () => {
+        // 1. 尝试从 URL 获取参数 (例如 ?lang=en)
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlLang = searchParams.get('lang');
+        
+        // 如果 URL 明确指定了支持的语言，优先使用它
+        if (urlLang === 'en' || urlLang === 'zh') {
+            return urlLang;
+        }
+        
+        // 2. 如果 URL 没有指定，再降级读取本地存储，最后默认中文
+        return localStorage.getItem('app_language') || 'zh';
+    };
+
+    // 使用智能获取函数来初始化 state
+    const [language, setLanguage] = useState(getInitialLanguage);
 
     useEffect(() => {
         console.log('LanguageContext: 语言已更新为:', language);
+        // 同步存入缓存，这样用户刷新页面去掉 ?lang=en 后，依然能保持英文
         localStorage.setItem('app_language', language);
         // 同步设置 dayjs 的语言
         dayjs.locale(language === 'zh' ? 'zh-cn' : 'en');
@@ -221,7 +238,7 @@ export const LanguageProvider = ({ children }) => {
 
     // 翻译函数
     const t = (key) => {
-        const translated = translations[language][key];
+        const translated = translations[language]?.[key];
         return translated || key;
     };
 
