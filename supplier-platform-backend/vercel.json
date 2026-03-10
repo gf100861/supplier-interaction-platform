@@ -11,5 +11,16 @@
       "source": "/api/(.*)",
       "destination": "/api/index.js"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.office.com"
+        }
+      ]
+    }
   ]
 }
