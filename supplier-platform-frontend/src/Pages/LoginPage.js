@@ -6,7 +6,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 import { useLanguage } from '../contexts/LanguageContext';
 import './LoginPage.css';
-
+import * as microsoftTeams from "@microsoft/teams-js";
 const { Text, Link } = Typography;
 
 // --- 🔧 新增：定义后端 API 基础地址 ---
@@ -99,7 +99,6 @@ const logSystemEvent = async (params) => {
                 }
             })
         });
-
     } catch (e) {
         console.warn("Logger exception:", e);
     }
@@ -129,6 +128,7 @@ const useTypewriterLoop = (sentences, typeSpeed = 100, deleteSpeed = 30, pauseTi
     const [isDeleting, setIsDeleting] = useState(false);
     const [loopNum, setLoopNum] = useState(0);
     const [typingSpeed, setTypingSpeed] = useState(typeSpeed);
+
 
     // 当传入的 sentences 数组改变时（例如切换了语言），重置打字机状态
     useEffect(() => {
@@ -189,6 +189,56 @@ const LoginPage = () => {
     // --- 🌍 接入全局语言和深色模式状态 ---
     const { language: lang, toggleLanguage: toggleLang, t } = useLanguage();
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('app_theme') === 'dark');
+
+    useEffect(() => {
+    const tryTeamsAutoLogin = async () => {
+        try {
+            await microsoftTeams.app.initialize();
+
+            const context = await microsoftTeams.app.getContext();
+
+            const email = context.user?.userPrincipalName;
+            const teamsId = context.user?.id;
+
+            console.log("Teams user:", email, teamsId);
+
+            if (email) {
+                // 自动登录 API
+                const response = await fetch(`${BACKEND_URL}/api/auth/teams-login`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        teamsId: teamsId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.user) {
+
+                    if (result.session) {
+                        await supabase.auth.setSession({
+                            access_token: result.session.access_token,
+                            refresh_token: result.session.refresh_token
+                        });
+                    }
+
+                    localStorage.setItem('user', JSON.stringify(result.user));
+
+                    navigate('/');
+                }
+            }
+
+        } catch (err) {
+            console.log("Not running inside Teams or Teams login skipped.");
+        }
+    };
+
+    tryTeamsAutoLogin();
+}, []);
 
     // 处理深色模式切换
     useEffect(() => {
