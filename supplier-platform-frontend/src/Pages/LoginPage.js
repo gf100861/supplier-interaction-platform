@@ -197,43 +197,45 @@ const LoginPage = () => {
 
             const context = await microsoftTeams.app.getContext();
 
+            console.log("Teams context:", context);
+
             const email = context.user?.userPrincipalName;
             const teamsId = context.user?.id;
 
             console.log("Teams user:", email, teamsId);
 
-            if (email) {
-                // 自动登录 API
-                const response = await fetch(`${BACKEND_URL}/api/auth/teams-login`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        email: email,
-                        teamsId: teamsId
-                    })
-                });
+            // if (email) {
+            //     // 自动登录 API
+            //     const response = await fetch(`${BACKEND_URL}/api/auth/teams-login`, {
+            //         method: "POST",
+            //         headers: {
+            //             "Content-Type": "application/json"
+            //         },
+            //         body: JSON.stringify({
+            //             email: email,
+            //             teamsId: teamsId
+            //         })
+            //     });
 
-                const result = await response.json();
+            //     const result = await response.json();
 
-                if (response.ok && result.user) {
+            //     if (response.ok && result.user) {
 
-                    if (result.session) {
-                        await supabase.auth.setSession({
-                            access_token: result.session.access_token,
-                            refresh_token: result.session.refresh_token
-                        });
-                    }
+            //         if (result.session) {
+            //             await supabase.auth.setSession({
+            //                 access_token: result.session.access_token,
+            //                 refresh_token: result.session.refresh_token
+            //             });
+            //         }
 
-                    localStorage.setItem('user', JSON.stringify(result.user));
+            //         localStorage.setItem('user', JSON.stringify(result.user));
 
-                    navigate('/');
-                }
-            }
+            //         navigate('/');
+            //     }
+            // }
 
         } catch (err) {
-            console.log("Not running inside Teams or Teams login skipped.");
+            console.log("Not running inside Teams or Teams login skipped.",err);
         }
     };
 
