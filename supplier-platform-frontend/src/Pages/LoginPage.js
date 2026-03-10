@@ -190,56 +190,29 @@ const LoginPage = () => {
     const { language: lang, toggleLanguage: toggleLang, t } = useLanguage();
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('app_theme') === 'dark');
 
-    useEffect(() => {
+  useEffect(() => {
+
     const tryTeamsAutoLogin = async () => {
         try {
+
+            if (!window.microsoftTeams && !window.parent) {
+                console.log("Not running inside Teams");
+                return;
+            }
+
             await microsoftTeams.app.initialize();
 
             const context = await microsoftTeams.app.getContext();
 
             console.log("Teams context:", context);
 
-            const email = context.user?.userPrincipalName;
-            const teamsId = context.user?.id;
-
-            console.log("Teams user:", email, teamsId);
-
-            // if (email) {
-            //     // 自动登录 API
-            //     const response = await fetch(`${BACKEND_URL}/api/auth/teams-login`, {
-            //         method: "POST",
-            //         headers: {
-            //             "Content-Type": "application/json"
-            //         },
-            //         body: JSON.stringify({
-            //             email: email,
-            //             teamsId: teamsId
-            //         })
-            //     });
-
-            //     const result = await response.json();
-
-            //     if (response.ok && result.user) {
-
-            //         if (result.session) {
-            //             await supabase.auth.setSession({
-            //                 access_token: result.session.access_token,
-            //                 refresh_token: result.session.refresh_token
-            //             });
-            //         }
-
-            //         localStorage.setItem('user', JSON.stringify(result.user));
-
-            //         navigate('/');
-            //     }
-            // }
-
         } catch (err) {
-            console.log("Not running inside Teams or Teams login skipped.",err);
+            console.log("Teams init skipped:", err.message);
         }
     };
 
     tryTeamsAutoLogin();
+
 }, []);
 
     // 处理深色模式切换
