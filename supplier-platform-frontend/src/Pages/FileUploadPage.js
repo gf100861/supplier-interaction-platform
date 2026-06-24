@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 // 引入 Grid 用于响应式断点检测
-import { Form, Input, Button, Upload, Typography, Divider, Modal, Select, InputNumber, Card, Row, Col, DatePicker, Radio, Empty, Checkbox, Collapse, Grid } from 'antd';
+import { Form, Input, Button, Upload, Typography, Divider, Modal, Select, InputNumber, Card, Row, Col, DatePicker, Checkbox, Collapse, Grid } from 'antd';
 import { UploadOutlined, InboxOutlined, ApiOutlined, GoogleOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNotices } from '../contexts/NoticeContext';
+import { supabase } from '../supabaseClient'; // 确保引入了 supabase
 import dayjs from 'dayjs';
 
 const { Dragger } = Upload;
@@ -18,14 +19,16 @@ const { useBreakpoint } = Grid; // 引入断点钩子
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
-  ? 'http://localhost:3001'
-  : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 // 辅助函数
 const normFile = (e) => {
   if (Array.isArray(e)) return e;
   return e && e.fileList;
 };
+
+// 保留用于本地 UI 预览的 base64 转换
 const getBase64 = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -101,13 +104,13 @@ const logSystemEvent = async (params) => {
   }
 };
 
-
 const FileUploadPage = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
+  const [fileType, setFileType] = useState(''); // 用于区分是图片还是视频
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState(null);
 
@@ -121,7 +124,7 @@ const FileUploadPage = () => {
 
   // --- 移动端适配 Hook ---
   const screens = useBreakpoint();
-  const isMobile = !screens.md; // md (768px) 以下视为移动端
+  const isMobile = !screens.md;
 
   const { suppliers, loading: suppliersLoading } = useSuppliers();
   const { categories, loading: categoriesLoading } = useCategories();
@@ -129,7 +132,6 @@ const FileUploadPage = () => {
   const { messageApi } = useNotification();
   const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
 
-  // --- 加载 API Key ---
   useEffect(() => {
     const savedKey = localStorage.getItem(LS_API_KEY_KEY);
     if (savedKey) {
@@ -137,6 +139,33 @@ const FileUploadPage = () => {
       setRememberApiKey(true);
     }
   }, []);
+
+  // 🌟 核心：专门负责把文件传到 Supabase 并返回链接的函数
+  const uploadFileToSupabase = async (file) => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      // 生成随机文件名，防止覆盖
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      const filePath = `uploads/${fileName}`;
+
+      // 1. 上传文件到 attachments 存储桶
+      const { error } = await supabase.storage
+        .from('attachments')
+        .upload(filePath, file);
+
+      if (error) throw error;
+
+      // 2. 获取公开链接
+      const { data: publicUrlData } = supabase.storage
+        .from('attachments')
+        .getPublicUrl(filePath);
+
+      return publicUrlData.publicUrl;
+    } catch (error) {
+      console.error('上传 Supabase 失败:', error);
+      throw error;
+    }
+  };
 
   const handleApiKeyChange = (e) => {
     const newKey = e.target.value;
@@ -164,17 +193,14 @@ const FileUploadPage = () => {
 
     try {
       const token = localStorage.getItem('access_token');
-
-      // 安全检查：如果没有 Token，强制登出
       if (!token) {
         messageApi.error('登录凭证丢失，请重新登录');
         return;
       }
 
-      // 2. 封装统一的请求头 (Header)
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}` // ✅ 关键：携带 Bearer Token
+        'Authorization': `Bearer ${token}`
       };
 
       const response = await fetch(`${BACKEND_URL}/api/ai/embedding`, {
@@ -188,7 +214,6 @@ const FileUploadPage = () => {
       return result.embedding;
     } catch (error) {
       console.error("生成向量失败:", error);
-
       logSystemEvent({
         category: 'AI',
         eventType: 'EMBEDDING_FAILED',
@@ -197,12 +222,10 @@ const FileUploadPage = () => {
         userId: currentUser?.id,
         meta: { text_length: cleanText.length }
       });
-
       return null;
     }
   };
 
-  // --- 记录页面访问 ---
   useEffect(() => {
     if (currentUser) {
       logSystemEvent({
@@ -239,7 +262,6 @@ const FileUploadPage = () => {
 
   const handleCancel = () => setPreviewOpen(false);
 
-  // ✅ 修改：调用后端获取历史标签
   const handleSupplierChange = async (supplierId) => {
     setSelectedSupplierId(supplierId);
 
@@ -262,9 +284,7 @@ const FileUploadPage = () => {
       }
 
       const response = await fetch(`${BACKEND_URL}/api/knowledge-base?supplierParmaId=${selectedSupplier.parma_id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Fetch tags failed');
       const data = await response.json();
@@ -302,16 +322,10 @@ const FileUploadPage = () => {
             <Input placeholder="请输入 Criteria n°" />
           </Form.Item>
           <Form.Item key="parameter" name={['details', 'parameter']} label="SEM Parameter" rules={[{ required: true, message: '请输入 SEM Parameter！' }]} >
-            <TextArea
-              autoSize={{ minRows: 3, maxRows: 5 }}
-              placeholder="请输入 SEM Parameter"
-            />
+            <TextArea autoSize={{ minRows: 3, maxRows: 5 }} placeholder="请输入 SEM Parameter" />
           </Form.Item>
           <Form.Item key="description" name={['details', 'description']} label="Gap description" rules={[{ required: true, message: '请输入 Gap description！' }]} >
-            <TextArea
-              autoSize={{ minRows: 3, maxRows: 6 }}
-              placeholder="请输入 Gap description"
-            />
+            <TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="请输入 Gap description" />
           </Form.Item>
           <Form.Item key="score" name={['details', 'score']} label="Actual SEM points" rules={[{ required: true, message: '请输入 Actual SEM points！' }]} >
             <InputNumber min={1} max={5} style={{ width: '100%' }} placeholder="请输入1到5之间的分数" />
@@ -323,24 +337,11 @@ const FileUploadPage = () => {
     if (selectedCategory === 'Process Audit') {
       return (
         <>
-          <Form.Item
-            key="Process"
-            name={['details', 'process']}
-            label="PROCESS/QUESTIONS"
-            rules={[{ required: true, message: '请输入Process/Questions' }]}
-          >
+          <Form.Item key="Process" name={['details', 'process']} label="PROCESS/QUESTIONS" rules={[{ required: true, message: '请输入Process/Questions' }]}>
             <Input placeholder="请输入Process/Questions" />
           </Form.Item>
-          <Form.Item
-            key="Findings"
-            name={['details', 'finding']}
-            label="FINDINGS/DEVIATIONS"
-            rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}
-          >
-            <TextArea
-              autoSize={{ minRows: 3, maxRows: 8 }}
-              placeholder="请输入FINDINGS/DEVIATIONS"
-            />
+          <Form.Item key="Findings" name={['details', 'finding']} label="FINDINGS/DEVIATIONS" rules={[{ required: true, message: 'FINDINGS/DEVIATIONS' }]}>
+            <TextArea autoSize={{ minRows: 3, maxRows: 8 }} placeholder="请输入FINDINGS/DEVIATIONS" />
           </Form.Item>
         </>
       )
@@ -349,12 +350,11 @@ const FileUploadPage = () => {
     return null;
   };
 
-
   const onFinish = async (values) => {
     setLoading(true);
     messageApi.open({
       type: 'loading',
-      content: '正在处理数据并上传...',
+      content: '正在上传至云端对象存储...',
       key: 'submitting',
       duration: 0,
     });
@@ -367,29 +367,22 @@ const FileUploadPage = () => {
           fileList.map(async (file) => {
             if (file.originFileObj) {
               try {
-                const base64Url = await getBase64(file.originFileObj);
+                // 调用核心函数，传至云端
+                const publicUrl = await uploadFileToSupabase(file.originFileObj);
                 return {
                   uid: file.uid,
                   name: file.name,
                   type: file.type,
                   size: file.size,
-                  url: base64Url,
+                  url: publicUrl, 
                 };
               } catch (error) {
-                console.error("文件转换为 Base64 失败:", file.name, error);
+                console.error("文件上传到云端失败:", file.name, error);
                 messageApi.open({
                   type: 'error',
-                  content: `文件 ${file.name} 处理失败！`,
+                  content: `文件 ${file.name} 上传失败！`,
                   key: 'submitting',
                   duration: 3
-                });
-                logSystemEvent({
-                  category: 'FILE',
-                  eventType: 'FILE_PROCESS_FAILED',
-                  severity: 'ERROR',
-                  message: `File process failed: ${file.name}`,
-                  userId: currentUser?.id,
-                  meta: { error: error.message }
                 });
                 return null;
               }
@@ -407,13 +400,13 @@ const FileUploadPage = () => {
         return processed.filter(Boolean);
       };
 
+      // 这里同时处理了 images 和 attachments，非常好！
       const processedImages = await processFiles(values.images);
       const processedAttachments = await processFiles(values.attachments);
 
       const selectedSupplierInfo = suppliers.find(s => s.id === values.supplierId);
       const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-      // --- 1. 构建用于生成向量的文本 (语义指纹) ---
       const problemSource = values.problem_source || '';
       const cause = values.cause || '';
       const processOrTitle = values.details.process || values.details.criteria || '';
@@ -428,7 +421,6 @@ const FileUploadPage = () => {
     [RootCause]: ${cause}
 `.trim();
 
-      // 2. ✅ 调用后端生成向量
       messageApi.open({ type: 'loading', content: '正在生成 AI 语义向量...', key: 'submitting', duration: 0 });
       const embeddingVector = await getBackendEmbedding(textToEmbed);
 
@@ -513,30 +505,20 @@ const FileUploadPage = () => {
     }
   };
 
-  const [fileType, setFileType] = useState(''); // 新增：用于区分是图片还是视频
-
-  // --- 1. 处理预览逻辑 (同时支持图片和视频) ---
+  // 处理预览逻辑 (同时支持图片和视频)
   const handlePreview = async (file) => {
+    // 这里的 getBase64 仅用于本地快速预览，绝不会传给后端，非常安全！
     if (!file.url && !file.preview) {
       file.preview = await getBase64(file.originFileObj);
     }
 
     setPreviewImage(file.url || file.preview);
     setPreviewOpen(true);
-    setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
+    setPreviewTitle(file.name || file.url?.substring(file.url.lastIndexOf('/') + 1) || 'Preview');
 
     // 记录文件类型，用于 Modal 渲染
-    setFileType(file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'));
+    setFileType(file.type || (file.name?.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'));
   };
-
-  // 辅助函数：转 Base64
-  const getBase64 = (file) =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-    });
 
   const beforeUpload = (file) => {
     const isImageOrVideo = file.type.startsWith('image/') || file.type.startsWith('video/');
@@ -565,11 +547,6 @@ const FileUploadPage = () => {
         </div>
 
         <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ date: dayjs() }}>
-          {/* 移动端优化：
-              使用 gutter={[16, 16]} 增加垂直间距
-              xs={24} 让在手机上占满一行
-              md={8} 在PC上保持三列
-          */}
           <Row gutter={[16, 16]}>
             <Col xs={24} md={8}>
               <Form.Item name="category" label="问题类型" rules={[{ required: true, message: '请选择问题类型！' }]}>
@@ -600,7 +577,7 @@ const FileUploadPage = () => {
               <Card
                 type="inner"
                 title="历史经验标签 (可选)"
-                size="small" // 移动端使用紧凑模式
+                size="small"
                 loading={loadingHistory}
                 style={{
                   marginBottom: 24,
@@ -663,10 +640,7 @@ const FileUploadPage = () => {
                 listType="picture"
                 beforeUpload={beforeUpload}
                 onPreview={handlePreview}
-                // ✅ 关键修改在这里：
                 accept="image/*,video/*"
-              // 如果你想强制移动端直接打开摄像头录像（不选相册），加 capture="environment"
-              // 但通常建议不加 capture，让用户自己选是“拍照”还是“相册”
               >
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p className="ant-upload-text">点击上传图片或录制视频</p>
@@ -674,34 +648,10 @@ const FileUploadPage = () => {
               </Dragger>
             </Form.Item>
           </Form.Item>
-          {/* --- 3. 升级预览弹窗 (支持视频播放) --- */}
-          <Modal
-            open={previewOpen}
-            title={previewTitle}
-            footer={null}
-            onCancel={() => setPreviewOpen(false)}
-            width={600} // 视频宽一点体验更好
-            centered
-          >
-            {fileType.startsWith('video/') ? (
-              <video
-                src={previewImage}
-                controls
-                style={{ width: '100%', maxHeight: '80vh' }}
-                className="rounded-lg bg-black"
-              />
-            ) : (
-              <img
-                alt="example"
-                style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain' }}
-                src={previewImage}
-              />
-            )}
-          </Modal>
 
           <Form.Item label="补充附件 (可选)">
             <Form.Item name="attachments" valuePropName="fileList" getValueFromEvent={normFile} noStyle>
-              <Upload beforeUpload={() => false} multiple>
+              <Upload beforeUpload={() => false} multiple onPreview={handlePreview}>
                 <Button icon={<UploadOutlined />} block={isMobile}>点击上传附件</Button>
               </Upload>
             </Form.Item>
@@ -741,8 +691,29 @@ const FileUploadPage = () => {
         </Form>
       </Card>
 
-      <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancel} width={isMobile ? '95%' : 520}>
-        <img alt="预览" style={{ width: '100%' }} src={previewImage} />
+      {/* 统一使用这个升级版预览弹窗，删除了旧的重复弹窗 */}
+      <Modal
+        open={previewOpen}
+        title={previewTitle}
+        footer={null}
+        onCancel={handleCancel}
+        width={isMobile ? '95%' : 600} 
+        centered
+      >
+        {fileType.startsWith('video/') ? (
+          <video
+            src={previewImage}
+            controls
+            style={{ width: '100%', maxHeight: '80vh' }}
+            className="rounded-lg bg-black"
+          />
+        ) : (
+          <img
+            alt="预览"
+            style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain' }}
+            src={previewImage}
+          />
+        )}
       </Modal>
     </div>
   );

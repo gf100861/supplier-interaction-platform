@@ -5,9 +5,11 @@
 
 const BACKEND_URL = isDev
         ? 'http://localhost:3001'  // 本地开发环境
-        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+        : window.location.origin;
 
-const getEmailLayout = (title, content, actionLink = 'https://supplier-interaction-platform.vercel.app/login', actionText = '登录平台查看') => {
+const PORTAL_URL = isDev ? 'http://localhost:3000' : window.location.origin;
+
+const getEmailLayout = (title, content, actionLink = `${PORTAL_URL}/login`, actionText = '登录平台查看') => {
     return `
     <!DOCTYPE html>
     <html>
@@ -218,7 +220,7 @@ export const EmailService = {
             <p>该通知单流程已终止，无需进行后续操作。</p>
         `;
 
-        await this.send({ to: email, subject, html: getEmailLayout(subject, content, 'https://supplier-interaction-platform.vercel.app/login', '登录平台查看详情') });
+        await this.send({ to: email, subject, html: getEmailLayout(subject, content, `${PORTAL_URL}/login`, '登录平台查看详情') });
     },
 
 
@@ -293,7 +295,7 @@ export const EmailService = {
             </div>
         `;
 
-        await this.send({ to: emails, subject, html: getEmailLayout(subject, content, 'https://supplier-interaction-platform.vercel.app/login', '登录系统查看') });
+        await this.send({ to: emails, subject, html: getEmailLayout(subject, content, `${PORTAL_URL}/login`, '登录系统查看') });
     }
 
 };

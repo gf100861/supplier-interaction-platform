@@ -38,6 +38,7 @@ import HistoricalImportPage from './Pages/HistoricalImportPage';
 import UpdatePasswordPage from './Pages/UpdatePasswordPage';
 import PrivacySettingsPage from './Pages/PrivacySettingsPage';
 import SecretDecryptPage from './Pages/SecretDecryptPage';
+import BatchMaterialParser from './Pages/BatchMaterialParser';
 // This sub-component correctly applies the theme from the ThemeContext
 const ThemedApp = () => {
     const { theme } = useTheme();
@@ -89,6 +90,7 @@ const ThemedApp = () => {
                                                     <Route path="offline-share" element={<FileSender />} />
                                                     <Route path="historical-import" element={<HistoricalImportPage />} />
                                                     <Route path="secret-decrypt" element={<SecretDecryptPage />} />
+                                                    <Route path="batch-material-parser" element={<BatchMaterialParser />} />
                                                     
                                                     {/* 404 页面放在受保护区域内部，或者外部都可以，视需求而定 */}
                                                     <Route path="*" element={<NotFoundPage />} />

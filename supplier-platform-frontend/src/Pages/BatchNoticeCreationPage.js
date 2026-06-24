@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
-// 1. 引入 Checkbox, Collapse 等组件
-import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal, Checkbox, Collapse, Row, Col, Switch, Alert, Progress } from 'antd';
-import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined, ApiOutlined, GoogleOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Select, DatePicker, Typography, Card, Popconfirm, Input, Upload, Empty, Space, Tooltip, Image, InputNumber, Modal, Row, Col, Switch, Alert, Progress } from 'antd';
+import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, UploadOutlined, FileExcelOutlined, DownloadOutlined, InboxOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons';
 import { useSuppliers } from '../contexts/SupplierContext';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
@@ -9,12 +8,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { Buffer } from 'buffer';
 import { useNotices } from '../contexts/NoticeContext';
 import { useCategories } from '../contexts/CategoryContext';
-import Tesseract from 'tesseract.js'; // 假设已安装 tesseract.js
-// 引入 pdfjs-dist 用于 PDF 转图片
-
-
-// 设置 PDF.js worker
-// pdfjsLibProxy.GlobalWorkerOptions.workerSrc = pdfWorker;
+import { supabase } from '../supabaseClient'; // ✅ 真实引入 supabase
 
 window.Buffer = Buffer;
 
@@ -22,17 +16,61 @@ const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const { Dragger } = Upload;
-const { Panel } = Collapse;
-
 
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
+
+const MAX_IMAGE_DIMENSION = 1600;
+const IMAGE_COMPRESSION_QUALITY = 0.72;
+const MAX_FILE_UPLOAD_CONCURRENCY = 2;
+const MAX_ROW_PROCESS_CONCURRENCY = 2;
+const NOTICE_INSERT_CHUNK_SIZE = 5;
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const retryAsync = async (task, retries = 2, delayMs = 800) => {
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await task();
+        } catch (error) {
+            lastError = error;
+            if (attempt < retries) {
+                await sleep(delayMs * (attempt + 1));
+            }
+        }
+    }
+    throw lastError;
+};
+
+const mapWithConcurrency = async (items, concurrency, mapper) => {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.all(workers);
+    return results;
+};
+
+const chunkArray = (items, size) => {
+    const chunks = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+};
 
 // --- 日志系统工具函数 (复用逻辑) ---
-// 如果没有 session id，生成一个
 const getSessionId = () => {
     let sid = sessionStorage.getItem('app_session_id');
     if (!sid) {
@@ -42,7 +80,6 @@ const getSessionId = () => {
     return sid;
 };
 
-// 获取IP (带缓存)
 let cachedIpAddress = null;
 const getClientIp = async () => {
     if (cachedIpAddress) return cachedIpAddress;
@@ -56,24 +93,13 @@ const getClientIp = async () => {
     }
 };
 
-// 简单的日志上报
 const logSystemEvent = async (params) => {
-    const {
-        category = 'SYSTEM',
-        eventType,
-        severity = 'INFO',
-        message,
-        userId = null,
-        meta = {}
-    } = params;
-
+    const { category = 'SYSTEM', eventType, severity = 'INFO', message, userId = null, meta = {} } = params;
     try {
-
-        const apiPath = isDev ? '/api/system-log' : '/api/system-log';
-        const targetUrl = `${BACKEND_URL}${apiPath}`;
+        const targetUrl = `${BACKEND_URL}/api/system-log`;
         const clientIp = await getClientIp();
         const sessionId = getSessionId();
-        await fetch(`${targetUrl}`, {
+        await fetch(targetUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -93,14 +119,11 @@ const logSystemEvent = async (params) => {
                 }
             })
         });
-
     } catch (e) {
         console.error("Logger exception:", e);
     }
 };
 
-
-// ... (EditableContext, EditableRow, getBase64, EditableCell 保持不变) ...
 const EditableContext = React.createContext(null);
 
 const EditableRow = ({ index, ...props }) => {
@@ -114,6 +137,7 @@ const EditableRow = ({ index, ...props }) => {
     );
 };
 
+// 仅用于本地预览的 Base64 转换
 const getBase64 = (file) =>
     new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -121,6 +145,96 @@ const getBase64 = (file) =>
         reader.onload = () => resolve(reader.result);
         reader.onerror = (error) => reject(error);
     });
+
+// 🌟 核心：专门负责把文件传到 Supabase 并返回链接的函数
+const getImageMimeType = (file, fallback = 'image/jpeg') => {
+    const type = file?.type || '';
+    if (type.startsWith('image/') && !['image/gif', 'image/svg+xml'].includes(type)) {
+        return type === 'image/png' ? 'image/jpeg' : type;
+    }
+    return fallback;
+};
+
+const compressImageFile = async (file, originalName = 'image.jpg') => {
+    const fileType = file?.type || '';
+    if (!fileType.startsWith('image/') || ['image/gif', 'image/svg+xml'].includes(fileType)) {
+        return file;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+        const image = await new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = objectUrl;
+        });
+
+        const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0, width, height);
+
+        const mimeType = getImageMimeType(file);
+        const compressedBlob = await new Promise((resolve) => {
+            canvas.toBlob(resolve, mimeType, IMAGE_COMPRESSION_QUALITY);
+        });
+
+        if (!compressedBlob || compressedBlob.size >= file.size) {
+            return file;
+        }
+
+        const outputName = mimeType === 'image/jpeg' && !/\.jpe?g$/i.test(originalName)
+            ? (originalName.includes('.') ? originalName.replace(/\.[^.]+$/, '.jpg') : `${originalName}.jpg`)
+            : originalName;
+
+        return new File([compressedBlob], outputName, {
+            type: mimeType,
+            lastModified: Date.now(),
+        });
+    } catch (error) {
+        console.warn('Image compression skipped:', error);
+        return file;
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+};
+
+const uploadFileToSupabase = async (file, originalName) => {
+    try {
+        const fileExt = originalName ? originalName.split('.').pop() : 'png';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `uploads/${fileName}`;
+
+        // 1. 上传文件到 attachments 存储桶
+        await retryAsync(async () => {
+            const { error } = await supabase.storage
+                .from('attachments')
+                .upload(filePath, file, {
+                    contentType: file?.type || undefined,
+                    cacheControl: '3600',
+                });
+
+            if (error) throw error;
+        });
+
+        // 2. 获取公开链接
+        const { data: publicUrlData } = supabase.storage
+            .from('attachments')
+            .getPublicUrl(filePath);
+
+        return publicUrlData.publicUrl;
+    } catch (error) {
+        console.error('上传 Supabase 失败:', error);
+        throw error;
+    }
+};
 
 const EditableCell = ({ title, editable, children, dataIndex, record, handleSave, inputType = 'input', ...restProps }) => {
     const [editing, setEditing] = useState(false);
@@ -175,7 +289,6 @@ const EditableCell = ({ title, editable, children, dataIndex, record, handleSave
     return <td {...restProps}>{childNode}</td>;
 };
 
-// ... (categoryColumnConfig 保持不变) ...
 const categoryColumnConfig = {
     'SEM': [
         { title: 'Criteria n°', dataIndex: 'criteria', editable: true, width: '10%' },
@@ -197,8 +310,6 @@ const categoryColumnConfig = {
     '其他': [{ title: '标题', dataIndex: 'title', editable: true, width: '20%' }, { title: '描述', dataIndex: 'description', editable: true, width: '40%', onCell: () => ({ inputType: 'textarea' }) }],
 };
 
-const LS_API_KEY_KEY = 'gemini_api_key_local_storage';
-
 const BatchNoticeCreationPage = () => {
     const [globalForm] = Form.useForm();
     const { suppliers, loading: suppliersLoading } = useSuppliers();
@@ -213,19 +324,7 @@ const BatchNoticeCreationPage = () => {
     const { addNotices } = useNotices();
     const { categories, loading: categoriesLoading } = useCategories();
 
-    // --- 新增：API Key 状态 ---
-    const [apiKey, setApiKey] = useState('');
-    const [rememberApiKey, setRememberApiKey] = useState(false);
-
-    // --- 新增：加载 API Key ---
     useEffect(() => {
-        const savedKey = localStorage.getItem(LS_API_KEY_KEY);
-        if (savedKey) {
-            setApiKey(savedKey);
-            setRememberApiKey(true);
-        }
-
-        // 记录页面访问
         if (currentUser) {
             logSystemEvent({
                 category: 'INTERACTION',
@@ -235,55 +334,6 @@ const BatchNoticeCreationPage = () => {
             });
         }
     }, [currentUser]);
-
-    const handleApiKeyChange = (e) => {
-        const newKey = e.target.value;
-        setApiKey(newKey);
-        if (rememberApiKey) {
-            localStorage.setItem(LS_API_KEY_KEY, newKey);
-        }
-    };
-
-    const handleRememberChange = (e) => {
-        const checked = e.target.checked;
-        setRememberApiKey(checked);
-        if (checked) {
-            localStorage.setItem(LS_API_KEY_KEY, apiKey);
-        } else {
-            localStorage.removeItem(LS_API_KEY_KEY);
-        }
-    };
-
-    // --- 新增：Embedding 生成函数 ---
-    const getGeminiEmbedding = async (text) => {
-        if (!text || !text.trim() || !apiKey) return null;
-        // 简单截断防止超长
-        const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 8000);
-
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/ai/embedding`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: cleanText })
-            });
-
-            if (!response.ok) throw new Error("Embedding API request failed");
-            const result = await response.json();
-            return result.embedding.values;
-        } catch (error) {
-            console.error("生成向量失败:", error);
-            // 批量时不打断流程，只记录错误
-            logSystemEvent({
-                category: 'AI',
-                eventType: 'EMBEDDING_FAILED',
-                severity: 'WARN',
-                message: `Embedding generation failed: ${error.message}`,
-                userId: currentUser?.id,
-                meta: { text_length: cleanText.length }
-            });
-            return null;
-        }
-    };
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser) return [];
@@ -308,7 +358,6 @@ const BatchNoticeCreationPage = () => {
         });
     }, [categories]);
 
-    // ... (handleCellChange, handlePreview, handleDelete, handleSave, handleUploadChange 保持不变) ...
     const handleCellChange = (key, dataIndex, value) => {
         const newData = [...dataSource];
         const index = newData.findIndex((item) => key === item.key);
@@ -420,7 +469,6 @@ const BatchNoticeCreationPage = () => {
         });
     }, [globalSettings, handleSave]);
 
-    // ... (handleAdd, onConfirmSettings, onModifySettings 保持不变) ...
     const handleAdd = () => {
         if (!globalSettings) { messageApi.error('请点击"确认设置"的按钮！'); return; }
         const newRowData = { key: count, images: [], attachments: [] };
@@ -475,8 +523,7 @@ const BatchNoticeCreationPage = () => {
             }
             const isValid = keyFields.some(key => {
                 const value = item[key];
-                const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
-                return hasValue;
+                return value !== null && value !== undefined && String(value).trim() !== '';
             });
             return isValid;
         });
@@ -486,84 +533,72 @@ const BatchNoticeCreationPage = () => {
             return;
         }
 
-        // --- 核心修正：加载提示 ---
-        messageApi.loading({ content: '正在处理数据并生成 AI 向量...', key: 'submitting', duration: 0 });
-
+        messageApi.loading({ content: '正在处理数据，上传文件并生成 AI 向量...', key: 'submitting', duration: 0 });
         const batchId = `BATCH-${dayjs().format('YYYYMMDDHHmmss')}-${Math.random().toString(36).substring(2, 8)}`;
 
-        // --- 核心逻辑升级：并行处理图片转码 + 并行生成向量 ---
         const processRowDataAndEmbed = async (item, index) => {
             try {
-                // 1. 处理文件 (Base64)
+                // 🌟 核心升级：图片转存至 Supabase (支持手工与Excel导入)
                 const processFiles = async (fileList = []) => {
-                    return Promise.all(fileList.map(async file => {
-                        if (file.originFileObj && !file.url) {
-                            const base64Url = await getBase64(file.originFileObj);
-                            return { uid: file.uid, name: file.name, status: 'done', url: base64Url };
+                    return mapWithConcurrency(fileList, MAX_FILE_UPLOAD_CONCURRENCY, async file => {
+                        try {
+                            // 1. 如果是手动添加的图片/附件 (存在 originFileObj)
+                            if (file.originFileObj && !file.url) {
+                                const uploadFile = await compressImageFile(file.originFileObj, file.name);
+                                const uploadName = uploadFile.name || file.name;
+                                const publicUrl = await uploadFileToSupabase(uploadFile, uploadName);
+                                return {
+                                    uid: file.uid,
+                                    name: uploadName,
+                                    status: 'done',
+                                    url: publicUrl,
+                                    size: uploadFile.size,
+                                    type: uploadFile.type || file.type,
+                                };
+                            }
+                            // 2. 如果是从 Excel 导入的 Base64 格式图片 (避免导致 413 Payload Too Large)
+                            if (file.url && file.url.startsWith('data:image')) {
+                                const response = await fetch(file.url);
+                                const blob = await response.blob();
+                                const fileName = file.name || 'excel_image.png';
+                                const uploadFile = await compressImageFile(blob, fileName);
+                                const uploadName = uploadFile.name || fileName;
+                                const publicUrl = await uploadFileToSupabase(uploadFile, uploadName);
+                                return {
+                                    uid: file.uid,
+                                    name: uploadName,
+                                    status: 'done',
+                                    url: publicUrl,
+                                    size: uploadFile.size,
+                                    type: uploadFile.type || blob.type,
+                                };
+                            }
+                            // 3. 已经是正常的网络 URL，直接返回
+                            return file;
+                        } catch (err) {
+                            console.error(`处理文件 ${file.name} 失败:`, err);
+                            throw err; 
                         }
-                        return file;
-                    }));
+                    });
                 };
 
                 const processedImages = await processFiles(item.images);
                 const processedAttachments = await processFiles(item.attachments);
 
-                // 通用逻辑：把 details 里所有有价值的文本拼起来
-                // 比如 SEM 的 parameter/description，Process 的 title/description
                 const { key: _k, images: _i, attachments: _a, ...details } = item;
 
-                // --- 核心修改开始：使用列标题作为语义标签 ---
-
-                // 1. 获取当前分类的列配置
-                const currentColumns = categoryColumnConfig[globalSettings.category] || [];
-
-                // 2. 生成带明确语义标签的文本
-                // 逻辑：尝试在配置中找到 dataIndex 对应的 title，如果找不到就用原 key
-                const textParts = Object.entries(details)
-                    .filter(([k, v]) => k !== 'score' && k !== 'key' && v)
-                    .map(([k, v]) => {
-                        const colConfig = currentColumns.find(col => col.dataIndex === k);
-                        // 如果能找到配置，就用配置里的 Title (例如 "Gap description")
-                        // 如果找不到，就映射一些通用词 (例如 "comments" -> "备注")
-                        // 否则直接用 key
-                        let label = k;
-                        if (colConfig) {
-                            label = colConfig.title;
-                        } else if (k === 'comments') {
-                            label = '备注';
-                        }
-
-                        return `[${label}]: ${v}`;
-                    });
-
-                console.log('Text parts for embedding:', textParts);
-
-                const textToEmbed = `
-                    [Category]: ${globalSettings.category}
-                    [Supplier]: ${globalSettings.supplierName}
-                    ${textParts.join('\n')}
-                `.trim();
-
-                // 3. 生成向量 (如果 Key 存在)
-                let embeddingVector = null;
-                if (apiKey) {
-                    embeddingVector = await getGeminiEmbedding(textToEmbed);
-                }
-
-                // 4. 构建最终对象
                 const noticeCode = `N-${dayjs().format('YYYYMMDD')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${index}`;
 
                 return {
                     notice_code: noticeCode,
                     batch_id: batchId,
                     category: globalSettings.category,
-                    title: details.title || details.parameter || 'New Notice',
+                    title: details.title || details.parameter || details.criteria || 'New Notice',
                     assigned_supplier_id: globalSettings.supplierId,
                     assigned_supplier_name: globalSettings.supplierName,
                     status: '待提交Action Plan',
                     creator_id: currentUser.id,
-                    // *** 存入向量 ***
-                    embedding: embeddingVector,
+                    embedding: null,
                     sd_notice: {
                         creatorId: currentUser.id,
                         description: details.description || '',
@@ -577,19 +612,38 @@ const BatchNoticeCreationPage = () => {
                 };
             } catch (error) {
                 console.error(`Error processing row ${index}:`, error);
-                throw error; // 将错误向上传递，以便在 Promise.all 中捕获或处理
+                throw error; 
             }
         };
 
         try {
-            // 使用 Promise.all 并发处理每一行 (图片转码 + AI Embedding)
-            const batchNoticesToInsert = await Promise.all(validDataSource.map((item, index) => processRowDataAndEmbed(item, index)));
+            let processedRows = 0;
+            const batchNoticesToInsert = await mapWithConcurrency(
+                validDataSource,
+                MAX_ROW_PROCESS_CONCURRENCY,
+                async (item, index) => {
+                    const notice = await processRowDataAndEmbed(item, index);
+                    processedRows += 1;
+                    messageApi.loading({
+                        content: `正在处理数据：${processedRows}/${validDataSource.length} 行已完成...`,
+                        key: 'submitting',
+                        duration: 0
+                    });
+                    return notice;
+                }
+            );
 
-            // 提交到 Supabase
-            await addNotices(batchNoticesToInsert);
+            const insertChunks = chunkArray(batchNoticesToInsert, NOTICE_INSERT_CHUNK_SIZE);
+            for (let i = 0; i < insertChunks.length; i++) {
+                messageApi.loading({
+                    content: `正在提交通知单：第 ${i + 1}/${insertChunks.length} 批...`,
+                    key: 'submitting',
+                    duration: 0
+                });
+                await addNotices(insertChunks[i]);
+            }
             messageApi.success({ content: `成功提交 ${batchNoticesToInsert.length} 条通知单！`, key: 'submitting', duration: 3 });
 
-            // 记录成功日志
             logSystemEvent({
                 category: 'DATA',
                 eventType: 'BATCH_CREATE_SUCCESS',
@@ -607,7 +661,6 @@ const BatchNoticeCreationPage = () => {
             console.error(error);
             messageApi.error({ content: `提交失败: ${error.message}`, key: 'submitting', duration: 3 });
 
-            // 记录失败日志
             logSystemEvent({
                 category: 'DATA',
                 eventType: 'BATCH_CREATE_FAILED',
@@ -619,7 +672,6 @@ const BatchNoticeCreationPage = () => {
         }
     };
 
-    // ... (handleDownloadTemplate, handleExcelImport 保持不变) ...
     const handleDownloadTemplate = async () => {
         const category = globalForm.getFieldValue('category');
         if (!category) {
@@ -662,14 +714,8 @@ const BatchNoticeCreationPage = () => {
             const actualHeadersRaw = (worksheet.getRow(1).values || []);
             const actualHeaders = actualHeadersRaw.slice(1, expectedHeaders.length + 1);
 
-            console.log('Expected Headers:', expectedHeaders);
-
-            console.log('Actual Headers:', actualHeaders);
-
             if (JSON.stringify(expectedHeaders) !== JSON.stringify(actualHeaders)) {
                 messageApi.error({ content: `Excel模板表头不匹配！当前需要“${globalSettings.category}”类型的模板。`, key: 'excelParse', duration: 5 });
-
-                // 记录模板错误日志
                 logSystemEvent({
                     category: 'DATA',
                     eventType: 'EXCEL_IMPORT_ERROR',
@@ -686,9 +732,10 @@ const BatchNoticeCreationPage = () => {
                 const startRow = image.range.tl.nativeRow;
                 const img = workbook.getImage(image.imageId);
                 if (!img || !img.buffer) return;
+                // Excel 解析出的图片也是 Base64 格式
                 const imageBase64 = `data:image/${img.extension || 'png'};base64,${Buffer.from(img.buffer).toString('base64')}`;
                 if (!imageMap.has(startRow)) { imageMap.set(startRow, []); }
-                imageMap.get(startRow).push({ uid: `-${Math.random()}`, name: `image_${startRow}.${img.extension || 'png'}`, status: 'done', url: imageBase64 });
+                imageMap.get(startRow).push({ uid: `-${Math.random()}`, name: `excel_image_${startRow}.${img.extension || 'png'}`, status: 'done', url: imageBase64 });
             });
 
             const importedData = [];
@@ -724,7 +771,6 @@ const BatchNoticeCreationPage = () => {
             setCount(currentDataIndex);
             messageApi.success({ content: `成功导入 ${importedData.length} 条数据！`, key: 'excelParse' });
 
-            // 记录导入成功日志
             logSystemEvent({
                 category: 'DATA',
                 eventType: 'EXCEL_IMPORT_SUCCESS',
@@ -738,7 +784,6 @@ const BatchNoticeCreationPage = () => {
             console.error("Excel 解析失败:", error);
             messageApi.error({ content: `文件解析失败: ${error.message}`, key: 'excelParse', duration: 4 });
 
-            // 记录解析异常日志
             logSystemEvent({
                 category: 'DATA',
                 eventType: 'EXCEL_PARSE_EXCEPTION',
@@ -820,24 +865,6 @@ const BatchNoticeCreationPage = () => {
                     locale={{ emptyText: (<Empty description={globalSettings ? "请点击“手动添加一行”或从Excel导入" : "请先在上方确认全局设置"} />) }}
                 />
             </Card>
-
-            {/* --- 新增：API Key 设置区域 (批量版) --- */}
-            <Collapse ghost style={{ marginTop: 16 }}>
-                <Panel header={<><ApiOutlined /> AI 增强设置 (配置后可为每条数据生成智能检索向量)</>} key="1">
-                    <Form.Item label={<><GoogleOutlined /> Google Gemini API Key</>} help="设置 Key 后，系统将在提交时自动为每一行数据生成问题向量。">
-                        <Input.Password
-                            placeholder="请输入您的 Gemini API Key"
-                            value={apiKey}
-                            onChange={handleApiKeyChange}
-                        />
-                    </Form.Item>
-                    <Form.Item>
-                        <Checkbox checked={rememberApiKey} onChange={handleRememberChange}>
-                            在本地记住 API Key (下次无需输入)
-                        </Checkbox>
-                    </Form.Item>
-                </Panel>
-            </Collapse>
 
             <div style={{ marginTop: 24, textAlign: 'right' }}>
                 <Button type="primary" size="large" onClick={handleSubmitAll} disabled={dataSource.length === 0}>

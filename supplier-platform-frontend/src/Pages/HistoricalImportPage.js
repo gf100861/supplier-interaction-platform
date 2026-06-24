@@ -23,9 +23,13 @@ const { Option } = Select;
 
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
+
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 const PROVIDERS = {
     QWEN: { label: '阿里云 Qwen', value: 'qwen', defaultModel: 'qwen-vl-max' },

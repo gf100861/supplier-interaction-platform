@@ -8,9 +8,12 @@ const { Title, Text } = Typography;
 
 // 🔧 环境配置 (确保后端地址正确)
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 const MobileTransferPage = () => {
     const [searchParams] = useSearchParams();

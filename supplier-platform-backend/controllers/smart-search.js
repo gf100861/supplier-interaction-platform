@@ -18,9 +18,9 @@ const VALID_STATUSES = [
 ];
 
 const QWEN_FALLBACK_MODELS = [
-    'qwen3-max',         
-    'qwen3-vl-plus',       
-    'qwen-max'         
+    'qwen3-max-2026-01-23',         
+    'qwen3.5-plus',       
+    'qwen3.6-plus'         
 ];
 
 // ==========================================

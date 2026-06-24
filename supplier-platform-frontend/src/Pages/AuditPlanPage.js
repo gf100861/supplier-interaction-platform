@@ -22,9 +22,12 @@ const { Option } = Select;
 
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
 

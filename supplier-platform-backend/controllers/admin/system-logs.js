@@ -98,7 +98,7 @@ module.exports = async (req, res) => {
         const from = (pageNum - 1) * sizeNum;
         const to = from + sizeNum - 1;
 
-        const { data, count, error } = await query
+        let { data, count, error } = await query
             .order('created_at', { ascending: false })
             .range(from, to);
 
@@ -108,6 +108,26 @@ module.exports = async (req, res) => {
         }
 
         // 5. 成功返回
+        const userIds = [...new Set((data || []).map(log => log.user_id).filter(Boolean))];
+        if (userIds.length > 0) {
+            const { data: users, error: usersError } = await supabaseAdmin
+                .from('users')
+                .select('id, username, email')
+                .in('id', userIds);
+
+            if (!usersError && users) {
+                const usersById = new Map(users.map(user => [user.id, user]));
+                data = (data || []).map(log => {
+                    const user = usersById.get(log.user_id);
+                    return user ? {
+                        ...log,
+                        user_email: log.user_email || user.email,
+                        user_name: log.user_name || user.username,
+                    } : log;
+                });
+            }
+        }
+
         res.status(200).json({
             success: true,
             data,

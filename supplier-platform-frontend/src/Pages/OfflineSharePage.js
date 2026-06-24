@@ -14,10 +14,12 @@ const { Search } = Input;
 const { useBreakpoint } = Grid; // 2. 获取断点 Hook
 
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'  // 本地开发环境
+//     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'  // 本地开发环境
-    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
-
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 // 1. Session ID 管理
 const getSessionId = () => {
     let sid = sessionStorage.getItem('app_session_id');

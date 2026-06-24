@@ -64,7 +64,7 @@ const HighlightText = ({ text, keyword }) => {
 
 const NoticePage = () => {
     // --- 状态管理 ---
-    const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice } = useNotices();
+    const { notices, loading: noticesLoading, hasMore, loadMoreNotices, updateNotice, fetchNoticeDetail } = useNotices();
     const { suppliers, loading: suppliersLoading } = useSuppliers(); // 5. 获取 suppliers
     const { messageApi } = useNotification();
     const { token } = theme.useToken();
@@ -206,6 +206,8 @@ const NoticePage = () => {
     useEffect(() => {
         if (selectedNotice && notices.length > 0) {
             const updatedVersion = notices.find(n => n.id === selectedNotice.id);
+            if (selectedNotice.isDetailLoading && updatedVersion?.isLightweight) return;
+            if (selectedNotice.isLightweight === false && updatedVersion?.isLightweight) return;
             if (updatedVersion && JSON.stringify(updatedVersion) !== JSON.stringify(selectedNotice)) {
                 setSelectedNotice(updatedVersion);
             }
@@ -419,6 +421,8 @@ const NoticePage = () => {
 
             const updatedVersion = notices.find(n => n.id === selectedNotice.id);
             if (updatedVersion) {
+                if (selectedNotice.isDetailLoading && updatedVersion.isLightweight) return;
+                if (selectedNotice.isLightweight === false && updatedVersion.isLightweight) return;
 
                 // 比较新旧数据，看是否真的有变化
                 if (JSON.stringify(updatedVersion) !== JSON.stringify(selectedNotice)) {
@@ -430,27 +434,24 @@ const NoticePage = () => {
     }, [notices]);
 
     // --- 弹窗与通用 Handler ---
-    const showDetailsModal = (notice) => {
-        form.resetFields(); // 每次打开都重置表单
+    const prepareDetailForm = (notice) => {
+        form.resetFields();
         const history = notice.history || [];
         const lastHistory = history[history.length - 1];
 
-        console.log('通知单', notice)
-
-        // 逻辑修正：检查 '计划被驳回' 的情况（兼容不同状态文案）
-        if (notice.status === '待提交Action Plan' && lastHistory?.type === 'sd_plan_rejection') {
+        if (lastHistory?.type === 'sd_plan_rejection') {
             const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_plan_submission');
             if (lastSubmission) {
                 form.setFieldsValue({
-                    actionPlans: (lastSubmission.actionPlans || []).map(p => ({ ...p, deadline: p.deadline ? dayjs(p.deadline) : null })),
+                    actionPlans: (lastSubmission.actionPlans || []).map(p => ({
+                        ...p,
+                        deadline: p.deadline ? dayjs(p.deadline) : null
+                    })),
                 });
             }
-        }
-        // 逻辑补充：检查 '证据被驳回' 的情况
-        else if (notice.status === '待供应商关闭' && lastHistory?.type === 'sd_evidence_rejection') {
+        } else if (lastHistory?.type === 'sd_evidence_rejection') {
             const lastSubmission = [...history].reverse().find(h => h.type === 'supplier_evidence_submission');
             if (lastSubmission) {
-                // 注意：EvidencePerActionForm 的数据结构是 { evidence: [...] }
                 const evidenceValues = (lastSubmission.actionPlans || []).map(plan => ({
                     description: plan.evidenceDescription || '',
                     images: plan.evidenceImages || [],
@@ -458,10 +459,25 @@ const NoticePage = () => {
                 form.setFieldsValue({ evidence: evidenceValues });
             }
         }
-
-        setSelectedNotice(notice);
     };
 
+    const showDetailsModal = async (notice) => {
+        setSelectedNotice({ ...notice, isDetailLoading: true });
+
+        try {
+            const detail = notice.isLightweight === false
+                ? notice
+                : await fetchNoticeDetail(notice.id);
+            const hydratedNotice = detail || notice;
+            prepareDetailForm(hydratedNotice);
+            setSelectedNotice(hydratedNotice);
+        } catch (error) {
+            console.error('Failed to load notice detail:', error);
+            messageApi.error('Failed to load notice detail. Please try again later.');
+            prepareDetailForm(notice);
+            setSelectedNotice({ ...notice, isDetailLoading: false });
+        }
+    };
     const getBase64 = (file) =>
         new Promise((resolve, reject) => {
             const reader = new FileReader();

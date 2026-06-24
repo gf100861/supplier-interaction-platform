@@ -15,9 +15,13 @@ const { Dragger } = Upload;
 
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
+
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 const normFile = (e) => { if (Array.isArray(e)) return e; return e && e.fileList; };
 const getBase64 = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = (error) => reject(error); });

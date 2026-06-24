@@ -41,7 +41,7 @@ const archiveHistoricalHandler = require('./controllers/notices/archive-historic
 
 const fileUploadHandler = require('./controllers/file-sync/upload');
 
-
+const analyzerLearningHandler = require('./controllers/ai/analyze-learning'); // 新增
 
 const filesHandler = require('./controllers/file-sync/files'); // 新增
 const app = express();
@@ -167,6 +167,7 @@ app.post('/api/ai/analyze-document', analyzeDocumentHandler);
 // Historical Archive
 app.post('/api/notices/archive-historical', archiveHistoricalHandler);
 
+app.post('/api/ai/analyze-learning', analyzerLearningHandler); // 新增
 app.post('/api/file-sync/upload', fileUploadHandler);
 
 app.all('/api/file-sync/files', filesHandler); // 新增

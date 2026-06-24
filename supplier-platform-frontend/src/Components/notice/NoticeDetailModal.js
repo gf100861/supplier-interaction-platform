@@ -871,6 +871,7 @@ export const NoticeDetailModal = ({
 
     const isLiked = notice.likes && notice.likes.includes(currentUser?.id);
     const isSDOrManager = currentUser?.role === 'SD' || currentUser?.role === 'Manager';
+    const isDetailLoading = notice?.isDetailLoading;
 
     const getBase64 = (file) =>
         new Promise((resolve, reject) => {
@@ -1037,6 +1038,15 @@ export const NoticeDetailModal = ({
             style={isMobile ? { top: 0, margin: 0, maxWidth: '100vw', padding: 0 } : {}}
             bodyStyle={isMobile ? { minHeight: '100vh', padding: '16px' } : {}}
         >
+            {isDetailLoading && (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={'\u6b63\u5728\u52a0\u8f7d\u5b8c\u6574\u5185\u5bb9\u3001\u56fe\u7247\u548c\u9644\u4ef6...'}
+                    description={'\u5217\u8868\u5148\u663e\u793a\u8f7b\u91cf\u6570\u636e\uff0c\u8be6\u60c5\u52a0\u8f7d\u5b8c\u6210\u540e\u4f1a\u81ea\u52a8\u8865\u5168\u3002'}
+                />
+            )}
             <Title level={5} style={{ marginTop: 24 }}>初始通知内容</Title>
             {/* 核心修改：如果是 Historical 8D，使用新的展示组件，否则使用默认的 */}
             {notice?.category === 'Historical 8D' ? (

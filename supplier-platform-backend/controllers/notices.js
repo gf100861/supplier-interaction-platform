@@ -16,6 +16,44 @@ function runMiddleware(req, res, fn) {
     });
 }
 
+const FULL_NOTICE_SELECT = `
+    *,
+    creator:users ( id, username, email, role ),
+    supplier:suppliers ( parma_id, short_code )
+`;
+
+const LIST_NOTICE_SELECT = `
+    id,
+    notice_code,
+    batch_id,
+    category,
+    title,
+    assigned_supplier_id,
+    assigned_supplier_name,
+    creator_id,
+    status,
+    created_at,
+    creator:users ( id, username, email, role ),
+    supplier:suppliers ( parma_id, short_code )
+`;
+
+function withListPreviewFields(row) {
+    if (!row) return row;
+    return {
+        ...row,
+        sd_notice: {
+            createTime: row.created_at,
+            description: row.title || '',
+            details: {
+                finding: '',
+                process: row.title || '',
+            },
+        },
+        history: [],
+        is_lightweight: true,
+    };
+}
+
 module.exports = async (req, res) => {
     // CORS
     const requestOrigin = req.headers.origin || '*';
@@ -34,19 +72,89 @@ module.exports = async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
-        // --- GET: 获取所有通知单 ---
+        // --- GET: 获取所有通知单 (🚀 核心优化：按用户角色过滤) ---
         if (req.method === 'GET') {
-            const { data, error } = await supabaseAdmin
+            // 解析前端 URL 传来的查询参数 (?userId=xxx&role=xxx)
+            const { userId, role, id, detail } = req.query || {};
+
+            if (id && detail === 'true') {
+                const { data, error } = await supabaseAdmin
+                    .from('notices')
+                    .select(FULL_NOTICE_SELECT)
+                    .eq('id', id)
+                    .single();
+
+                if (error) throw error;
+                return res.json(data);
+            }
+
+            // 1. 构建基础查询
+            let query = supabaseAdmin
                 .from('notices')
-                .select(`
-                    *,
-                    creator:users ( id, username, email, role ),
-                    supplier:suppliers ( parma_id, short_code )
-                `)
+                .select(LIST_NOTICE_SELECT)
                 .order('created_at', { ascending: false });
 
+            const limit = Math.min(parseInt(req.query.limit || '50', 10), 500);
+            query = query.limit(limit);
+
+            // 2. 🌟 根据身份在数据库层面过滤数据 (动态拼接 WHERE 条件)
+            if (role === 'Supplier' && userId) {
+                // 【核心修复】：前端传的 userId 是"人员账号"的 ID，而 notices 表存的是 "供应商公司"的 ID (assigned_supplier_id)
+                // 先查询当前人员账号绑定的公司 supplier_id
+                const { data: userRecord } = await supabaseAdmin
+                    .from('users')
+                    .select('supplier_id')
+                    .eq('id', userId)
+                    .single();
+
+                if (userRecord && userRecord.supplier_id) {
+                    // 使用查出来的公司 ID 去精准过滤单据
+                    query = query.eq('assigned_supplier_id', userRecord.supplier_id);
+                } else {
+                    // 如果该账号没有绑定公司，出于安全考虑，返回一个必定不匹配的条件让结果为空
+                    query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+                }
+            } 
+            else if (role === 'SD' && userId) {
+                // SD 默认可以看全部。
+                // 如果您希望 SD 只能看自己创建的，可以取消下面这行的注释：
+                // query = query.eq('creator_id', userId);
+            }
+            // Admin 和 Manager 默认不加限制，查看所有数据
+
+            // 3. 执行最终查询
+            let { data, error } = await query;
+
+            if (error) {
+                console.warn('[Notices API] Lightweight list query failed, falling back to full query:', error.message);
+
+                query = supabaseAdmin
+                    .from('notices')
+                    .select(FULL_NOTICE_SELECT)
+                    .order('created_at', { ascending: false })
+                    .limit(limit);
+
+                if (role === 'Supplier' && userId) {
+                    const { data: userRecord } = await supabaseAdmin
+                        .from('users')
+                        .select('supplier_id')
+                        .eq('id', userId)
+                        .single();
+
+                    if (userRecord && userRecord.supplier_id) {
+                        query = query.eq('assigned_supplier_id', userRecord.supplier_id);
+                    } else {
+                        query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+                    }
+                }
+
+                const fallback = await query;
+                data = fallback.data;
+                error = fallback.error;
+            }
+
             if (error) throw error;
-            return res.json(data);
+            return res.json((data || []).map(withListPreviewFields));
         }
 
         // --- POST: 创建通知单 (支持批量) ---

@@ -18,9 +18,12 @@ const { Search, TextArea } = Input;
 
 // 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 const feedbackStatuses = ['new', 'acked', 'resolved', 'wontfix', 'alarm'];
 const feedbackStatusConfig = {
@@ -494,9 +497,19 @@ const AdminPage = () => {
     const handlePublishNotice = async (values) => {
         setLoading(true);
         try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                messageApi.error('登录凭证丢失，请重新登录');
+                navigate('/login');
+                return;
+            }
+
             const response = await fetch(`${BACKEND_URL}/api/admin/system-notices`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     type: values.type,
                     content: values.content,
@@ -519,8 +532,18 @@ const AdminPage = () => {
     // 12. 删除公告 (复用 system-notices API)
     const handleDeleteNotice = async (id) => {
         try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                messageApi.error('登录凭证丢失，请重新登录');
+                navigate('/login');
+                return;
+            }
+
             const response = await fetch(`${BACKEND_URL}/api/admin/system-notices?id=${id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
             if (!response.ok) throw new Error('Delete failed');
 

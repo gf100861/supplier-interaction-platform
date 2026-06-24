@@ -26,10 +26,13 @@ const { useBreakpoint } = Grid; // 2. 获取断点 Hook
 
 // 🔧 动态配置 API 地址
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
 
+const BACKEND_URL = isDev
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 // --- 辅助函数 ---
 const getPlanIcon = (type) => {
     switch (type) {

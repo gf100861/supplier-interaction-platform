@@ -58,7 +58,7 @@ module.exports = async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
-        const logData = req.body;
+        const logData = { ...req.body };
 
         // 简单校验
         if (!logData) {
@@ -66,6 +66,18 @@ module.exports = async (req, res) => {
         }
 
         // 写入数据库
+        if (logData.user_id && !logData.user_email) {
+            const { data: userProfile, error: userError } = await supabaseAdmin
+                .from('users')
+                .select('username, email')
+                .eq('id', logData.user_id)
+                .single();
+
+            if (!userError && userProfile) {
+                logData.user_email = userProfile.email;
+            }
+        }
+
         const { error } = await supabaseAdmin.from('system_logs').insert([logData]);
 
         if (error) {

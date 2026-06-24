@@ -43,11 +43,13 @@ const getClientIp = async () => {
     }
 };
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'  // 本地开发环境
+//     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'  // 本地开发环境
-    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
-
-
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 const logSystemEvent = async (params) => {
     const { category = 'SYSTEM', eventType, severity = 'INFO', message, email = null, userId = null, meta = {} } = params;
     try {

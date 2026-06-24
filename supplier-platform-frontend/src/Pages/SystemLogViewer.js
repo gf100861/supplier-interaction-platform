@@ -10,9 +10,6 @@ import {
     FilterOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-// ❌ 移除 Supabase 客户端引用
-// import { supabase } from '../supabaseClient';
-
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Text } = Typography;
@@ -20,9 +17,13 @@ const { Text } = Typography;
 
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
+// const BACKEND_URL = isDev
+//         ? 'http://localhost:3001'  // 本地开发环境
+//         : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+
 const BACKEND_URL = isDev
-        ? 'http://localhost:3001'  // 本地开发环境
-        : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 // 配置日志级别的颜色和图标
 const SEVERITY_CONFIG = {
     INFO: { color: 'processing', icon: <InfoCircleOutlined />, label: '信息' },
@@ -153,12 +154,15 @@ const SystemLogViewer = () => {
             dataIndex: 'user_email',
             width: 200,
             ellipsis: true,
-            render: (email) => email ? (
+            render: (email, record) => {
+                const displayName = email || record.user_name;
+                return displayName ? (
                 <Space>
                     <UserOutlined style={{ color: '#bfbfbf' }} />
-                    <span style={{ fontSize: 13 }}>{email}</span>
+                    <span style={{ fontSize: 13 }}>{displayName}</span>
                 </Space>
-            ) : <Text type="secondary">-</Text>
+            ) : <Text type="secondary">-</Text>;
+            }
         },
         {
             title: '操作',
@@ -298,7 +302,7 @@ const SystemLogViewer = () => {
                             <Descriptions.Item label="类别">{selectedLog.category}</Descriptions.Item>
                             <Descriptions.Item label="事件类型">{selectedLog.event_type}</Descriptions.Item>
                             <Descriptions.Item label="操作用户">
-                                {selectedLog.user_email} 
+                                {selectedLog.user_email || selectedLog.user_name || '-'} 
                                 <br />
                                 <Text type="secondary" copyable>{selectedLog.user_id}</Text>
                             </Descriptions.Item>

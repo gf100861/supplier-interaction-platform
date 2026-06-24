@@ -3,9 +3,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 const SupplierContext = createContext();
 
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'
+//     : 'https://supplier-interaction-platform-backend.vercel.app';
+
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'
-    : 'https://supplier-interaction-platform-backend.vercel.app';
+    ? 'http://localhost:3001' 
+    : window.location.origin; // 必须是这句！
 
 export const SupplierProvider = ({ children }) => {
     const [suppliers, setSuppliers] = useState([]);

@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   // 🚨 核心修复：这里必须包含你所有的组件文件路径
+  darkMode: 'class', // 必须设置为 'class'
   content: [
     "./src/**/*.{js,jsx,ts,tsx}", 
   ],

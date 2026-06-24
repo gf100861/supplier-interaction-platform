@@ -6,17 +6,18 @@ import { useNotification } from '../contexts/NotificationContext';
 import { supabase } from '../supabaseClient';
 import { useLanguage } from '../contexts/LanguageContext';
 import './LoginPage.css';
-import * as microsoftTeams from "@microsoft/teams-js";
 const { Text, Link } = Typography;
 
 // --- 🔧 新增：定义后端 API 基础地址 ---
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
+// const BACKEND_URL = isDev
+//     ? 'http://localhost:3001'  // 本地开发环境
+//     : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
+
 const BACKEND_URL = isDev
-    ? 'http://localhost:3001'  // 本地开发环境
-    : 'https://supplier-interaction-platform-backend.vercel.app'; // Vercel 生产环境
-
-
+    ? 'http://localhost:3001'
+    : window.location.origin; // 必须是这句！
 // --- 错误翻译函数 (保持不变) ---
 const translateError = (errorMsg) => {
     const msg = typeof errorMsg === 'string' ? errorMsg : (errorMsg?.message || '未知错误');
@@ -180,7 +181,7 @@ const LoginPage = () => {
     const [showPassword, setShowPassword] = useState(false);
     const { messageApi } = useNotification();
     const [loading, setLoading] = useState(false);
-   
+
     // 记录页面初始化时间
     const pageInitTime = useRef(Date.now());
     // 记录表单交互
@@ -188,42 +189,17 @@ const LoginPage = () => {
 
     // --- 🌍 接入全局语言和深色模式状态 ---
     const { language: lang, toggleLanguage: toggleLang, t } = useLanguage();
-    const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('app_theme') === 'dark');
-
-  useEffect(() => {
-
-    const tryTeamsAutoLogin = async () => {
-        try {
-
-            if (!window.microsoftTeams && !window.parent) {
-                console.log("Not running inside Teams");
-                return;
-            }
-
-            await microsoftTeams.app.initialize();
-
-            const context = await microsoftTeams.app.getContext();
-
-            console.log("Teams context:", context);
-
-        } catch (err) {
-            console.log("Teams init skipped:", err.message);
-        }
-    };
-
-    tryTeamsAutoLogin();
-
-}, []);
+    const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
 
     // 处理深色模式切换
     useEffect(() => {
         const root = window.document.documentElement;
         if (isDarkMode) {
             root.classList.add('dark');
-            localStorage.setItem('app_theme', 'dark');
+            localStorage.setItem('theme', 'dark');
         } else {
             root.classList.remove('dark');
-            localStorage.setItem('app_theme', 'light');
+            localStorage.setItem('theme', 'light');
         }
     }, [isDarkMode]);
 
@@ -388,7 +364,7 @@ const LoginPage = () => {
     const typedSlogan = useTypewriterLoop(currentSentences);
 
     return (
-        <div className="flex min-h-screen w-full bg-white">
+        <div className="flex min-h-screen w-full bg-white dark:bg-slate-950 transition-colors duration-300">
 
             {/* --- ✨ 右上角悬浮控制栏 (UI 协调的核心) --- */}
             <div className="absolute top-6 right-6 z-50 flex items-center gap-3">
@@ -409,7 +385,7 @@ const LoginPage = () => {
                     {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
             </div>
-            
+
             {/* --- 左侧：视觉装饰区 (Desktop Only) --- */}
             <div className="hidden lg:flex w-1/2 bg-slate-900 relative overflow-hidden flex-col justify-between p-12 text-white">
                 {/* 背景装饰：动态感的圆环/光晕 */}
@@ -455,11 +431,11 @@ const LoginPage = () => {
             </div>
 
             {/* --- 右侧：登录表单区 --- */}
-            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative overflow-hidden">
-                <div className="w-full max-w-md space-y-8">
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative overflow-hidden bg-white dark:bg-slate-900">
+                <div className="w-full max-w-md space-y-8 relative z-10">
                     {/* 👇 添加 pointer-events-none 阻止光斑拦截鼠标事件 */}
                     {/* 光斑 1：蓝色 (左上) */}
-                    <div className="absolute top-0 left-0 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob pointer-events-none"></div>
+                    <div className="absolute top-0 left-0 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-3xl opacity-30 animate-blob pointer-events-none"></div>
 
                     {/* 光斑 2：紫色 (右上) - 延迟2秒 */}
                     <div className="absolute top-0 right-0 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000 pointer-events-none"></div>
@@ -473,43 +449,35 @@ const LoginPage = () => {
                         <div className="bg-blue-600 p-2 rounded-lg">
                             <Hexagon className="w-6 h-6 text-white fill-current" />
                         </div>
-                        <span className="text-xl font-bold text-slate-900">Action Portal</span>
+                        <span className="text-xl font-bold text-slate-900 dark:text-slate-200">Action Portal</span>
                     </div>
 
                     {/* 欢迎语 */}
-                    <div className="relative z-10">
-                        <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+                    <div>
+                        <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
                             {t('login.welcome')}
                         </h2>
-                        <p className="mt-2 text-sm text-slate-600">
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
                             {t('login.subWelcome')}
                         </p>
                     </div>
 
-
-                    <form
-                        className="mt-8 space-y-6 relative z-10"
-                        onSubmit={handleSubmit}
-                        onChange={handleFormChange}
-                        autoComplete="off"
-                    >
+                    <form className="mt-8 space-y-6 relative z-10" onSubmit={handleSubmit} onChange={handleFormChange} autoComplete="off">
                         <div className="space-y-5">
-
                             {/* 邮箱输入 */}
                             <div>
-                                <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+                                <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                                     {t('login.emailLabel')}
                                 </label>
                                 <div className="mt-1 relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Mail className="h-5 w-5 text-slate-400" />
+                                        <Mail className="h-5 w-5 text-slate-400 dark:text-slate-500" />
                                     </div>
                                     <input
                                         id="email"
                                         name="email"
                                         type="email"
-                                        required
-                                        className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        className="block w-full pl-10 pr-3 py-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                                         placeholder={t('login.emailPlace')}
                                     />
                                 </div>
@@ -517,37 +485,30 @@ const LoginPage = () => {
 
                             {/* 密码输入 */}
                             <div>
-                                <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+                                <label htmlFor="password" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                                     {t('login.pwdLabel')}
                                 </label>
                                 <div className="mt-1 relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Lock className="h-5 w-5 text-slate-400" />
+                                        <Lock className="h-5 w-5 text-slate-400 dark:text-slate-500" />
                                     </div>
                                     <input
                                         id="password"
                                         name="password"
                                         type={showPassword ? "text" : "password"}
-                                        required
-                                        className="block w-full pl-10 pr-10 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        className="block w-full pl-10 pr-10 py-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                                         placeholder={t('login.pwdPlace')}
                                     />
+                                    {/* 眼睛图标按钮也需要适配悬停色 */}
                                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                                         <button
                                             type="button"
                                             onClick={() => setShowPassword(!showPassword)}
-                                            className="text-slate-400 hover:text-slate-600 focus:outline-none"
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                                         >
-                                            {showPassword ? (
-                                                <EyeOff className="h-5 w-5" />
-                                            ) : (
-                                                <Eye className="h-5 w-5" />
-                                            )}
+                                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                                         </button>
                                     </div>
-                                </div>
-                                <div className="flex items-center justify-end mt-2">
-                                    <Link href="/forgot-password" target="_blank">{t('login.forgot')}</Link>
                                 </div>
                             </div>
                         </div>
@@ -573,18 +534,18 @@ const LoginPage = () => {
                             )}
                         </button>
                     </form>
-                    
+
                     {/* 👇 添加 relative z-10 提升层级，防止被背景遮挡 */}
-                    <div className="relative z-10 mt-2 text-center text-sm text-slate-600">
+                    <div className="relative z-10 mt-2 text-center text-sm text-slate-600 dark:text-slate-400">
                         {t('login.noAccount')}{" "}
-                        <Link href="mailto:louis.xin@volvo.com" className="font-medium text-blue-600 hover:text-blue-400">
+                        <Link href="mailto:louis.xin@volvo.com" className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400">
                             {t('login.contactAdmin')}
                         </Link>
                     </div>
 
                     <Divider style={{ margin: '10px 0' }} className="relative z-10" />
 
-                    <div className="relative z-10 text-center mt-3" style={{marginTop:'10px'}}>
+                    <div className="relative z-10 text-center mt-3" style={{ marginTop: '10px' }}>
                         <Text type="secondary" style={{ fontSize: '12px' }} className="font-medium text-blue-600 hover:text-blue-500">
                             <Link href="/help-center" target="_blank" style={{ fontSize: '12px' }}>{t('menu.helpCenter')}</Link>
                             <Divider type="vertical" />
