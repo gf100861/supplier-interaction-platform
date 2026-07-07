@@ -1,0 +1,36 @@
+.printable-container {
+    padding: 24px;
+    background-color: #f5f5f5;
+}
+.report-content {
+    padding: 32px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+}
+.report-section {
+    margin-bottom: 32px;
+}
+
+@media print {
+    .no-print {
+        display: none !important;
+    }
+    body, .printable-container, .report-content {
+        padding: 0 !important;
+        margin: 0 !important;
+        background-color: #fff !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    .report-section {
+        page-break-after: always; /* 每个表格结束后尝试分页 */
+    }
+    .ant-table {
+        font-size: 9px;
+        color: #000 !important;
+    }
+    @page {
+        size: A4 landscape;
+        margin: 15mm;
+    }
+}

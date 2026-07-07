@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- 🔧 修复 Ant Design 与 Tailwind 的冲突 --- */
+/* Tailwind 的 preflight 会把按钮背景设为透明，这里强制改回 Antd 的默认行为 */
+.ant-btn-primary {
+  background-color: #1677ff; /* Antd 默认主色 */
+}
+
+/* 修复图片在 Tailwind 下默认 block 的行为，防止 Antd 图标错位 */
+img, svg, video, canvas, audio, iframe, embed, object {
+  display: inline-block; 
+  vertical-align: middle;
+}
+img {
+  display: block; /* 恢复 img 的 block 属性，Antd Image 组件需要 */
+}
+
+/* --- 全局样式 --- */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* --- 你的自定义卡片样式 --- */
+.custom-card-container {
+  position: relative;
+}
+
+.custom-controls {
+  position: absolute;
+  bottom: 20px;
+  right: 24px;
+  z-index: 10;
+  opacity: 1;
+}
+
+.custom-controls .ant-btn {
+  background-color: rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.custom-controls .ant-btn:hover {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  transform: scale(1.1);
+}

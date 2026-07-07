@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  Admin
+  Manager
+  SD
+  Supplier
+}
+
+model User {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  username            String?
+  email               String                 @unique
+  phone               String?
+  passwordHash        String?                @map("password_hash")
+  role                UserRole
+  supplierId          String?                @map("supplier_id") @db.Uuid
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+  supplier            Supplier?              @relation(fields: [supplierId], references: [id])
+  createdNotices      Notice[]               @relation("NoticeCreator")
+  managedAssignments  SdSupplierAssignment[] @relation("SdUserAssignments")
+  uploadedFiles       UserFile[]
+  alerts              Alert[]
+  systemLogs          SystemLog[]
+
+  @@map("users")
+}
+
+model Supplier {
+  id          String                 @id @default(uuid()) @db.Uuid
+  name        String?
+  parmaId     String?                @map("parma_id")
+  shortCode   String?                @map("short_code")
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  users       User[]
+  notices     Notice[]
+  assignments SdSupplierAssignment[]
+
+  @@map("suppliers")
+}
+
+model SdSupplierAssignment {
+  id         String   @id @default(uuid()) @db.Uuid
+  sdUserId   String   @map("sd_user_id") @db.Uuid
+  supplierId String   @map("supplier_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+  sdUser     User     @relation("SdUserAssignments", fields: [sdUserId], references: [id], onDelete: Cascade)
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([sdUserId, supplierId])
+  @@map("sd_supplier_assignments")
+}
+
+model Notice {
+  id                 String    @id @default(uuid()) @db.Uuid
+  creatorId          String?   @map("creator_id") @db.Uuid
+  assignedSupplierId String?   @map("assigned_supplier_id") @db.Uuid
+  title              String?
+  status             String?
+  priority           String?
+  problemType        String?   @map("problem_type")
+  content            Json?
+  attachments        Json?
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  creator            User?     @relation("NoticeCreator", fields: [creatorId], references: [id])
+  supplier           Supplier? @relation(fields: [assignedSupplierId], references: [id])
+
+  @@map("notices")
+}
+
+model Alert {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  type      String?
+  title     String?
+  message   String?
+  read      Boolean  @default(false)
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("alerts")
+}
+
+model AuditPlan {
+  id         String   @id @default(uuid()) @db.Uuid
+  supplierId String?  @map("supplier_id") @db.Uuid
+  ownerId    String?  @map("owner_id") @db.Uuid
+  title      String?
+  status     String?
+  startDate  DateTime? @map("start_date")
+  endDate    DateTime? @map("end_date")
+  content    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("audit_plans")
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  type      String?
+  sortOrder Int?     @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("categories")
+}
+
+model SystemConfig {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_config")
+}
+
+model SystemLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  category  String?
+  action    String?
+  message   String?
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("system_logs")
+}
+
+model UserFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  fileName     String   @map("file_name")
+  filePath     String   @map("file_path")
+  sourceDevice String?  @map("source_device")
+  createdAt    DateTime @default(now()) @map("created_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_files")
+}
+
+model KnowledgeBaseItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String?
+  content   String?
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("knowledge_base")
+}
