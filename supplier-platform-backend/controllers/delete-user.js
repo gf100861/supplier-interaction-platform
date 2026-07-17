@@ -61,7 +61,6 @@ module.exports = async (req, res) => {
     }
 
     try {
-        console.log(`正在尝试删除用户: ${userId}`);
 
         // 步骤 A: 尝试删除 Supabase Auth 用户 (最关键的一步)
         // 注意：deleteUser 需要 service_role 权限

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Grid, Card, Typography, Tabs, Space, Button, Form, Input, Spin, Select, Radio, Popconfirm, DatePicker, Tooltip, theme // 1. 引入 DatePicker
 } from 'antd';
-import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined, FilterOutlined } from '@ant-design/icons';
+import { EditOutlined, StarOutlined, StarFilled, SortAscendingOutlined, SortDescendingOutlined, AppstoreOutlined, BarsOutlined } from '@ant-design/icons';
 import { supabase } from '../supabaseClient';
 import dayjs from 'dayjs';
 
@@ -28,41 +28,6 @@ const { TabPane } = Tabs;
 const { RangePicker } = DatePicker; // 4. 解构 RangePicker
 
 const { useBreakpoint } = Grid; // 2. 解构 useBreakpoint
-
-// --- 1. 新增：高亮文本辅助组件 ---
-// 支持多关键词 (例如用逗号分隔的)
-const HighlightText = ({ text, keyword }) => {
-    const strText = String(text || '');
-    if (!keyword || !keyword.trim()) {
-        return <>{strText}</>;
-    }
-
-    // 1. 将搜索词按分隔符拆分为数组，并过滤空值
-    const keywords = keyword.toLowerCase().split(/[；;@,，\s]+/).filter(k => k.trim());
-    if (keywords.length === 0) return <>{strText}</>;
-
-    // 2. 构建正则：(keyword1|keyword2|...)，注意转义特殊字符
-    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(`(${escapedKeywords.join('|')})`, 'gi');
-
-    // 3. 拆分并高亮
-    const parts = strText.split(regex);
-
-    return (
-        <span>
-            {parts.map((part, i) =>
-                regex.test(part) ? (
-                    <span key={i} style={{ backgroundColor: '#ffc069', color: '#000', padding: '0 2px', borderRadius: '2px' }}>
-                        {part}
-                    </span>
-                ) : (
-                    part
-                )
-            )}
-        </span>
-    );
-};
-
 
 const NoticePage = () => {
     // --- 状态管理 ---
@@ -100,11 +65,8 @@ const NoticePage = () => {
     const [correctionModal, setCorrectionModal] = useState({ visible: false, notice: null });
     const [reassignForm] = Form.useForm();
     const [selectedStatuses, setSelectedStatuses] = useState([]);
-    const [allUsers, setAllUsers] = useState([]);
-    const [usersLoading, setUsersLoading] = useState(true);
     const [listSortOrder, setListSortOrder] = useState('desc');
 
-    const [isReassigning, setIsReassigning] = useState(false);
     const [actionLoading, setActionLoading] = useState({});
 
     const isSDManagerOrAdmin = ['SD', 'Manager', 'Admin'].includes(currentUser.role);
@@ -185,24 +147,8 @@ const NoticePage = () => {
                 navigate(location.pathname, { replace: true, state: {} });
             }
         }
-    }, [location.state, navigate, messageApi, suppliers]); // 依赖 suppliers 以确保名称能正确显示
+    }, [location.pathname, location.state, navigate, messageApi, suppliers]); // 依赖 suppliers 以确保名称能正确显示
 
-
-    // (获取 allUsers 的 useEffect 保持不变)
-    useEffect(() => {
-        const fetchUsers = async () => {
-            try {
-                const { data, error } = await supabase.from('users').select('id,supplier_id');
-                if (error) throw error;
-                setAllUsers(data);
-            } catch (error) {
-                console.error("获取用户列表失败:", error);
-            } finally {
-                setUsersLoading(false);
-            }
-        };
-        fetchUsers();
-    }, []);
 
     // (同步 selectedNotice 的 useEffect 保持不变)
     useEffect(() => {
@@ -247,8 +193,6 @@ const NoticePage = () => {
     // (userVisibleNotices useMemo 保持不变)
     const userVisibleNotices = useMemo(() => {
 
-        console.log("NoticeList 的完整数据源: ", notices);
-        console.log("NoticeList 的供应商: ", currentUser.supplier_id);
         if (!currentUser || !notices) return [];
         switch (currentUser.role) {
             case 'Manager':
@@ -263,18 +207,7 @@ const NoticePage = () => {
                 );
             case 'Supplier':
                 const supplierCompanyId = currentUser.supplier_id;
-                console.log("【排查】当前登录用户的公司 ID:", supplierCompanyId, "类型:", typeof supplierCompanyId);
-                
-                const filteredForSupplier = notices.filter(n => {
-                    // 打印出前几条数据，看看字段对不对，类型对不对
-                    console.log(`【排查】通知单[${n.id}] 的 assignedSupplierId:`, n.assignedSupplierId, "类型:", typeof n.assignedSupplierId);
-        
-                // 为了防止类型不一致，强制转换为字符串进行比对
-                return String(n.assignedSupplierId) === String(supplierCompanyId);
-    });
-    
-    console.log("【排查】Supplier 过滤后的最终结果:", filteredForSupplier);
-    return filteredForSupplier;
+                return notices.filter(n => String(n.assignedSupplierId) === String(supplierCompanyId));
             default:
                 return [];
         }
@@ -291,13 +224,7 @@ const NoticePage = () => {
             //可能会有性能问题，后续可以优化为先筛选出 SD 负责的供应商 ID 列表，再进行一次性过滤，而不是对每条通知单都进行 some() 判断
 
             data = userVisibleNotices.filter(n => currentUser?.managed_suppliers?.some(s => s.supplier.id === n.assignedSupplierId))
-        } else if (currentUser?.role === 'Supplier') {
-
-            data = userVisibleNotices.filter(n => n.supplier.shortCode === currentUser?.username)
-            console.log("username结果看看:", currentUser?.username);
-            console.log("汇总数据源:", currentUser?.data);
-
-        } else {
+        } else if (currentUser?.role !== 'Supplier') {
 
             data = userVisibleNotices;
         }
@@ -713,19 +640,6 @@ const NoticePage = () => {
         }
     };
 
-    // 6. SD 驳回证据
-    const handleEvidenceReject = async (values) => {
-        const notice = rejectionModal.notice;
-        if (!notice) return;
-        const newHistory = { type: 'sd_evidence_rejection', submitter: currentUser.name, time: dayjs().format('YYYY-MM-DD HH:mm:ss'), description: `[证据被驳回] ${values.rejectionReason}` };
-        const currentHistory = Array.isArray(notice.history) ? notice.history : [];
-        await updateNotice(notice.id, { status: '待供应商关闭', history: [...currentHistory, newHistory] });
-        // 发送提醒
-        messageApi.warning('证据已驳回！');
-        handleRejectionCancel();
-        if (selectedNotice?.id === notice.id) handleDetailModalCancel();
-    };
-
     // 6.1 SD 逐条批准证据
     const handleEvidenceItemApprove = async (index) => {
         const notice = selectedNotice;
@@ -815,8 +729,6 @@ const NoticePage = () => {
             return;
         }
 
-        // [新增] 开始加载状态
-        setIsReassigning(true);
         // [新增] 显示加载提示 (持久化，直到操作完成)
         const loadingMsg = messageApi.loading('正在重分配通知单并发送邮件通知...', 0);
 
@@ -857,9 +769,6 @@ const NoticePage = () => {
             // [新增] 销毁加载提示并显示错误
             loadingMsg();
             messageApi.error(`重分配失败: ${error.message}`);
-        } finally {
-            // [新增] 结束加载状态
-            setIsReassigning(false);
         }
     };
 
@@ -924,7 +833,6 @@ const NoticePage = () => {
         const isSDOrManager = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager');
         const isAllowedToEdit = currentUser && (currentUser.role === 'SD' || currentUser.role === 'Manager' || currentUser.role === 'Admin') && item.status === '待提交Action Plan';
         const canEdit = item.status === '待提交Action Plan';
-        const isManager = currentUser && currentUser.role === 'Manager';
         const stopPropagationAndRun = (e, func) => { e?.stopPropagation(); func(); };
         if (isAllowedToEdit) {
             // --- 核心修正：修改此按钮的 onClick ---

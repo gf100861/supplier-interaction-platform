@@ -3,8 +3,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
-const { createClient } = require('@supabase/supabase-js');
 
 // --- 引入 API 处理逻辑 ---
 const createUserHandler = require('./controllers/create-user');
@@ -48,12 +46,6 @@ const filesHandler = require('./controllers/file-sync/files'); // 新增
 const app = express();
 const server = http.createServer(app);
 
-// 初始化 Supabase Admin (如果其他地方需要用)
-const supabaseAdmin = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
 // ==========================================
 // 鉴权中间件函数
 // ==========================================
@@ -95,11 +87,8 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // --- Socket.IO (仅本地有效) ---
-const io = new Server(server, {
+new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
-});
-io.on('connection', (socket) => {
-    console.log('Local Socket connected:', socket.id);
 });
 
 // ==========================================

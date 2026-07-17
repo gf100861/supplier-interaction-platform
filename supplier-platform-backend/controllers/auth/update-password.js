@@ -64,13 +64,6 @@ module.exports = async (req, res) => {
             // 5. 获取真实的 User ID (核心步骤)
             const safeUserId = user.id;
 
-            // --- 🔍 调试日志 (关键) ---
-            console.log("--------------------------------------------------");
-            console.log("[Update Password Debug]");
-            console.log("User Email:", user.email);
-            console.log("Resolved User ID (safeUserId):", safeUserId); 
-            console.log("--------------------------------------------------");
-
             // 6. 再次检查 ID 是否有效
             if (!safeUserId) {
                 return res.status(500).json({ error: 'Failed to resolve User ID from token' });
@@ -88,7 +81,6 @@ module.exports = async (req, res) => {
                 throw updateError;
             }
 
-            console.log("[Update Password] Success!");
             return res.json({ success: true, message: 'Password updated successfully' });
         }
 

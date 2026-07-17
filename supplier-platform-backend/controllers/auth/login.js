@@ -60,7 +60,6 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        console.log(`[Auth] Attempting login for: ${email}`);
         
         // 1. 验证账号密码 (Supabase Auth 会自动比对哈希，很安全)
         const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
@@ -94,7 +93,6 @@ module.exports = async (req, res) => {
             return res.status(500).json({ error: '无法获取用户信息' });
         }
 
-        console.log(`[Auth] Login success: ${email}`);
         
         // 3. 返回数据
         res.status(200).json({

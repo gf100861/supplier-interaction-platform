@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
     Button, Modal, Form, Input, Select, Tag, Typography, Card,
     Popconfirm, Space, Tooltip, Divider, Spin,
@@ -14,17 +14,12 @@ import dayjs from 'dayjs';
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
+import './AuditPlanPage.css';
 
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 
-// 🔧 环境配置
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-// const BACKEND_URL = isDev
-//     ? 'http://localhost:3001'
-//     : 'https://supplier-interaction-platform-backend.vercel.app';
 const BACKEND_URL = isDev
     ? 'http://localhost:3001' 
     : window.location.origin; // 必须是这句！
@@ -86,6 +81,7 @@ const AuditPlanPage = () => {
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState([]);
     const [monthColumnWidths, setMonthColumnWidths] = useState(Array(12).fill(190));
+    const resizeSessionRef = useRef({ cleanup: null, frame: null });
     const { suppliers, loading: suppliersLoading } = useSuppliers();
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
     const { messageApi } = useNotification();
@@ -167,11 +163,13 @@ const AuditPlanPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [currentYear, navigate]); // ⚠️ 关键：所有在 fetchData 内部用到的外部变量（state, props）都要写在这里
+    }, [currentYear, navigate, messageApi]);
 
     useEffect(() => {
         fetchData();
-    }, [currentYear]);
+    }, [fetchData]);
+
+    useEffect(() => () => resizeSessionRef.current.cleanup?.(), []);
 
     const managedSuppliers = useMemo(() => {
         if (!currentUser || !suppliers) return [];
@@ -409,26 +407,44 @@ const AuditPlanPage = () => {
         return years;
     };
 
-    const handleResizeMouseDown = (index) => (e) => {
+    const handleResizePointerDown = (index) => (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        resizeSessionRef.current.cleanup?.();
+
         const startX = e.clientX;
         const startWidth = monthColumnWidths[index];
-        const handleMouseMove = (moveEvent) => {
-            const newWidth = startWidth + (moveEvent.clientX - startX);
-            if (newWidth > 80) {
+        const previousCursor = document.body.style.cursor;
+        const previousUserSelect = document.body.style.userSelect;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const handlePointerMove = (moveEvent) => {
+            const newWidth = Math.min(480, Math.max(100, startWidth + moveEvent.clientX - startX));
+            if (resizeSessionRef.current.frame) cancelAnimationFrame(resizeSessionRef.current.frame);
+            resizeSessionRef.current.frame = requestAnimationFrame(() => {
                 setMonthColumnWidths(prevWidths => {
                     const newWidths = [...prevWidths];
                     newWidths[index] = newWidth;
                     return newWidths;
                 });
-            }
+            });
         };
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
+
+        const cleanup = () => {
+            document.removeEventListener('pointermove', handlePointerMove);
+            document.removeEventListener('pointerup', cleanup);
+            document.removeEventListener('pointercancel', cleanup);
+            if (resizeSessionRef.current.frame) cancelAnimationFrame(resizeSessionRef.current.frame);
+            document.body.style.cursor = previousCursor;
+            document.body.style.userSelect = previousUserSelect;
+            resizeSessionRef.current = { cleanup: null, frame: null };
         };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+
+        resizeSessionRef.current.cleanup = cleanup;
+        document.addEventListener('pointermove', handlePointerMove);
+        document.addEventListener('pointerup', cleanup);
+        document.addEventListener('pointercancel', cleanup);
     };
 
     const handleExportExcel = async () => {
@@ -439,6 +455,12 @@ const AuditPlanPage = () => {
         }
         messageApi.loading({ content: '正在生成Excel文件...', key: 'exporting' });
 
+        const [excelModule, fileSaverModule] = await Promise.all([
+            import('exceljs'),
+            import('file-saver'),
+        ]);
+        const ExcelJS = excelModule.default || excelModule;
+        const saveAs = fileSaverModule.saveAs || fileSaverModule.default?.saveAs || fileSaverModule.default;
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(`${currentYear}年规划`);
 
@@ -530,6 +552,11 @@ const AuditPlanPage = () => {
         []
     );
 
+    const matrixWidth = useMemo(
+        () => Object.values(stickyColumnWidths).reduce((sum, width) => sum + width, 0) + monthColumnWidths.reduce((sum, width) => sum + width, 0),
+        [monthColumnWidths]
+    );
+
     // ✅ 4. 封装筛选栏：提取成组件以便复用
     const renderFilterBar = () => (
         <Row gutter={[16, 20]} align="middle" style={{ marginBottom: 16 }}>
@@ -581,7 +608,7 @@ const AuditPlanPage = () => {
     const renderMatrixTable = () => (
 
 
-        <div style={matrixStyles.table}>
+        <div style={{ ...matrixStyles.table, width: matrixWidth }}>
             <div style={matrixStyles.headerRow}>
                 <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.parma}px`, left: 0, fontWeight: 'bold' }}>Parma号</div>
                 <div style={{ ...matrixStyles.stickyCell, flex: `0 0 ${stickyColumnWidths.cmt}px`, left: stickyColumnWidths.parma, fontWeight: 'bold' }}>CMT</div>
@@ -589,7 +616,11 @@ const AuditPlanPage = () => {
                 {months.map((month, index) => (
                     <div key={month} style={{ ...matrixStyles.headerCell, flex: `0 0 ${monthColumnWidths[index]}px` }}>
                         {month}
-                        <div onMouseDown={handleResizeMouseDown(index)} style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '10px', cursor: 'col-resize', userSelect: 'none' }} />
+                        <div
+                            aria-label={`调整${month}列宽`}
+                            onPointerDown={handleResizePointerDown(index)}
+                            style={{ position: 'absolute', right: -5, top: 0, height: '100%', width: '12px', cursor: 'col-resize', userSelect: 'none', touchAction: 'none', zIndex: 2 }}
+                        />
                     </div>
                 ))}
             </div>
@@ -741,7 +772,7 @@ const AuditPlanPage = () => {
                         <Button icon={<DownloadOutlined />} onClick={handleExportExcel}>导出为Excel</Button>
                     </Space>
                 }
-                bodyStyle={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 400px)' }}
+                styles={{ body: { padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 400px)' } }}
             >
                 {loading || suppliersLoading ? <div style={{ textAlign: 'center', padding: '50px' }}><Spin size="large" /></div> : (
                     renderMatrixTable() // 使用封装后的渲染函数
@@ -754,28 +785,20 @@ const AuditPlanPage = () => {
                 open={isFullScreen}
                 onCancel={() => setIsFullScreen(false)}
                 footer={null}
-                width="100%"
-                style={{ top: 0, padding: 0, maxWidth: '120vw', height: '100vh', margin: 0 }}
-                bodyStyle={{ height: 'calc(100vh - 55px)', display: 'flex', flexDirection: 'column', padding: 0 }}
-                maskStyle={{ backgroundColor: '#fff' }}
+                width="100vw"
+                wrapClassName="audit-plan-fullscreen-modal"
+                style={{ top: 0, paddingBottom: 0, margin: 0, maxWidth: 'none' }}
+                styles={{
+                    body: { height: 'calc(100vh - 57px)', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' },
+                    mask: { backgroundColor: '#fff' },
+                }}
             >
                 {/* 筛选栏容器 */}
                 <div style={{ padding: '16px 24px', background: '#f5f5f5', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
                     {renderFilterBar()}
                 </div>
                 {/* 表格容器 */}
-                <div style={{
-                    padding: '8px',
-                    borderRight: '1px solid #f0f0f0',
-                    borderTop: '1px solid #f0f0f0',
-                    minHeight: '100px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'flex-start',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.2s'
-
-                }}>
+                <div className="audit-plan-fullscreen-table">
                     {renderMatrixTable()}
                 </div>
             </Modal>

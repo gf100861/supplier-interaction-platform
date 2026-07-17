@@ -20,7 +20,6 @@ const ForgotPasswordPage = () => {
         // 2. 补全路径为 '/update-password' (必须与你 Supabase 后台白名单一致)
         const redirectUrl = `${window.location.origin}/update-password`;
         
-        console.log("正在请求重置，重定向地址为:", redirectUrl); // 方便调试
 
         const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
             redirectTo: redirectUrl, 

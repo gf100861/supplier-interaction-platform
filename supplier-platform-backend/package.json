@@ -4,7 +4,7 @@
   "description": "Serverless backend for Supplier Interaction Platform",
   "main": "api/index.js",
   "scripts": {
-    "start": "node api/index.js",
+    "start": "node server.js",
     "dev": "nodemon server.js",
     "build": "mkdir -p public && echo 'Backend is running' > public/index.html",
     "prisma:generate": "prisma generate",

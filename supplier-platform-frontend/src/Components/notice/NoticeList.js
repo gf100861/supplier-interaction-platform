@@ -1,18 +1,25 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Tooltip, message, Upload, Grid, Card, Dropdown } from 'antd';
+import React, { useState, useMemo } from 'react';
+import { List, Tag, Button, Typography, Collapse, Space, Checkbox, Popconfirm, Upload, Grid } from 'antd';
 import {
-    FileTextOutlined, ProfileOutlined, EyeOutlined, SortAscendingOutlined,
-    SortDescendingOutlined, DeleteOutlined, DownloadOutlined, FileExcelOutlined,
-    MoreOutlined, CalendarOutlined, UserOutlined
+    FileTextOutlined, ProfileOutlined, EyeOutlined, DeleteOutlined,
+    DownloadOutlined, FileExcelOutlined, CalendarOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNotices } from '../../contexts/NoticeContext';
 import { useNotification } from '../../contexts/NotificationContext';
-import * as ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
 
 const { Text, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
+
+const loadExcelJS = async () => {
+    const module = await import('exceljs');
+    return module.default || module;
+};
+
+const loadSaveAs = async () => {
+    const module = await import('file-saver');
+    return module.saveAs || module.default?.saveAs || module.default;
+};
 
 // ... (HighlightText, getStatusTag, toPlainText functions remain unchanged)
 const HighlightText = ({ text, keyword }) => {
@@ -169,9 +176,13 @@ const SingleNoticeItem = ({
                 <FileTextOutlined style={{ fontSize: '24px', color: token.colorPrimary, marginRight: '16px', flexShrink: 0 }} />
                 <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <a onClick={() => showDetailsModal(item)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <Button
+                            type="link"
+                            onClick={() => showDetailsModal(item)}
+                            style={{ minWidth: 0, height: 'auto', padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        >
                             <Text strong><HighlightText text={rawTitle} keyword={searchTerm} /></Text>
-                        </a>
+                        </Button>
                         {item.isReviewed && <Tag color="green" icon={<EyeOutlined />} style={{ margin: 0 }}>已审阅</Tag>}
                         <Text type="secondary" style={{ fontSize: '12px', flexShrink: 0 }}>
                             (<HighlightText text={item.noticeCode} keyword={searchTerm} />)
@@ -203,23 +214,10 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     const screens = useBreakpoint();
     const isMobile = !screens.md;
 
-    const [sortOrder, setSortOrder] = useState('default');
     const supplierShortCode = batch.representative?.supplier?.shortCode || '未知';
     const category = batch.representative?.category || '未知类型';
-    const sdNotice = batch.representative?.sdNotice;
-    const createDate = sdNotice?.createTime
-        ? dayjs(sdNotice.createTime).format('YYYY-MM-DD')
-        : sdNotice?.planSubmitTime
-            ? sdNotice.planSubmitTime.slice(0, 10)
-            : '未知日期';
 
     const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user')), []);
-    const isRealBatch = batch.batchId.startsWith('BATCH-');
-    console.log('Catch',batch.representative)
-    // 移动端简化标题
-    const titleText = isRealBatch
-        ? `批量: ${supplierShortCode} - ${category}`
-        : `${supplierShortCode} - ${category}`;
 
     const { deleteMultipleNotices, updateNotice } = useNotices();
     const [selectedNoticeKeys, setSelectedNoticeKeys] = useState([]);
@@ -230,7 +228,6 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     // ... (toPlainText 保持不变) ...
     const toPlainText = (val) => {
         if (val == null) return '';
-        if (typeof val === 'object' && val.richText) return val.richText.map(r => r?.text || '').join('');
         if (typeof val === 'object' && Array.isArray(val.richText)) return val.richText.map(r => r?.text || '').join('');
         if (typeof val === 'object' && typeof val.richText === 'string') return val.richText;
         return String(val);
@@ -253,16 +250,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     }, [batch.notices, currentUser]);
 
     // ... (sortedNotices, handleSort, handleSelectChange, handleSelectAll 保持不变) ...
-    const sortedNotices = useMemo(() => {
-        const noticesToSort = [...batch.notices];
-        if (sortOrder === 'asc') return noticesToSort.sort((a, b) => (toPlainText(a.title) || '').localeCompare(toPlainText(b.title) || ''));
-        if (sortOrder === 'desc') return noticesToSort.sort((a, b) => (toPlainText(b.title) || '').localeCompare(toPlainText(a.title) || ''));
-        return noticesToSort;
-    }, [batch.notices, sortOrder]);
-
-    const handleSort = (order) => {
-        setSortOrder(prevOrder => prevOrder === order ? 'default' : order);
-    };
+    const sortedNotices = batch.notices;
 
     const handleSelectChange = (noticeId, checked) => {
         setSelectedNoticeKeys(prevKeys =>
@@ -295,6 +283,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     const handleActionDownloadTemplate = async () => {
         messageApi.loading({ content: '正在生成模板...', key: 'template' });
         try {
+            const [ExcelJS, saveAs] = await Promise.all([loadExcelJS(), loadSaveAs()]);
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Batch Action Plan');
 
@@ -339,8 +328,6 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
                 { key: 'deadline', width: 20 },
             ];
 
-            const grayDataFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // 浅灰色
-
             batch.notices.forEach(notice => {
                 const processText = toPlainText(notice.title) || 'N/A';
                 const findingText = toPlainText(notice.sdNotice?.details?.finding || notice.sdNotice?.details?.description) || 'N/A';
@@ -374,6 +361,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         reader.onload = async (e) => {
             try {
                 const buffer = e.target.result;
+                const ExcelJS = await loadExcelJS();
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(buffer);
                 const worksheet = workbook.getWorksheet(1);
@@ -465,6 +453,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
     const handleDownloadEvidenceTemplate = async () => {
         messageApi.loading({ content: '正在生成证据模板...', key: 'evidenceTemplate' });
         try {
+            const [ExcelJS, saveAs] = await Promise.all([loadExcelJS(), loadSaveAs()]);
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Batch Evidence Template');
 
@@ -539,6 +528,7 @@ const NoticeBatchItem = ({ batch, activeCollapseKeys, setActiveCollapseKeys, ...
         reader.onload = async (e) => {
             try {
                 const buffer = e.target.result;
+                const ExcelJS = await loadExcelJS();
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(buffer);
                 const worksheet = workbook.getWorksheet(1);
@@ -770,7 +760,6 @@ export const NoticeList = (props) => {
     // 提示：父组件(NoticePage)应该负责处理 filter 的UI (如 DatePicker)
     // 这里仅负责展示列表。
     // 如果 props.data 是空，显示 Empty 状态
-    console.log("【排查】传递给 NoticeList 的完整数据源: ", props);
     return (
         <List
             dataSource={props.data}

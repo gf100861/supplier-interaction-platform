@@ -199,7 +199,6 @@ const NoticeProviderInner = ({ children }) => {
                 const existingData = queryClient.getQueryData(['notices', currentUser.id]);
                 if (cachedData && !existingData) {
                     queryClient.setQueryData(['notices', currentUser.id], cachedData);
-                    console.log(`[IndexedDB] 🚀 秒开就绪！已加载 ${cachedData.length} 条数据，无需再剥离大体积字段。`);
                 }
             });
         }

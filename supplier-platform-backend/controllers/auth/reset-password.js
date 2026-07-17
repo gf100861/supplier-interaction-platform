@@ -42,8 +42,6 @@ module.exports = async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
-        console.log(`[Auth] Sending password reset email to: ${email}`);
-
         // 调用 Supabase 发送重置邮件
         const { error } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
             redirectTo: redirectTo || undefined // 如果前端没传，就用 Supabase 默认配置

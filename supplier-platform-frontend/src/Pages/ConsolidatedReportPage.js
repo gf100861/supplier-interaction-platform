@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin, Tooltip, Collapse } from 'antd';
+import { Table, Button, Typography, Space, Tag, Empty, Card, DatePicker, Select, Modal, Timeline, Divider, Image, Input, Spin, Collapse } from 'antd';
 import { DownloadOutlined, UserOutlined as PersonIcon, CalendarOutlined, PaperClipOutlined, PictureOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 
 import { useSuppliers } from '../contexts/SupplierContext';
 import { useNotices } from '../contexts/NoticeContext';
 import dayjs from 'dayjs';
-import ExcelJS from 'exceljs';
 import { useConfig } from '../contexts/ConfigContext';
 import { useNotification } from '../contexts/NotificationContext';
+import { getActionPlanLines, getEvidenceLines, getNoticeProduct, hydrateReportGroups, toPlainText } from '../utils/consolidatedReportData';
 import './ConsolidatedReport.css';
 import minMax from 'dayjs/plugin/minMax';
 dayjs.extend(minMax);
@@ -17,24 +17,6 @@ const { Title, Paragraph, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Search } = Input;
 const { Panel } = Collapse;
-
-// 1. 辅助函数：安全地将可能为对象的富文本转换为纯文本
-const toPlainText = (val) => {
-    if (val == null) return '';
-    // 检查 ExcelJS 可能返回的富文本对象
-    if (typeof val === 'object' && val.richText) {
-        return val.richText.map(r => r?.text || '').join('');
-    }
-    // 检查您系统中存储的富文本对象
-    if (typeof val === 'object' && Array.isArray(val.richText)) {
-        return val.richText.map(r => r?.text || '').join('');
-    }
-    if (typeof val === 'object' && typeof val.richText === 'string') {
-        return val.richText;
-    }
-    // 已经是纯文本或数字
-    return String(val);
-};
 
 // Helper components and functions
 const getHistoryItemDetails = (historyItem) => {
@@ -155,7 +137,7 @@ const getNestedValue = (obj, path) => {
 
 const ConsolidatedReportPage = () => {
     const { suppliers } = useSuppliers();
-    const { notices, loading: noticesLoading } = useNotices();
+    const { notices, loading: noticesLoading, fetchNoticeDetail } = useNotices();
     const { messageApi } = useNotification();
     const [dateRange, setDateRange] = useState([dayjs().startOf('year'), dayjs().endOf('year')]);
     const [selectedCategories, setSelectedCategories] = useState([]);
@@ -211,30 +193,15 @@ const ConsolidatedReportPage = () => {
 
     const groupedData = useMemo(() => {
         const noticesWithDetails = filteredNotices.map(notice => {
-            const actions = [];
-            const findings = [];
             const details = notice?.sdNotice?.details || {};
             const safeHistory = notice.history || [];
-            
-            safeHistory.forEach(h => {
-                if (h.type === 'supplier_plan_submission' && h.actionPlans) {
-                    h.actionPlans.forEach(plan => {
-                        actions.push(toPlainText(plan.plan)); 
-                    });
-                }
-                if (h.type === 'supplier_evidence_submission' && h.actionPlans) {
-                    h.actionPlans.forEach(plan => {
-                        findings.push(toPlainText(plan.evidenceDescription) || 'N/A'); 
-                    });
-                }
-            });
 
             return {
                 ...notice, // 先解构原始 notice
                 details,
                 ...getSummaryFromHistory(safeHistory),
-                actions,
-                findings,
+                actions: getActionPlanLines(safeHistory),
+                findings: getEvidenceLines(safeHistory),
                 history: safeHistory // 显式确保 history 存在
             };
         });
@@ -270,7 +237,7 @@ const ConsolidatedReportPage = () => {
     const showDetailsModal = (notice) => setDetailsModal({ visible: true, notice });
     const handleDetailsCancel = () => setDetailsModal({ visible: false, notice: null });
 
-    const generateColumnsForCategory = (category) => {
+    const generateColumnsForCategory = () => {
         const baseColumns = [
             { title: 'Parma', dataIndex: ['supplier', 'parmaId'], key: 'parma_id', width: 100, sorter: (a, b) => getNestedValue(a, ['supplier', 'parmaId']).localeCompare(getNestedValue(b, ['supplier', 'parmaId'])), },
             {
@@ -278,13 +245,14 @@ const ConsolidatedReportPage = () => {
                 render: (shortCode, record) => (shortCode || 'N/A'),
                 sorter: (a, b) => getNestedValue(a, ['supplier', 'shortCode']).localeCompare(getNestedValue(b, ['supplier', 'shortCode'])),
             },
+            { title: 'PRODUCT', key: 'product', width: 160, render: (_, record) => getNoticeProduct(record) || 'N/A' },
             { title: '状态', dataIndex: 'status', key: 'status', width: 100, render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag> },
 
             //修改成process
               {
                 title: 'PROCESS/QUESTIONS',
                 dataIndex: ['details', 'title'],
-                key: 'process',
+                key: 'finding',
                 width: 250,
                 render: (text) => toPlainText(text)
             },
@@ -345,31 +313,19 @@ const ConsolidatedReportPage = () => {
                 }
             },
         ];
-        const dynamicColumns = ([]).map(configCol => ({
-            title: configCol.title,
-            dataIndex: ['sdNotice', 'details', configCol.dataIndex],
-            key: configCol.dataIndex,
-            width: 200,
-            ellipsis: true,
-            render: (text) => <Tooltip title={toPlainText(text)}>{toPlainText(text)}</Tooltip>,
-            sorter: (a, b) => {
-                const valA = toPlainText(getNestedValue(a, ['sdNotice', 'details', configCol.dataIndex]));
-                const valB = toPlainText(getNestedValue(b, ['sdNotice', 'details', configCol.dataIndex]));
-                // Handle numbers and text
-                if (!isNaN(valA) && !isNaN(valB)) {
-                    return valA - valB;
-                }
-                return String(valA).localeCompare(String(valB));
-            }
-        }));
         const actionColumn = {
             title: '操作', key: 'action', fixed: 'right', width: 120,
             render: (_, record) => (<Button type="link" onClick={() => showDetailsModal(record)}>查看详情</Button>),
         };
-        return [...baseColumns.slice(0, 4), ...dynamicColumns, ...baseColumns.slice(4), actionColumn];
+        return [...baseColumns, actionColumn];
     };
 
-    const categories = Object.keys(groupedData);
+    const categories = useMemo(() => {
+        const available = Object.keys(groupedData);
+        const configured = sortedNoticeCategories.filter(category => available.includes(category));
+        const remaining = available.filter(category => !configured.includes(category));
+        return [...configured, ...remaining];
+    }, [groupedData, sortedNoticeCategories]);
 
 
     const handleExportExcel = async () => {
@@ -378,78 +334,31 @@ const ConsolidatedReportPage = () => {
             return;
         }
 
-        messageApi.loading({ content: '正在生成Excel文件...', key: 'exporting' });
+        messageApi.loading({ content: '正在读取完整通知单并生成 Excel...', key: 'exporting', duration: 0 });
 
-        const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'SD Platform';
-        workbook.created = new Date();
-
-        const headerStyle = {
-            font: { bold: true, color: { argb: 'FFFFFFFF' } },
-            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } },
-            alignment: { vertical: 'middle', horizontal: 'center' },
-            border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-        };
-
-
-        for (const category of categories) {
-            const worksheet = workbook.addWorksheet(category.substring(0, 30)); 
-
-            worksheet.columns = [
-                { header: 'ParmaId', key: 'parmaId', width: 15 },
-                { header: '供应商', key: 'supplierShortCode', width: 25 },
-                { header: '状态', key: 'status', width: 15 },
-                { header: '创建时间', key: 'createTime', width: 15 },
-                { header: '预计时间', key: 'deadline', width: 15 },
-                { header: 'PROCESS/QUESTIONS', key: 'process', width: 40 },
-                { header: 'FINDINGS/DEVIATIONS', key: 'finding', width: 40 },
-                { header: '行动计划', key: 'actions', width: 50 },
-                { header: '发现项/证据', key: 'evidence', width: 50 },
-            ];
-
-            worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
-                cell.s = headerStyle;
+        try {
+            const exportGroupedData = await hydrateReportGroups({
+                groupedData,
+                categories,
+                fetchDetail: fetchNoticeDetail,
+                concurrency: 5,
             });
-
-            const rows = groupedData[category].map(notice => {
-
-                return {
-                    parmaId: notice.supplier?.parmaId || '',
-                    supplierName: notice.assignedSupplierName || '',
-                    supplierShortCode: notice.supplier.shortCode,
-                    status: notice.status || '',
-                    createTime: notice.sdNotice?.createTime ? dayjs(notice.sdNotice.createTime).format('YYYY-MM-DD') : '',
-                    deadline: notice.deadline || '',
-                    
-                    process: toPlainText(notice.details?.title || notice.details?.process || notice.details?.parameter || notice.title),
-                    
-                    finding: toPlainText(notice.details?.description || notice.details?.finding),
-                    
-                    actions: Array.isArray(notice.actions) ? notice.actions.join('\n') : '',
-                    
-                    evidence: Array.isArray(notice.findings) ? notice.findings.join('\n') : '',
-                };
-            });
-
-            rows.forEach(row => {
-                const addedRow = worksheet.addRow(row);
-                addedRow.eachCell({ includeEmpty: true }, (cell) => {
-                    cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true }; 
-                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                });
-            });
+            const { createConsolidatedReportWorkbook } = await import('../utils/consolidatedReportExport');
+            const workbook = createConsolidatedReportWorkbook({ groupedData: exportGroupedData, categories });
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = `供应商问题综合报告_${dayjs().format('YYYY-MM-DD')}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(objectUrl);
+            messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
+        } catch (error) {
+            messageApi.error({ content: 'Excel 导出失败，请稍后重试。', key: 'exporting', duration: 4 });
         }
-
-        const buffer = await workbook.xlsx.writeBuffer();
-        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `供应商问题综合报告_${dayjs().format('YYYY-MM-DD')}.xlsx`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        messageApi.success({ content: 'Excel 文件已成功导出！', key: 'exporting', duration: 3 });
     };
 
     if (noticesLoading) {
@@ -518,7 +427,7 @@ const ConsolidatedReportPage = () => {
                                 问题类型: {category} (共 {groupedData[category].length} 项)
                             </Title>
                             <Table
-                                columns={generateColumnsForCategory(category)}
+                                columns={generateColumnsForCategory()}
                                 dataSource={groupedData[category]}
                                 rowKey="id"
                                 pagination={false}

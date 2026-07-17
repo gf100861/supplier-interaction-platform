@@ -1,6 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
-const https = require('https');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cors = require('cors');
 
@@ -64,12 +63,10 @@ const parseRequestBody = async (req) => {
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-const agent = new https.Agent({ rejectUnauthorized: false });
 
 const llmClient = new OpenAI({
     apiKey: process.env.QWEN_API_KEY || 'dummy',
-    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    httpAgent: agent
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy');
@@ -246,7 +243,6 @@ async function generateWithFallback(client, messages, preferredModel) {
                 messages: messages,
                 temperature: 0.1
             });
-            console.log(`[Smart Search] Success with: ${model}`);
             return response;
         } catch (error) {
             console.warn(`[Smart Search] Model ${model} failed. Status: ${error.status}`);
@@ -313,7 +309,6 @@ module.exports = async (req, res) => {
             getEmbedding(rawQuery, model)
         ]);
         intentData = parsedIntent;
-        console.log("[Intent Data]", intentData);
 
         // --- 核心优化点 2：智能判断是否沿用上下文 ---
         // 如果用户的提问中包含了明确的【实体过滤特征】（换了供应商、指定了特定状态或时间），说明这是一个全新的查询意图，不能被历史上下文束缚。
@@ -327,12 +322,10 @@ module.exports = async (req, res) => {
         const shouldUseContext = contextDocs && Array.isArray(contextDocs) && contextDocs.length > 0 && !hasStrongFilters;
 
         if (shouldUseContext) {
-            console.log(`[Smart Search] No strong filters detected. Reusing ${contextDocs.length} provided context docs.`);
             uniqueDocs = contextDocs;
             statsInfo = "\n【系统提示】: 基于当前固定的上下文（追问模式）进行回答。";
             optDesc.push(`沿用历史上下文 (${contextDocs.length}篇文档)`);
         } else {
-            console.log(`[Smart Search] Strong filters detected or no context. Executing DB Retrieval.`);
             // --- 没有有效上下文，或意图发生了改变，走完整的数据库检索链路 ---
             
             // Step 2: 精确统计

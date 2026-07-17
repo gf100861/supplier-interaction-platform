@@ -1,0 +1,46 @@
+.audit-plan-fullscreen-modal {
+    overflow: hidden;
+}
+
+.audit-plan-fullscreen-modal .ant-modal {
+    top: 0;
+    width: 100vw !important;
+    max-width: none;
+    height: 100vh;
+    margin: 0;
+    padding-bottom: 0;
+}
+
+.audit-plan-fullscreen-modal .ant-modal-content {
+    height: 100vh;
+    padding: 0;
+    border-radius: 0;
+    overflow: hidden;
+}
+
+.audit-plan-fullscreen-modal .ant-modal-header {
+    height: 57px;
+    margin: 0;
+    padding: 17px 56px 16px 24px;
+    border-bottom: 1px solid #f0f0f0;
+    box-sizing: border-box;
+}
+
+.audit-plan-fullscreen-modal .ant-modal-close {
+    top: 9px;
+}
+
+.audit-plan-fullscreen-table {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: #fff;
+}
+
+@media (max-width: 768px) {
+    .audit-plan-fullscreen-modal .ant-modal-header {
+        padding-left: 16px;
+    }
+}

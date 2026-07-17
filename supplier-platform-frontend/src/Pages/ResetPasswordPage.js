@@ -26,7 +26,6 @@ const ForgotPasswordPage = () => {
             // 1. 获取重定向地址 (密码重置后跳转回前端的哪个页面)
             const redirectUrl = `${window.location.origin}/update-password`;
             
-            console.log("正在请求后端重置，重定向地址为:", redirectUrl);
 
             // 2. ✅ 调用后端 API
             const response = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
